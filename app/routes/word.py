@@ -28,6 +28,7 @@ def get_word_of_the_day(db: Session = Depends(get_db)):
 
 @router.post("/word", summary="Add a word of the day for today")
 def set_word_of_the_day(db: Session = Depends(get_db)):
+    
     """
     today = date.today()
     existing = db.query(Word).filter(Word.date == today).first()
@@ -41,4 +42,5 @@ def set_word_of_the_day(db: Session = Depends(get_db)):
     db.commit()
     return {"message": "Word of the day saved", "date": today.isoformat(), "word": word}
     """
-    return {"message": "Not ready yet, senor"}
+
+    return {"message": "Endpoint not implemented yet"}
