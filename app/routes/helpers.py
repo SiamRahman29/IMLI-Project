@@ -13,6 +13,9 @@ def get_trending_word():
     # Fetch news articles
     articles = fetch_news()
 
+    # Fetch social media posts
+    posts = fetch_social_media_posts()
+
     # Parse the articles to get a combined text
     combined_text = parse_news(articles)
 
@@ -41,10 +44,15 @@ def fetch_news():
     articles = data.get("results", [])
     return articles
 
+def fetch_social_media_posts():
+    return []
+
 def parse_news(articles):
     """
-    Parses the news articles and returns a dictionary with titles and descriptions.
+    Parses the news articles and sociel media posts and returns a text block 
     """
+    # TODO: Implement the logic to parse social media posts
+    # and combine them with the news articles
     news_dict = {}
     for article in articles:
         title = article.get("title", "No Title")
