@@ -4,6 +4,7 @@ from datetime import date
 
 from app.db.database import SessionLocal
 from app.models.word import Word
+from app.routes.helpers import get_trending_word
 
 router = APIRouter()
 
@@ -42,5 +43,6 @@ def set_word_of_the_day(db: Session = Depends(get_db)):
     db.commit()
     return {"message": "Word of the day saved", "date": today.isoformat(), "word": word}
     """
+    word = get_trending_word()
 
     return {"message": "Endpoint not implemented yet"}
