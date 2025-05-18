@@ -17,7 +17,7 @@ def get_trending_word():
     combined_text = parse_news(articles)
 
     # Generate trending words using the Groq API
-    trending_words = generate_trending_words(combined_text)
+    trending_words = generate_trending_word(combined_text)
 
     return trending_words
 
@@ -54,7 +54,7 @@ def parse_news(articles):
     combined_text = "\n".join([f"{title}. {desc}" for title, desc in news_dict.items()])
     return combined_text
 
-def generate_trending_words(combined_text):
+def generate_trending_word(combined_text):
     """
     Generates trending words using the Groq API.
     """
