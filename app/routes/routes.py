@@ -23,7 +23,7 @@ def get_word_of_the_day(db: Session = Depends(get_db)):
     word_obj = db.query(Word).filter(Word.date == today).first()
 
     if word_obj is None:
-        raise HTTPException(status_code=404, detail="No word found for today")
+        return {"message": "Today's word not set yet, check back later", "date": today.isoformat()}
 
     return {"date": today.isoformat(), "word": word_obj.word}
 
