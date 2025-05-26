@@ -55,8 +55,8 @@ def store_news(db, articles):
     """
     try:
         for article in articles:
-            title = article.get("title", "No Title")
-            description = article.get("description", "No Description")
+            title = article.get("title") or "No Title"
+            description = article.get("description") or "No Description"
             db_article = Article(title=title, description=description)
             db.add(db_article)
         db.commit()
