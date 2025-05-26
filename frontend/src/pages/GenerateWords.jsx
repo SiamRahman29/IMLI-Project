@@ -10,7 +10,7 @@ function GenerateWords() {
   useEffect(() => {
     axios.post('http://localhost:8000/generate_candidates')
       .then(res => {
-        setResponseText(res.data.words.join(' '));  // Adjust formatting if needed
+        setResponseText(res.data.words);  // Adjust formatting if needed
       })
       .catch(err => {
         setResponseText('Something went wrong');
