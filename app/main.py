@@ -1,6 +1,6 @@
 # app/main.py
 from fastapi import FastAPI
-from app.routes import word
+from app.routes import routes
 
 app = FastAPI(
     title="BARTA-IMLI word of smth smth",
@@ -9,4 +9,4 @@ app = FastAPI(
 )
 
 # Include routes
-app.include_router(word.router)
+app.include_router(routes.router)
