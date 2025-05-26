@@ -28,7 +28,7 @@ def get_word_of_the_day(db: Session = Depends(get_db)):
     return {"date": today.isoformat(), "word": word_obj.word}
 
 
-@router.post("/word", summary="Add a word of the day for today")
+@router.post("/generate_candidates", summary="Add a word of the day for today")
 def set_word_of_the_day(db_session: Session = Depends(get_db)):
     
     """
@@ -54,5 +54,25 @@ def set_word_of_the_day(db_session: Session = Depends(get_db)):
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+    
+@router.post("/set_word_of_the_day", summary="Set today's word of the day")
+def set_word_of_the_day(new_word: str, db: Session = Depends(get_db)):
+    """
+    Sets the word of the day for today.
+    """
+    if not new_word:
+        raise HTTPException(status_code=400, detail="Missing parameter: word cannot be empty")
+    # TODO: Figure out what to do if a word is already set for today
+    today = date.today()
+    existing_word = db.query(Word).filter(Word.date == today).first()
+
+    if existing_word:
+        existing_word.word = new_word
+    else:
+        new_word = Word(date=today, word=new_word)
+        db.add(new_word)
+
+    db.commit()
+    return {"message": "Word of the day saved", "date": today.isoformat(), "word": new_word}
 
 
