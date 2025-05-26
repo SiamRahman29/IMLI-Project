@@ -12,11 +12,11 @@ function Home() {
           setWord(res.data.word);
           setDate(res.data.date);
         } else {
-          setWord('আজকের শব্দ এখনো নির্ধারিত হয়নি');
+          setWord('Today\'s word is not yet set');
         }
       })
       .catch(err => {
-        setWord('সার্ভার ত্রুটি');
+        setWord('Server error');
         console.error(err);
       });
   }, []);
