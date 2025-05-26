@@ -4,11 +4,11 @@ from dotenv import load_dotenv
 
 from groq import Groq
 from app.models.word import Article
-from app.db.database import SessionLocal
+
 
 load_dotenv()
 
-def get_trending_word():
+def get_trending_words(db):
     """
     Fetches news articles from the specified API, parses them, and generates the trending word using the Groq API.
     """
@@ -22,7 +22,7 @@ def get_trending_word():
     combined_text = parse_news(articles)
 
     # Store the articles in the database
-    store_news(articles)
+    store_news(db, articles)
 
     # Generate trending words using the Groq API
     trending_words = generate_trending_word(combined_text)
@@ -49,27 +49,22 @@ def fetch_news():
     articles = data.get("results", [])
     return articles
 
-def store_news(articles):
+def store_news(db, articles):
     """
     Stores the fetched news articles in a database
     """
-    def store_news(articles):
-        """
-        Stores the fetched news articles in a database
-        """
-        db = SessionLocal()
-        try:
-            for article in articles:
-                title = article.get("title", "No Title")
-                description = article.get("description", "No Description")
-                db_article = Article(title=title, description=description)
-                db.add(db_article)
-            db.commit()
-        except Exception as e:
-            db.rollback()
-            print(f"Error storing articles: {e}")
-        finally:
-            db.close()
+    try:
+        for article in articles:
+            title = article.get("title", "No Title")
+            description = article.get("description", "No Description")
+            db_article = Article(title=title, description=description)
+            db.add(db_article)
+        db.commit()
+    except Exception as e:
+        db.rollback()
+        print(f"Error storing articles: {e}")
+    finally:
+        db.close()
 
 def fetch_social_media_posts():
     return []
@@ -107,11 +102,9 @@ def generate_trending_word(combined_text):
         "এই শব্দগুলোর তালিকা শুধু বাংলা শব্দ হিসাবে ফেরত দাও, অন্য কিছু লিখো না।\n\n"
         f"{combined_text}\n\n"
         "এরপর, এই লেখার ভিত্তিতে এমন ৫টি শব্দের নাম দাও যেগুলো 'আজকের শব্দ' হিসেবে নির্বাচিত হতে পারে — "
-        "অর্থাৎ যেগুলো প্রসঙ্গ অনুযায়ী গুরুত্বপূর্ণ, তাৎপর্যপূর্ণ, বা আলোচ্য। "
-        "এই শব্দগুলোকেও শুধু বাংলা শব্দ হিসেবে তালিকাভুক্ত করো।\n\n"
-        "সর্বশেষে, উপরোক্ত ১৫টি শব্দ বিশ্লেষণ করে একটি শব্দ বেছে নাও যেটিকে তুমি 'আজকের শব্দ' হিসেবে মনোনীত করবে। "
-        "শুধু সেই একটি শব্দ ফেরত দাও।"
+        "অর্থাৎ যেগুলো প্রসঙ্গ অনুযায়ী গুরুত্বপূর্ণ, তাৎপর্যপূর্ণ, বা আলোচ্য। এই শব্দগুলোকেও শুধু বাংলা শব্দ হিসেবে তালিকাভুক্ত করো।"
     )
+
 
     chat_completion = client.chat.completions.create(
         messages=[
