@@ -13,6 +13,7 @@ def get_trending_words(db):
     Fetches news articles from the specified API, parses them, and generates the trending word using the Groq API.
     """
     # Fetch news articles
+    print("Fetching news data")
     articles = fetch_news()
 
     # Fetch social media posts
@@ -22,9 +23,11 @@ def get_trending_words(db):
     combined_text = parse_news(articles)
 
     # Store the articles in the database
+    print("Storing articles in the database")
     store_news(db, articles)
 
     # Generate trending words using the Groq API
+    print("Generating words")
     trending_words = generate_trending_word(combined_text)
 
     return trending_words
@@ -46,6 +49,7 @@ def fetch_news():
         print(f"Failed to fetch news: {response.status_code}")
 
     data = response.json()
+    # TODO: Add articles from the database 
     articles = data.get("results", [])
     return articles
 
@@ -67,6 +71,7 @@ def store_news(db, articles):
         db.close()
 
 def fetch_social_media_posts():
+    # TODO: complete functin to get social media posts
     return []
 
 def parse_news(articles):
@@ -92,6 +97,7 @@ def generate_trending_word(combined_text):
     # Example: GROQ_API_KEY=your_groq_api_key
 
     # Initialize the Groq client with your API key
+    # TODO: Enable preprocessing by collecting keywords with BERT, getting rid of stop words, and getting accurate counts
 
     client = Groq(
         # api_key=os.environ.get("GROQ_API_KEY"),
