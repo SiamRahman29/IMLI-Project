@@ -53,7 +53,10 @@ def generate_candidates(db_session: Session = Depends(get_db)):
             words=words
         )
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        if e.status_code == 429:
+            raise HTTPException(status_code=429, detail="Rate limit reached. Please try again later.")
+        raise HTTPException(status_code=500, detail="An error occurred while generating candidates for trending words.")
+        
     
 # TODO: Rename endpoints to be better
 @router.post("/set_word_of_the_day", summary="Set today's word of the day")
