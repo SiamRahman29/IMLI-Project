@@ -94,7 +94,8 @@ def generate_trending_word(combined_text):
     # Initialize the Groq client with your API key
 
     client = Groq(
-        api_key=os.environ.get("GROQ_API_KEY"),
+        # api_key=os.environ.get("GROQ_API_KEY"),
+        api_key = os.environ.get("GROQ_API_KEY_BACKUP")
     )
 
     prompt = (
