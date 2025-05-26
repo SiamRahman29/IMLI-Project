@@ -3,6 +3,8 @@ import requests
 from dotenv import load_dotenv
 
 from groq import Groq
+from app.models.word import Article
+from app.db.database import SessionLocal
 
 load_dotenv()
 
@@ -18,6 +20,9 @@ def get_trending_word():
 
     # Parse the articles to get a combined text
     combined_text = parse_news(articles)
+
+    # Store the articles in the database
+    store_news(articles)
 
     # Generate trending words using the Groq API
     trending_words = generate_trending_word(combined_text)
@@ -43,6 +48,28 @@ def fetch_news():
     data = response.json()
     articles = data.get("results", [])
     return articles
+
+def store_news(articles):
+    """
+    Stores the fetched news articles in a database
+    """
+    def store_news(articles):
+        """
+        Stores the fetched news articles in a database
+        """
+        db = SessionLocal()
+        try:
+            for article in articles:
+                title = article.get("title", "No Title")
+                description = article.get("description", "No Description")
+                db_article = Article(title=title, description=description)
+                db.add(db_article)
+            db.commit()
+        except Exception as e:
+            db.rollback()
+            print(f"Error storing articles: {e}")
+        finally:
+            db.close()
 
 def fetch_social_media_posts():
     return []
