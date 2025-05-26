@@ -59,6 +59,7 @@ def generate_candidates(db_session: Session = Depends(get_db)):
         
     
 # TODO: Rename endpoints to be better
+# TODO: Turn this into a trending_words endpoint and allow user to reject words from the list instead of choosing one
 @router.post("/set_word_of_the_day", summary="Set today's word of the day")
 def set_word_of_the_day(new_word: str, db: Session = Depends(get_db)):
     """

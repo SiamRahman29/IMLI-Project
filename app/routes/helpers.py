@@ -50,6 +50,7 @@ def fetch_news():
 
     data = response.json()
     # TODO: Add articles from the database 
+    # TODO: Control the source of articles and keep chosen news sources
     articles = data.get("results", [])
     return articles
 
@@ -71,7 +72,7 @@ def store_news(db, articles):
         db.close()
 
 def fetch_social_media_posts():
-    # TODO: complete functin to get social media posts
+    # TODO: complete function to get social media posts
     return []
 
 def parse_news(articles):
@@ -98,7 +99,7 @@ def generate_trending_word(combined_text):
 
     # Initialize the Groq client with your API key
     # TODO: Enable preprocessing by collecting keywords with BERT, getting rid of stop words, and getting accurate counts
-
+    # TODO: Take phrases into considerations as well
     client = Groq(
         # api_key=os.environ.get("GROQ_API_KEY"),
         api_key = os.environ.get("GROQ_API_KEY_BACKUP")
