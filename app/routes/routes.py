@@ -28,7 +28,7 @@ def get_word_of_the_day(db: Session = Depends(get_db)):
     return {"date": today.isoformat(), "word": word_obj.word}
 
 
-@router.post("/generate_candidates", summary="Add a word of the day for today")
+@router.post("/generate_candidates", summary="Generate a list of candidates for trending words")
 def set_word_of_the_day(db_session: Session = Depends(get_db)):
     
     """
