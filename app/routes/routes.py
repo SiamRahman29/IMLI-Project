@@ -29,7 +29,7 @@ def get_word_of_the_day(db: Session = Depends(get_db)):
 
 
 @router.post("/generate_candidates", summary="Generate a list of candidates for trending words")
-def set_word_of_the_day(db_session: Session = Depends(get_db)):
+def generate_candidates(db_session: Session = Depends(get_db)):
     
     """
     today = date.today()
@@ -55,6 +55,7 @@ def set_word_of_the_day(db_session: Session = Depends(get_db)):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
     
+# TODO: Rename endpoints to be better
 @router.post("/set_word_of_the_day", summary="Set today's word of the day")
 def set_word_of_the_day(new_word: str, db: Session = Depends(get_db)):
     """
