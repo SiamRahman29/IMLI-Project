@@ -51,6 +51,5 @@ This project is a full-stack system for extracting, analyzing, and visualizing t
 - Frontend: [React](https://react.dev/), [Material UI](https://mui.com/)
 - Backend: [FastAPI](https://fastapi.tiangolo.com/), [SQLAlchemy](https://www.sqlalchemy.org/)
 
----
 
 For any issues or contributions, please open an issue or pull request!
