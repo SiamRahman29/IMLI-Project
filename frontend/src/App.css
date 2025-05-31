@@ -1,10 +1,89 @@
-#root {
-  max-width: 1280px;
-  margin: 0 auto;
-  padding: 2rem;
-  text-align: center;
+/*
+Redesigned for full-width, modern look. Removed max-width and centering from #root. Made .main-content full width, aligned to top, with padding. Navbar remains fixed and full-width. Added modern, clean styles for headings, sections, and buttons.
+*/
+nav {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  z-index: 1000;
+  background: #222831;
+  color: #fff;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+  height: 64px;
+  display: flex;
+  align-items: center;
+  padding: 0 2rem;
 }
-
+body, #root {
+  margin: 0;
+  padding: 0;
+  font-family: 'Noto Sans Bengali', 'Hind Siliguri', 'SolaimanLipi', Arial, sans-serif;
+  background: #f6f7fb;
+}
+#root {
+  width: 100vw;
+  max-width: none;
+  margin: 0;
+  padding: 0;
+  text-align: initial;
+}
+.main-content {
+  margin-top: 64px;
+  width: 100vw;
+  min-height: calc(100vh - 64px);
+  padding: 2.5rem 0 2rem 0;
+  background: #f6f7fb;
+}
+.section {
+  background: #fff;
+  margin: 2rem auto;
+  border-radius: 18px;
+  box-shadow: 0 2px 16px rgba(0,0,0,0.06);
+  padding: 2.5rem 2rem;
+  width: 90vw;
+  max-width: 1100px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+}
+.section h1, .section h2 {
+  color: #222831;
+  margin-bottom: 1.2rem;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+}
+.section p {
+  color: #393e46;
+  font-size: 1.15rem;
+  margin-bottom: 1.5rem;
+}
+.button, button, input[type="submit"] {
+  background: #00adb5;
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  padding: 0.75rem 2rem;
+  font-size: 1.1rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.2s, box-shadow 0.2s;
+  box-shadow: 0 2px 8px rgba(0,173,181,0.08);
+  margin-top: 0.5rem;
+}
+.button:hover, button:hover, input[type="submit"]:hover {
+  background: #007b80;
+}
+input, textarea, select {
+  font-family: inherit;
+  font-size: 1rem;
+  border-radius: 6px;
+  border: 1px solid #ccc;
+  padding: 0.6rem 1rem;
+  margin-bottom: 1rem;
+  width: 100%;
+  box-sizing: border-box;
+}
 .logo {
   height: 6em;
   padding: 1.5em;
@@ -17,7 +96,6 @@
 .logo.react:hover {
   filter: drop-shadow(0 0 2em #61dafbaa);
 }
-
 @keyframes logo-spin {
   from {
     transform: rotate(0deg);
@@ -26,17 +104,14 @@
     transform: rotate(360deg);
   }
 }
-
 @media (prefers-reduced-motion: no-preference) {
   a:nth-of-type(2) .logo {
     animation: logo-spin infinite 20s linear;
   }
 }
-
 .card {
   padding: 2em;
 }
-
 .read-the-docs {
   color: #888;
 }
