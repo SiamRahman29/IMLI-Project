@@ -307,8 +307,8 @@ class AdvancedBengaliProcessor:
             preprocessor=bengali_preprocessor,
             ngram_range=(1, 3),
             max_features=1000,
-            min_df=2,
-            max_df=0.8,
+            min_df=1,  # FIX: allow terms in at least 1 doc
+            max_df=1.0,  # FIX: allow terms in up to 100% of docs
             lowercase=False
         )
         

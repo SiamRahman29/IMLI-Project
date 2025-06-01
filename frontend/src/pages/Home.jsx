@@ -134,9 +134,9 @@ function Home() {
       </Grid>
 
       <Box textAlign="center" mt={6} py={3}>
-        <Typography variant="body2" color="text.secondary">
+        {/* <Typography variant="body2" color="text.secondary">
           N-gram Frequency Analysis এবং TF-IDF পদ্ধতি ব্যবহার করে তৈরি
-        </Typography>
+        </Typography> */}
       </Box>
     </Container>
   );

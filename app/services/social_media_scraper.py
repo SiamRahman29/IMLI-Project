@@ -119,7 +119,9 @@ class SocialMediaScraper:
             'UC-LG7HdKCmvvDJOQmOhzJOQ',  # Channel i
             'UCrGhoBcQRl6jzrfh2wCKV_Q',  # Independent TV
         ]
-        
+        # TODO: BeautifulSoup - web app scraping
+        # FIXME : Selenium - web app scraping
+        # BUG
         driver = self.setup_selenium_driver()
         if not driver:
             return comments
@@ -264,3 +266,25 @@ def get_social_media_trends() -> List[Dict]:
     """
     trends_analyzer = BengaliSocialMediaTrends()
     return trends_analyzer.get_trending_topics()
+
+def print_scraped_posts_pretty(posts: List[Dict]):
+
+    if not posts:
+        print("No posts found.")
+        return
+    for idx, post in enumerate(posts, 1):
+        print(f"{'='*60}")
+        print(f"Post #{idx}")
+        print(f"Source     : {post.get('source', 'N/A')}")
+        print(f"Platform   : {post.get('platform', 'N/A')}")
+        if 'page' in post:
+            print(f"Page       : {post.get('page')}")
+        if 'video_url' in post:
+            print(f"Video URL  : {post.get('video_url')}")
+        print(f"Date       : {post.get('scraped_date', 'N/A')}")
+        print(f"Content    :\n{post.get('content', '').strip()}")
+        print(f"{'='*60}\n")
+
+def demo_print_scraped_posts():
+    posts = scrape_social_media_content()
+    print_scraped_posts_pretty(posts)

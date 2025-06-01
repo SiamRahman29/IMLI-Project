@@ -433,7 +433,6 @@ def fetch_news():
     """Fetch news from multiple Bengali sources"""
     articles = []
     
-    # Fetch from NewsData.io API
     try:
         news_api_url = os.getenv("NEWS_API_URL")
         if news_api_url:
@@ -463,7 +462,6 @@ def scrape_bengali_news() -> List[Dict]:
     """Scrape Bengali news from multiple sources"""
     articles = []
     
-    # Prothom Alo RSS
     try:
         feed_url = "https://www.prothomalo.com/feed/"
         feed = feedparser.parse(feed_url)
