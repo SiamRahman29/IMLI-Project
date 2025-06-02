@@ -19,6 +19,8 @@ from selenium.common.exceptions import TimeoutException, NoSuchElementException
 
 
 class SocialMediaScraper:
+    ENABLE_SOCIAL_MEDIA_SCRAPING = True  # Set to True to enable scraping
+
     def __init__(self):
         self.headers = {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
@@ -40,71 +42,64 @@ class SocialMediaScraper:
         
         try:
             driver = webdriver.Chrome(options=chrome_options)
+            driver.implicitly_wait(50)  # Set implicit wait timeout to 50 seconds
             return driver
         except Exception as e:
             print(f"Failed to setup Chrome driver: {e}")
             return None
 
+    def get_facebook_sources(self):
+        """Return a modular list of Facebook public pages, groups, and individuals to scrape"""
+        return [
+            # Only add unique, non-news-organization pages/groups if needed
+            # Example Public Groups (add more as needed)
+            'https://www.facebook.com/groups/ProthomAloReaders',
+            'https://www.facebook.com/groups/bdnews24group',
+            # Example Individuals (public profiles)
+            # 'https://www.facebook.com/publicprofileid',
+        ]
+
     def scrape_facebook_public_pages(self) -> List[Dict]:
         """
-        Scrape Bengali Facebook public pages
+        Scrape Bengali Facebook public groups and individuals (modular, no news orgs)
         """
         posts = []
-        
-        # Bengali Facebook pages to scrape
-        public_pages = [
-            'https://www.facebook.com/ProthomAlo',
-            'https://www.facebook.com/bdnews24',
-            'https://www.facebook.com/DailyIttefaq',
-            'https://www.facebook.com/kalbela.com.bd',
-        ]
-        
+        public_pages = self.get_facebook_sources()
+        if not public_pages:
+            return posts
         driver = self.setup_selenium_driver()
         if not driver:
             return posts
-            
         try:
             for page_url in public_pages:
-                print(f"Scraping Facebook page: {page_url}")
-                
+                print(f"Scraping Facebook page/group: {page_url}")
                 try:
                     driver.get(page_url)
                     time.sleep(3)
-                    
-                    # Scroll to load more posts
                     for _ in range(3):
                         driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
                         time.sleep(2)
-                    
-                    # Find post elements (these selectors may need updating)
                     post_elements = driver.find_elements(By.CSS_SELECTOR, '[data-pagelet="FeedUnit_0"], [role="article"]')
-                    
-                    for post_element in post_elements[:10]:  # Limit to 10 posts per page
+                    for post_element in post_elements[:10]:
                         try:
-                            # Extract text content
                             text_content = post_element.text
-                            
-                            # Filter for Bengali content
                             if self._contains_bengali_text(text_content):
                                 posts.append({
                                     'content': text_content,
                                     'source': 'facebook',
                                     'page': page_url.split('/')[-1],
                                     'scraped_date': datetime.now().date(),
-                                    'platform': 'social_media'
+                                    'platform': 'social_media',
+                                    'url': page_url
                                 })
-                                
                         except Exception as e:
                             print(f"Error extracting post: {e}")
                             continue
-                            
                 except Exception as e:
                     print(f"Error scraping {page_url}: {e}")
                     continue
-                    
         finally:
             driver.quit()
-            
         return posts
 
     def scrape_youtube_comments(self) -> List[Dict]:
@@ -212,24 +207,12 @@ class SocialMediaScraper:
         """
         Get content from all social media sources
         """
-        all_content = []
-        
-        print("Scraping Facebook pages...")
-        facebook_posts = self.scrape_facebook_public_pages()
-        all_content.extend(facebook_posts)
-        print(f"Scraped {len(facebook_posts)} Facebook posts")
-        
-        print("Scraping YouTube comments...")
-        youtube_comments = self.scrape_youtube_comments()
-        all_content.extend(youtube_comments)
-        print(f"Scraped {len(youtube_comments)} YouTube comments")
-        
-        print("Scraping Twitter alternatives...")
-        twitter_posts = self.scrape_twitter_alternatives()
-        all_content.extend(twitter_posts)
-        print(f"Scraped {len(twitter_posts)} Twitter posts")
-        
-        return all_content
+        if not self.ENABLE_SOCIAL_MEDIA_SCRAPING:
+            print("[INFO] Social media scraping is currently disabled. Set ENABLE_SOCIAL_MEDIA_SCRAPING=True to enable.")
+            return []
+        # TODO: Implement actual scraping logic here
+        # Example: return self.scrape_facebook_public_pages() + self.scrape_youtube_comments() + self.scrape_twitter_alternatives()
+        return []
 
 
 class BengaliSocialMediaTrends:

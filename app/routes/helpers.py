@@ -1,6 +1,7 @@
 import os
 import re
 import requests
+from requests.exceptions import Timeout, ConnectionError
 from datetime import date, datetime, timedelta
 from typing import List, Dict, Tuple
 from collections import Counter, defaultdict
@@ -16,6 +17,9 @@ from groq import Groq
 from sqlalchemy.orm import Session
 from app.models.word import Article, TrendingPhrase
 from app.services.social_media_scraper import scrape_social_media_content
+from selenium import webdriver
+from selenium.webdriver.chrome.options import Options
+from selenium.webdriver.common.by import By
 
 load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), '../../.env'))
 
@@ -45,13 +49,13 @@ BENGALI_STOP_WORDS = {
     'আমাকে', 'আমাদেরকে', 'তোমাকে', 'তোমাদেরকে', 'এটাকে', 'ওটাকে', 'যাকে', 'কাকে', 'ঐ', 'ওই',
     'এই', 'সেই', 'যে', 'যেই', 'কোন', 'কোনো', 'একজন', 'দুজন', 'তিনজন', 'চারজন', 'পাঁচজন',
     'নতুন', 'পুরাতন', 'পুরোনো', 'বড়', 'ছোট', 'ভালো', 'খারাপ', 'সুন্দর', 'কুৎসিত', 'উচ্চ', 'নিম্ন',
-    'অই', 'অগত্যা', 'অত: পর', 'অতএব', 'অথচ', 'অথবা', 'অধিক', 'অধীনে', 'অধ্যায়', 'অনুগ্রহ',
-    'অনুভূত', 'অনুযায়ী', 'অনুরূপ', 'অনুসন্ধান', 'অনুসরণ', 'অনুসারে', 'অনুসৃত', 'অনেক', 'অনেকে',
+    'অই', 'অগত্যা','বাংলাদেশ', 'টাকা','শতাংশ','পানি', 'অত: পর', 'অতএব', 'অথচ', 'অথবা', 'অধিক', 'অধীনে', 'অধ্যায়', 'অনুগ্রহ',
+    'অনুভূত', 'অনুযায়ী','ঋণ', 'অনুরূপ', 'অনুসন্ধান', 'অনুসরণ', 'অনুসারে', 'অনুসৃত', 'অনেক', 'অনেকে',
     'অনেকেই', 'অন্তত', 'অন্য', 'অন্যত্র', 'অন্যান্য', 'অপেক্ষাকৃতভাবে', 'অবধি', 'অবশ্য', 'অবশ্যই',
     'অবস্থা', 'অবিলম্বে', 'অভ্যন্তরস্থ', 'অর্জিত', 'অর্থাত', 'অসদৃশ', 'অসম্ভাব্য', 'আইন', 'আউট',
     'আক্রান্ত', 'আগামী', 'আগে', 'আগেই', 'আগ্রহী', 'আছে', 'আজ', 'আট', 'আদেশ', 'আদ্যভাগে', 'আন্দাজ',
     'আপনার', 'আপনি', 'আবার', 'আমরা', 'আমাকে', 'আমাদিগের', 'আমাদের', 'আমার', 'আমি', 'আর', 'আরও',
-    'আশি', 'আশু', 'আসা', 'আসে', 'ই', 'ইচ্ছা', 'ইচ্ছাপূর্বক', 'ইতিমধ্যে', 'ইতোমধ্যে', 'ইত্যাদি',
+    'আশি', 'আশু', 'আসা', 'আসে', 'ই','বিএনপি', 'ইচ্ছা', 'ইচ্ছাপূর্বক', 'ইতিমধ্যে', 'ইতোমধ্যে', 'ইত্যাদি',
     'ইশারা', 'ইহা', 'ইহাতে', 'উক্তি', 'উচিত', 'উচ্চ', 'উঠা', 'উত্তম', 'উত্তর', 'উনি', 'উপর',
     'উপরে', 'উপলব্ধ', 'উপায়', 'উভয়', 'উল্লেখ', 'উল্লেখযোগ্যভাবে', 'উহার', 'ঊর্ধ্বতন', 'এ', 'এপর্যন্ত',
     'এঁদের', 'এঁরা', 'এই', 'এইগুলো', 'এইভাবে', 'এক', 'একই', 'একটি', 'একদা', 'একবার', 'একভাবে',
@@ -89,9 +93,9 @@ BENGALI_STOP_WORDS = {
     'পূর্বে', 'পৃষ্ঠা', 'পৃষ্ঠাগুলি', 'পেছনে', 'পেয়েছেন', 'পেয়ে', 'পেয়্র্', 'প্রকৃতপক্ষে', 'প্রণীত', 'প্রতি',
     'প্রথম', 'প্রদত্ত', 'প্রদর্শনী', 'প্রদর্শিত', 'প্রধানত', 'প্রবলভাবে', 'প্রভৃতি', 'প্রমাণীকরণ', 'প্রযন্ত',
     'প্রয়োজন', 'প্রয়োজনীয়', 'প্রসূত', 'প্রাক্তন', 'প্রাথমিক', 'প্রাথমিকভাবে', 'প্রান্ত', 'প্রাপ্ত',
-    'প্রায়', 'প্রায়ই', 'প্রায়', 'ফলাফল', 'ফলে', 'ফিক্স', 'ফিরে', 'ফের', 'বক্তব্য', 'বছর', 'বড়', 'বদলে',
+    'প্রায়', 'প্রায়ই', 'প্রায়', 'ফলাফল','লাখ','জুন','টাকা','ফলে', 'ফিক্স', 'ফিরে', 'ফের', 'বক্তব্য', 'বছর', 'বড়', 'বদলে',
     'বন', 'বন্ধ', 'বরং', 'বরাবর', 'বর্ণন', 'বর্তমান', 'বলতে', 'বলল', 'বললেন', 'বলা', 'বলে', 'বলেছেন',
-    'বলেন', 'বসে', 'বহু', 'বা', 'বাঁক', 'বাইরে', 'বাকি', 'বাড়ি', 'বাতিক', 'বাদ', 'বাদে', 'বার', 'বাহিরে',
+    'বলেন', 'বসে', 'বহু', 'কর','বা', 'বাঁক','বিএনপি', 'বাইরে', 'বাকি', 'বাড়ি', 'বাতিক', 'বাদ', 'বাদে', 'বার', 'বাহিরে',
     'বিনা', 'বিন্দু', 'বিভিন্ন', 'বিশেষ', 'বিশেষণ', 'বিশেষত', 'বিশেষভাবে', 'বিশ্ব', 'বিষয়টি', 'বুঝিয়ে',
     'বৃহত্তর', 'বের', 'বেশ', 'বেশি', 'বেশী', 'ব্যতীত', 'ব্যবহার', 'ব্যবহারসমূহ', 'ব্যবহৃত', 'ব্যাক',
     'ব্যাপকভাবে', 'ব্যাপারে', 'ভবিষ্যতে', 'ভান', 'ভাবে', 'ভাবেই', 'ভাল', 'ভিতরে', 'ভিন্ন', 'ভিন্নভাবে',
@@ -177,7 +181,8 @@ class TrendingAnalyzer:
             lowercase=False,
             ngram_range=(1, 3),
             max_features=1000,
-            min_df=2
+            min_df=2,
+            token_pattern=None  # Suppress warning when using custom tokenizer
         )
         
         try:
@@ -433,53 +438,40 @@ def fetch_news():
     """Fetch news from multiple Bengali sources"""
     articles = []
     
-    try:
-        news_api_url = os.getenv("NEWS_API_URL")
-        if news_api_url:
-            response = requests.get(news_api_url, timeout=30)
-            if response.status_code == 200:
-                data = response.json()
-                api_articles = data.get("results", [])
-                for article in api_articles:
-                    articles.append({
-                        'title': article.get('title', ''),
-                        'description': article.get('description', ''),
-                        'url': article.get('link', ''),
-                        'published_date': datetime.now().date(),
-                        'source': 'newsdata_api'
-                    })
-                print(f"Fetched {len(api_articles)} articles from NewsData API")
-    except Exception as e:
-        print(f"Error fetching from NewsData API: {e}")
-    
     # Scrape Bengali news websites
     scraped_articles = scrape_bengali_news()
     articles.extend(scraped_articles)
     
     return articles
 
-def scrape_bengali_news() -> List[Dict]:
-    """Scrape Bengali news from multiple sources"""
+# List of Bangladeshi newspaper homepages for modular scraping
+BANGLA_NEWS_SITES = [
+    ("Prothom Alo", "https://www.prothomalo.com/"),
+    ("Kaler Kantho", "https://www.kalerkantho.com/"),
+    ("Jugantor", "https://www.jugantor.com/"),
+    ("Ittefaq", "https://www.ittefaq.com.bd/"),
+    ("Bangladesh Pratidin", "https://www.bd-pratidin.com/"),
+    ("Manab Zamin", "https://mzamin.com/"),
+    ("Samakal", "https://samakal.com/"),
+    ("Amader Shomoy", "https://www.dainikamadershomoy.com/"),
+    ("Janakantha", "https://www.dailyjanakantha.com/"),
+    ("Inqilab", "https://dailyinqilab.com/"),
+    ("Sangbad", "https://sangbad.net.bd/"),
+    ("Noya Diganta", "https://www.dailynayadiganta.com/"),
+    ("Jai Jai Din", "https://www.jaijaidinbd.com/"),
+    ("Manobkantha", "https://www.manobkantha.com.bd/"),
+    ("Ajkaler Khobor", "https://www.ajkalerkhobor.net/"),
+    ("Ajker Patrika", "https://www.ajkerpatrika.com/"),
+    ("Protidiner Sangbad", "https://www.protidinersangbad.com/"),
+    ("Bangladesher Khabor", "https://www.bangladesherkhabor.net/"),
+    ("Bangladesh Journal", "https://www.bd-journal.com/")
+]
+
+# Modular news scraping functions for each site (add more as needed)
+def scrape_prothom_alo():
     articles = []
-    
     try:
         feed_url = "https://www.prothomalo.com/feed/"
-        feed = feedparser.parse(feed_url)
-        for entry in feed.entries[:10]:  # Limit to 10 articles
-            articles.append({
-                'title': entry.get('title', ''),
-                'description': entry.get('summary', ''),
-                'url': entry.get('link', ''),
-                'published_date': datetime.now().date(),
-                'source': 'prothom_alo'
-            })
-        print(f"Scraped {len(feed.entries[:10])} articles from Prothom Alo")
-    except Exception as e:
-        print(f"Error scraping Prothom Alo: {e}")
-    
-    # BD News 24 RSS
-    try:
-        feed_url = "https://bangla.bdnews24.com/rss.xml"
         feed = feedparser.parse(feed_url)
         for entry in feed.entries[:10]:
             articles.append({
@@ -487,12 +479,618 @@ def scrape_bengali_news() -> List[Dict]:
                 'description': entry.get('summary', ''),
                 'url': entry.get('link', ''),
                 'published_date': datetime.now().date(),
-                'source': 'bdnews24'
+                'source': 'prothom_alo'
             })
-        print(f"Scraped {len(feed.entries[:10])} articles from BD News 24")
     except Exception as e:
-        print(f"Error scraping BD News 24: {e}")
-    
+        print(f"Error scraping Prothom Alo: {e}")
+    return articles
+
+def robust_request(url, timeout=50):
+    try:
+        return requests.get(url, timeout=timeout)
+    except (Timeout, ConnectionError) as e:
+        print(f"Timeout/ConnectionError scraping {url}: {e}")
+        return None
+
+def scrape_jugantor():
+    articles = []
+    try:
+        homepage = "https://www.jugantor.com/"
+        res = robust_request(homepage)
+        if not res:
+            return articles
+        soup = BeautifulSoup(res.text, "html.parser")
+        for link in soup.select(".lead-news a, .lead-news-title a"):
+            url = link.get('href')
+            if not url.startswith('http'):
+                url = homepage.rstrip('/') + '/' + url.lstrip('/')
+            try:
+                article_res = robust_request(url)
+                if not article_res:
+                    continue
+                article_soup = BeautifulSoup(article_res.text, "html.parser")
+                title = article_soup.select_one("h1").text.strip() if article_soup.select_one("h1") else ""
+                body = " ".join([p.text for p in article_soup.select(".news-details p")])
+                articles.append({
+                    "title": title,
+                    "description": body,
+                    "url": url,
+                    "published_date": datetime.now().date(),
+                    "source": "jugantor"
+                })
+            except Exception as e:
+                print(f"Error scraping Jugantor article: {e}")
+    except Exception as e:
+        print(f"Error scraping Jugantor homepage: {e}")
+    return articles
+
+def scrape_kaler_kantho():
+    articles = []
+    try:
+        homepage = "https://www.kalerkantho.com/"
+        res = robust_request(homepage)
+        if not res:
+            return articles
+        soup = BeautifulSoup(res.text, "html.parser")
+        for link in soup.select(".lead-news a, .main-news a, .news-title a"):
+            url = link.get('href')
+            if url and not url.startswith('http'):
+                url = homepage.rstrip('/') + '/' + url.lstrip('/')
+            article_res = robust_request(url)
+            if not article_res:
+                continue
+            try:
+                article_soup = BeautifulSoup(article_res.text, "html.parser")
+                title = article_soup.select_one("h1").text.strip() if article_soup.select_one("h1") else ""
+                body = " ".join([p.text for p in article_soup.select(".details p")])
+                articles.append({
+                    "title": title,
+                    "description": body,
+                    "url": url,
+                    "published_date": datetime.now().date(),
+                    "source": "kaler_kantho"
+                })
+            except Exception as e:
+                print(f"Error scraping Kaler Kantho article: {e}")
+    except Exception as e:
+        print(f"Error scraping Kaler Kantho homepage: {e}")
+    return articles
+
+def scrape_ittefaq():
+    articles = []
+    try:
+        homepage = "https://www.ittefaq.com.bd/"
+        res = robust_request(homepage)
+        if not res:
+            return articles
+        soup = BeautifulSoup(res.text, "html.parser")
+        for link in soup.select(".lead-news a, .main-news a, .title a"):
+            url = link.get('href')
+            if url and not url.startswith('http'):
+                url = homepage.rstrip('/') + '/' + url.lstrip('/')
+            article_res = robust_request(url)
+            if not article_res:
+                continue
+            try:
+                article_soup = BeautifulSoup(article_res.text, "html.parser")
+                title = article_soup.select_one("h1").text.strip() if article_soup.select_one("h1") else ""
+                body = " ".join([p.text for p in article_soup.select(".details-content p")])
+                articles.append({
+                    "title": title,
+                    "description": body,
+                    "url": url,
+                    "published_date": datetime.now().date(),
+                    "source": "ittefaq"
+                })
+            except Exception as e:
+                print(f"Error scraping Ittefaq article: {e}")
+    except Exception as e:
+        print(f"Error scraping Ittefaq homepage: {e}")
+    return articles
+
+def scrape_bd_pratidin():
+    articles = []
+    try:
+        homepage = "https://www.bd-pratidin.com/"
+        res = robust_request(homepage)
+        if not res:
+            return articles
+        soup = BeautifulSoup(res.text, "html.parser")
+        for link in soup.select(".lead-news a, .main-news a, .title a"):
+            url = link.get('href')
+            if url and not url.startswith('http'):
+                url = homepage.rstrip('/') + '/' + url.lstrip('/')
+            article_res = robust_request(url)
+            if not article_res:
+                continue
+            try:
+                article_soup = BeautifulSoup(article_res.text, "html.parser")
+                title = article_soup.select_one("h1").text.strip() if article_soup.select_one("h1") else ""
+                body = " ".join([p.text for p in article_soup.select(".details-content p")])
+                articles.append({
+                    "title": title,
+                    "description": body,
+                    "url": url,
+                    "published_date": datetime.now().date(),
+                    "source": "bd_pratidin"
+                })
+            except Exception as e:
+                print(f"Error scraping BD Pratidin article: {e}")
+    except Exception as e:
+        print(f"Error scraping BD Pratidin homepage: {e}")
+    return articles
+
+def scrape_manab_zamin():
+    articles = []
+    try:
+        homepage = "https://mzamin.com/"
+        res = robust_request(homepage)
+        if not res:
+            return articles
+        soup = BeautifulSoup(res.text, "html.parser")
+        for link in soup.select(".lead-news a, .main-news a, .title a"):
+            url = link.get('href')
+            if url and not url.startswith('http'):
+                url = homepage.rstrip('/') + '/' + url.lstrip('/')
+            article_res = robust_request(url)
+            if not article_res:
+                continue
+            try:
+                article_soup = BeautifulSoup(article_res.text, "html.parser")
+                title = article_soup.select_one("h1").text.strip() if article_soup.select_one("h1") else ""
+                body = " ".join([p.text for p in article_soup.select(".details-content p, .news-details p")])
+                articles.append({
+                    "title": title,
+                    "description": body,
+                    "url": url,
+                    "published_date": datetime.now().date(),
+                    "source": "manab_zamin"
+                })
+            except Exception as e:
+                print(f"Error scraping Manab Zamin article: {e}")
+    except Exception as e:
+        print(f"Error scraping Manab Zamin homepage: {e}")
+    return articles
+
+def scrape_samakal():
+    articles = []
+    try:
+        homepage = "https://samakal.com/"
+        res = robust_request(homepage)
+        if not res:
+            return articles
+        soup = BeautifulSoup(res.text, "html.parser")
+        for link in soup.select(".lead-news a, .main-news a, .title a"):
+            url = link.get('href')
+            if url and not url.startswith('http'):
+                url = homepage.rstrip('/') + '/' + url.lstrip('/')
+            article_res = robust_request(url)
+            if not article_res:
+                continue
+            try:
+                article_soup = BeautifulSoup(article_res.text, "html.parser")
+                title = article_soup.select_one("h1").text.strip() if article_soup.select_one("h1") else ""
+                body = " ".join([p.text for p in article_soup.select(".details-content p, .news-details p")])
+                articles.append({
+                    "title": title,
+                    "description": body,
+                    "url": url,
+                    "published_date": datetime.now().date(),
+                    "source": "samakal"
+                })
+            except Exception as e:
+                print(f"Error scraping Samakal article: {e}")
+    except Exception as e:
+        print(f"Error scraping Samakal homepage: {e}")
+    return articles
+
+def scrape_amader_shomoy():
+    articles = []
+    try:
+        homepage = "https://www.dainikamadershomoy.com/"
+        res = robust_request(homepage)
+        if not res:
+            return articles
+        soup = BeautifulSoup(res.text, "html.parser")
+        for link in soup.select(".lead-news a, .main-news a, .title a"):
+            url = link.get('href')
+            if url and not url.startswith('http'):
+                url = homepage.rstrip('/') + '/' + url.lstrip('/')
+            article_res = robust_request(url)
+            if not article_res:
+                continue
+            try:
+                article_soup = BeautifulSoup(article_res.text, "html.parser")
+                title = article_soup.select_one("h1").text.strip() if article_soup.select_one("h1") else ""
+                body = " ".join([p.text for p in article_soup.select(".details-content p, .news-details p")])
+                articles.append({
+                    "title": title,
+                    "description": body,
+                    "url": url,
+                    "published_date": datetime.now().date(),
+                    "source": "amader_shomoy"
+                })
+            except Exception as e:
+                print(f"Error scraping Amader Shomoy article: {e}")
+    except Exception as e:
+        print(f"Error scraping Amader Shomoy homepage: {e}")
+    return articles
+
+def scrape_janakantha():
+    articles = []
+    try:
+        homepage = "https://www.dailyjanakantha.com/"
+        res = robust_request(homepage)
+        if not res:
+            return articles
+        soup = BeautifulSoup(res.text, "html.parser")
+        for link in soup.select(".lead-news a, .main-news a, .title a"):
+            url = link.get('href')
+            if url and not url.startswith('http'):
+                url = homepage.rstrip('/') + '/' + url.lstrip('/')
+            article_res = robust_request(url)
+            if not article_res:
+                continue
+            try:
+                article_soup = BeautifulSoup(article_res.text, "html.parser")
+                title = article_soup.select_one("h1").text.strip() if article_soup.select_one("h1") else ""
+                body = " ".join([p.text for p in article_soup.select(".details-content p, .news-details p")])
+                articles.append({
+                    "title": title,
+                    "description": body,
+                    "url": url,
+                    "published_date": datetime.now().date(),
+                    "source": "janakantha"
+                })
+            except Exception as e:
+                print(f"Error scraping Janakantha article: {e}")
+    except Exception as e:
+        print(f"Error scraping Janakantha homepage: {e}")
+    return articles
+
+def scrape_inqilab():
+    articles = []
+    try:
+        homepage = "https://dailyinqilab.com/"
+        res = robust_request(homepage)
+        if not res:
+            return articles
+        soup = BeautifulSoup(res.text, "html.parser")
+        for link in soup.select(".lead-news a, .main-news a, .title a"):
+            url = link.get('href')
+            if url and not url.startswith('http'):
+                url = homepage.rstrip('/') + '/' + url.lstrip('/')
+            article_res = robust_request(url)
+            if not article_res:
+                continue
+            try:
+                article_soup = BeautifulSoup(article_res.text, "html.parser")
+                title = article_soup.select_one("h1").text.strip() if article_soup.select_one("h1") else ""
+                body = " ".join([p.text for p in article_soup.select(".details-content p, .news-details p")])
+                articles.append({
+                    "title": title,
+                    "description": body,
+                    "url": url,
+                    "published_date": datetime.now().date(),
+                    "source": "inqilab"
+                })
+            except Exception as e:
+                print(f"Error scraping Inqilab article: {e}")
+    except Exception as e:
+        print(f"Error scraping Inqilab homepage: {e}")
+    return articles
+
+def scrape_sangbad():
+    articles = []
+    try:
+        homepage = "https://sangbad.net.bd/"
+        res = robust_request(homepage)
+        if not res:
+            return articles
+        soup = BeautifulSoup(res.text, "html.parser")
+        for link in soup.select(".lead-news a, .main-news a, .title a"):
+            url = link.get('href')
+            if url and not url.startswith('http'):
+                url = homepage.rstrip('/') + '/' + url.lstrip('/')
+            article_res = robust_request(url)
+            if not article_res:
+                continue
+            try:
+                article_soup = BeautifulSoup(article_res.text, "html.parser")
+                title = article_soup.select_one("h1").text.strip() if article_soup.select_one("h1") else ""
+                body = " ".join([p.text for p in article_soup.select(".details-content p, .news-details p")])
+                articles.append({
+                    "title": title,
+                    "description": body,
+                    "url": url,
+                    "published_date": datetime.now().date(),
+                    "source": "sangbad"
+                })
+            except Exception as e:
+                print(f"Error scraping Sangbad article: {e}")
+    except Exception as e:
+        print(f"Error scraping Sangbad homepage: {e}")
+    return articles
+
+def scrape_noya_diganta():
+    articles = []
+    try:
+        homepage = "https://www.dailynayadiganta.com/"
+        res = robust_request(homepage)
+        if not res:
+            return articles
+        soup = BeautifulSoup(res.text, "html.parser")
+        for link in soup.select(".lead-news a, .main-news a, .title a"):
+            url = link.get('href')
+            if url and not url.startswith('http'):
+                url = homepage.rstrip('/') + '/' + url.lstrip('/')
+            article_res = robust_request(url)
+            if not article_res:
+                continue
+            try:
+                article_soup = BeautifulSoup(article_res.text, "html.parser")
+                title = article_soup.select_one("h1").text.strip() if article_soup.select_one("h1") else ""
+                body = " ".join([p.text for p in article_soup.select(".details-content p, .news-details p")])
+                articles.append({
+                    "title": title,
+                    "description": body,
+                    "url": url,
+                    "published_date": datetime.now().date(),
+                    "source": "noya_diganta"
+                })
+            except Exception as e:
+                print(f"Error scraping Noya Diganta article: {e}")
+    except Exception as e:
+        print(f"Error scraping Noya Diganta homepage: {e}")
+    return articles
+
+def scrape_jai_jai_din():
+    articles = []
+    try:
+        homepage = "https://www.jaijaidinbd.com/"
+        res = robust_request(homepage)
+        if not res:
+            return articles
+        soup = BeautifulSoup(res.text, "html.parser")
+        for link in soup.select(".lead-news a, .main-news a, .title a"):
+            url = link.get('href')
+            if url and not url.startswith('http'):
+                url = homepage.rstrip('/') + '/' + url.lstrip('/')
+            article_res = robust_request(url)
+            if not article_res:
+                continue
+            try:
+                article_soup = BeautifulSoup(article_res.text, "html.parser")
+                title = article_soup.select_one("h1").text.strip() if article_soup.select_one("h1") else ""
+                body = " ".join([p.text for p in article_soup.select(".details-content p, .news-details p")])
+                articles.append({
+                    "title": title,
+                    "description": body,
+                    "url": url,
+                    "published_date": datetime.now().date(),
+                    "source": "jai_jai_din"
+                })
+            except Exception as e:
+                print(f"Error scraping Jai Jai Din article: {e}")
+    except Exception as e:
+        print(f"Error scraping Jai Jai Din homepage: {e}")
+    return articles
+
+def scrape_manobkantha():
+    articles = []
+    try:
+        homepage = "https://www.manobkantha.com.bd/"
+        res = robust_request(homepage)
+        if not res:
+            return articles
+        soup = BeautifulSoup(res.text, "html.parser")
+        for link in soup.select(".lead-news a, .main-news a, .title a"):
+            url = link.get('href')
+            if url and not url.startswith('http'):
+                url = homepage.rstrip('/') + '/' + url.lstrip('/')
+            article_res = robust_request(url)
+            if not article_res:
+                continue
+            try:
+                article_soup = BeautifulSoup(article_res.text, "html.parser")
+                title = article_soup.select_one("h1").text.strip() if article_soup.select_one("h1") else ""
+                body = " ".join([p.text for p in article_soup.select(".details-content p, .news-details p")])
+                articles.append({
+                    "title": title,
+                    "description": body,
+                    "url": url,
+                    "published_date": datetime.now().date(),
+                    "source": "manobkantha"
+                })
+            except Exception as e:
+                print(f"Error scraping Manobkantha article: {e}")
+    except Exception as e:
+        print(f"Error scraping Manobkantha homepage: {e}")
+    return articles
+
+def scrape_ajkaler_khobor():
+    articles = []
+    try:
+        homepage = "https://www.ajkalerkhobor.net/"
+        res = robust_request(homepage)
+        if not res:
+            return articles
+        soup = BeautifulSoup(res.text, "html.parser")
+        for link in soup.select(".lead-news a, .main-news a, .title a"):
+            url = link.get('href')
+            if url and not url.startswith('http'):
+                url = homepage.rstrip('/') + '/' + url.lstrip('/')
+            article_res = robust_request(url)
+            if not article_res:
+                continue
+            try:
+                article_soup = BeautifulSoup(article_res.text, "html.parser")
+                title = article_soup.select_one("h1").text.strip() if article_soup.select_one("h1") else ""
+                body = " ".join([p.text for p in article_soup.select(".details-content p, .news-details p")])
+                articles.append({
+                    "title": title,
+                    "description": body,
+                    "url": url,
+                    "published_date": datetime.now().date(),
+                    "source": "ajkaler_khobor"
+                })
+            except Exception as e:
+                print(f"Error scraping Ajkaler Khobor article: {e}")
+    except Exception as e:
+        print(f"Error scraping Ajkaler Khobor homepage: {e}")
+    return articles
+
+def scrape_ajker_patrika():
+    articles = []
+    try:
+        homepage = "https://www.ajkerpatrika.com/"
+        res = robust_request(homepage)
+        if not res:
+            return articles
+        soup = BeautifulSoup(res.text, "html.parser")
+        for link in soup.select(".lead-news a, .main-news a, .title a"):
+            url = link.get('href')
+            if url and not url.startswith('http'):
+                url = homepage.rstrip('/') + '/' + url.lstrip('/')
+            article_res = robust_request(url)
+            if not article_res:
+                continue
+            try:
+                article_soup = BeautifulSoup(article_res.text, "html.parser")
+                title = article_soup.select_one("h1").text.strip() if article_soup.select_one("h1") else ""
+                body = " ".join([p.text for p in article_soup.select(".details-content p, .news-details p")])
+                articles.append({
+                    "title": title,
+                    "description": body,
+                    "url": url,
+                    "published_date": datetime.now().date(),
+                    "source": "ajker_patrika"
+                })
+            except Exception as e:
+                print(f"Error scraping Ajker Patrika article: {e}")
+    except Exception as e:
+        print(f"Error scraping Ajker Patrika homepage: {e}")
+    return articles
+
+def scrape_protidiner_sangbad():
+    articles = []
+    try:
+        homepage = "https://www.protidinersangbad.com/"
+        res = robust_request(homepage)
+        if not res:
+            return articles
+        soup = BeautifulSoup(res.text, "html.parser")
+        for link in soup.select(".lead-news a, .main-news a, .title a"):
+            url = link.get('href')
+            if url and not url.startswith('http'):
+                url = homepage.rstrip('/') + '/' + url.lstrip('/')
+            article_res = robust_request(url)
+            if not article_res:
+                continue
+            try:
+                article_soup = BeautifulSoup(article_res.text, "html.parser")
+                title = article_soup.select_one("h1").text.strip() if article_soup.select_one("h1") else ""
+                body = " ".join([p.text for p in article_soup.select(".details-content p, .news-details p")])
+                articles.append({
+                    "title": title,
+                    "description": body,
+                    "url": url,
+                    "published_date": datetime.now().date(),
+                    "source": "protidiner_sangbad"
+                })
+            except Exception as e:
+                print(f"Error scraping Protidiner Sangbad article: {e}")
+    except Exception as e:
+        print(f"Error scraping Protidiner Sangbad homepage: {e}")
+    return articles
+
+def scrape_bangladesher_khabor():
+    articles = []
+    try:
+        homepage = "https://www.bangladesherkhabor.net/"
+        res = robust_request(homepage)
+        if not res:
+            return articles
+        soup = BeautifulSoup(res.text, "html.parser")
+        for link in soup.select(".lead-news a, .main-news a, .title a"):
+            url = link.get('href')
+            if url and not url.startswith('http'):
+                url = homepage.rstrip('/') + '/' + url.lstrip('/')
+            article_res = robust_request(url)
+            if not article_res:
+                continue
+            try:
+                article_soup = BeautifulSoup(article_res.text, "html.parser")
+                title = article_soup.select_one("h1").text.strip() if article_soup.select_one("h1") else ""
+                body = " ".join([p.text for p in article_soup.select(".details-content p, .news-details p")])
+                articles.append({
+                    "title": title,
+                    "description": body,
+                    "url": url,
+                    "published_date": datetime.now().date(),
+                    "source": "bangladesher_khabor"
+                })
+            except Exception as e:
+                print(f"Error scraping Bangladesher Khabor article: {e}")
+    except Exception as e:
+        print(f"Error scraping Bangladesher Khabor homepage: {e}")
+    return articles
+
+def scrape_bangladesh_journal():
+    articles = []
+    try:
+        homepage = "https://www.bd-journal.com/"
+        res = robust_request(homepage)
+        if not res:
+            return articles
+        soup = BeautifulSoup(res.text, "html.parser")
+        for link in soup.select(".lead-news a, .main-news a, .title a"):
+            url = link.get('href')
+            if url and not url.startswith('http'):
+                url = homepage.rstrip('/') + '/' + url.lstrip('/')
+            article_res = robust_request(url)
+            if not article_res:
+                continue
+            try:
+                article_soup = BeautifulSoup(article_res.text, "html.parser")
+                title = article_soup.select_one("h1").text.strip() if article_soup.select_one("h1") else ""
+                body = " ".join([p.text for p in article_soup.select(".details-content p, .news-details p")])
+                articles.append({
+                    "title": title,
+                    "description": body,
+                    "url": url,
+                    "published_date": datetime.now().date(),
+                    "source": "bangladesh_journal"
+                })
+            except Exception as e:
+                print(f"Error scraping Bangladesh Journal article: {e}")
+    except Exception as e:
+        print(f"Error scraping Bangladesh Journal homepage: {e}")
+    return articles
+
+# Update scrape_bengali_news to call all scrapers
+def scrape_bengali_news() -> List[Dict]:
+    """Scrape Bengali news from multiple sources (modular, only user-supplied sites)"""
+    articles = []
+    articles.extend(scrape_prothom_alo())
+    articles.extend(scrape_kaler_kantho())
+    articles.extend(scrape_jugantor())
+    articles.extend(scrape_ittefaq())
+    articles.extend(scrape_bd_pratidin())
+    articles.extend(scrape_manab_zamin())
+    articles.extend(scrape_samakal())
+    articles.extend(scrape_amader_shomoy())
+    articles.extend(scrape_janakantha())
+    articles.extend(scrape_inqilab())
+    articles.extend(scrape_sangbad())
+    articles.extend(scrape_noya_diganta())
+    articles.extend(scrape_jai_jai_din())
+    articles.extend(scrape_manobkantha())
+    articles.extend(scrape_ajkaler_khobor())
+    articles.extend(scrape_ajker_patrika())
+    articles.extend(scrape_protidiner_sangbad())
+    articles.extend(scrape_bangladesher_khabor())
+    articles.extend(scrape_bangladesh_journal())
     return articles
 
 def store_news(db: Session, articles: List[Dict]):
@@ -531,44 +1129,99 @@ def parse_news(articles: List[Dict]) -> str:
     return "\n".join(combined_texts)
 
 def generate_trending_word_candidates(db: Session, limit: int = 10) -> str:
-    """Generate trending word candidates using Groq AI"""
-    # Get recent articles
-    articles = fetch_news()
-    if not articles:
-        return "No articles available for analysis"
-    
-    # Parse articles
-    combined_text = parse_news(articles)
-    
-    # Use Groq for intelligent word extraction
+    """Generate trending word candidates using Groq AI, with pre-processing"""
     try:
-        client = Groq(api_key=os.environ.get("GROQ_API_KEY"))
-        
-        prompt = f"""
-নিচের বাংলা সংবাদের টেক্সট থেকে আজকের জন্য সবচেয়ে গুরুত্বপূর্ণ এবং trending {limit}টি শব্দ বা বাক্যাংশ খুঁজে বের করো।
+        articles = fetch_news()
+        if not articles:
+            msg = "No articles available for analysis"
+            print(msg)
+            return msg
 
-নিয়মাবলী:
-1. শব্দগুলি অবশ্যই অর্থপূর্ণ এবং গুরুত্বপূর্ণ হতে হবে
-2. সাধারণ stop words (যেমন: এই, সেই, করা, হওয়া) এড়িয়ে চলো
-3. ব্যক্তির নাম, স্থানের নাম, সংস্থার নাম অন্তর্ভুক্ত করতে পারো
-4. একক শব্দ বা ছোট বাক্যাংশ (২-৩ শব্দ) উভয়ই গ্রহণযোগ্য
-5. প্রতিটি শব্দ/বাক্যাংশ আলাদা লাইনে লেখো
-6. শুধুমাত্র বাংলা শব্দ/বাক্যাংশ দাও, অন্য কিছু নয়
+        # Pre-process: Clean, remove stopwords, NER, frequency, topic modeling
+        from app.services.advanced_bengali_nlp import TrendingBengaliAnalyzer
+        analyzer = TrendingBengaliAnalyzer()
+        print(f"  Fetched articles (count={len(articles)}):")
+        print("  Fetching content for every article URL.")
+        chrome_options = Options()
+        chrome_options.add_argument('--headless')
+        chrome_options.add_argument('--no-sandbox')
+        chrome_options.add_argument('--disable-dev-shm-usage')
+        driver = webdriver.Chrome(options=chrome_options)
+        for idx, a in enumerate(articles, 1):
+            if a.get('url'):
+                try:
+                    driver.get(a['url'])
+                    paragraphs = driver.find_elements(By.TAG_NAME, 'p')
+                    content = ' '.join([p.text for p in paragraphs if p.text.strip()])
+                    a['description'] = content[:2000]  # Always overwrite for completeness
+                    print(f"  Fetched content for article {idx} from {a['url']}")
+                except Exception as e:
+                    print(f"  Failed to fetch content for {a['url']}: {e}")
+            print(f"[{idx}] Title: {a.get('title', '')}\n    Desc: {a.get('description', '')}\n    URL: {a.get('url', '')}\n    Date: {a.get('published_date', '')}\n    Source: {a.get('source', '')}\n")
+        driver.quit()
+        texts = [f"{a.get('title', '')}। {a.get('description', '')}" for a in articles]
+        print(f"  Raw texts count: {len(texts)}")
 
-টেক্সট:
-{combined_text}
+        # Use analyzer's own methods for text processing
+        cleaned_texts = [analyzer.processor.normalize_text(t) for t in texts]
+        print(f"  Cleaned texts (first 2): {cleaned_texts[:2]}")
 
-trending শব্দ/বাক্যাংশ ({limit}টি):
-"""
-        
-        response = client.chat.completions.create(
-            messages=[{"role": "user", "content": prompt}],
-            model="llama-3.3-70b-versatile",
-            stream=False,
-        )
-        
-        return response.choices[0].message.content
-        
+        tokenized = [analyzer.processor.advanced_tokenize(t) for t in cleaned_texts]
+        # Remove stopwords using analyzer.processor.stop_words
+        no_stopwords = [[w for w in words if w not in analyzer.processor.stop_words] for words in tokenized]
+        print(f"  No stopwords (first 2): {no_stopwords[:2]}")
+        # Print a sample for stopword removal verification
+        if tokenized:
+            print(f"[STOPWORDS] Before: {tokenized[0][:20]}")
+            print(f"[STOPWORDS] After: {[w for w in tokenized[0] if w not in analyzer.processor.stop_words][:20]}")
+
+        # Frequency count
+        all_words = [w for words in no_stopwords for w in words]
+        freq_counter = Counter(all_words)
+        print(f"  Top 20 word frequencies: {freq_counter.most_common(20)}")
+
+        # NER (simple regex-based)
+        named_entities = set()
+        for words in no_stopwords:
+            for w in words:
+                if w and w[0].isupper():
+                    named_entities.add(w)
+        print(f"  Named Entities (sample): {list(named_entities)[:10]}")
+
+        #TODO Topic modeling (placeholder, real LDA etc. can be added)
+        bigrams = []
+        for words in no_stopwords:
+            bigrams.extend([' '.join(words[i:i+2]) for i in range(len(words)-1)])
+        bigram_counter = Counter(bigrams)
+        print(f"  Top 10 bigrams (topics): {bigram_counter.most_common(10)}")
+
+        # Prepare cleaned text for Groq (truncate to avoid token limit)
+        cleaned_for_groq = []
+        for words in no_stopwords[:15]:
+            cleaned_for_groq.append(' '.join(words)[:500])
+        combined_text = '\n'.join(cleaned_for_groq)
+        print(f"Combined cleaned text for Groq: {combined_text}")
+        # print(f"  Cleaned text sent to Groq (first 500 chars): {combined_text[:500]}")
+
+        try:
+            from groq import Groq
+            import os
+            api_key = os.environ.get("GROQ_API_KEY")
+            if not api_key:
+                raise ValueError("GROQ_API_KEY not set in environment.")
+            client = Groq(api_key=api_key)
+            prompt = f"""
+নিচের বাংলা সংবাদের টেক্সট থেকে আজকের জন্য সবচেয়ে গুরুত্বপূর্ণ এবং trending {limit}টি শব্দ বা বাক্যাংশ খুঁজে বের করো।\n\nনিয়মাবলী:\n1. শব্দগুলি অবশ্যই অর্থপূর্ণ এবং গুরুত্বপূর্ণ হতে হবে\n2. সাধারণ stop words (যেমন: এই, সেই, করা, হওয়া) এড়িয়ে চলো\n3. ব্যক্তির নাম, স্থানের নাম, সংস্থার নাম অন্তর্ভুক্ত করতে পারো\n4. একক শব্দ বা ছোট বাক্যাংশ (২-৩ শব্দ) উভয়ই গ্রহণযোগ্য\n5. প্রতিটি শব্দ/বাক্যাংশ আলাদা লাইনে লেখো\n6. শুধুমাত্র বাংলা শব্দ/বাক্যাংশ দাও, অন্য কিছু নয়\n\nটেক্সট:\n{combined_text}\n\ntrending শব্দ/বাক্যাংশ ({limit}টি):\n"""
+            response = client.chat.completions.create(
+                messages=[{"role": "user", "content": prompt}],
+                model="llama-3.3-70b-versatile",
+                stream=False,
+            )
+            print(f"  Groq response: {response.choices[0].message.content}")
+            return response.choices[0].message.content
+        except Exception as e:
+            print(f"Error generating trending words with Groq: {e}")
+            return f"Error generating trending words: {e}"
     except Exception as e:
-        print(f"Error generating trending words with Groq: {e}")
-        return "Error generating trending words"
+        print(f"[ERROR] generate_trending_word_candidates: {e}")
+        return f"Error in trending word candidate generation: {e}"

@@ -45,6 +45,26 @@ This project is a full-stack system for extracting, analyzing, and visualizing t
 - `POST /set_word_of_the_day?word=...` — Set the word/phrase of the day
 - `GET /api/v2/trending-phrases` — Get trending phrases with filters (date, type, source)
 
+## Troubleshooting & Error Handling
+
+- **Social Media Scraping Disabled:**
+  - By default, social media scraping is disabled for safety. To enable, set `ENABLE_SOCIAL_MEDIA_SCRAPING = True` in `app/services/social_media_scraper.py`.
+  - If disabled, the backend and frontend will show info messages, not errors.
+
+- **Groq API Key Required:**
+  - Make sure you have a valid `GROQ_API_KEY` in your `.env` file for AI-powered trending word extraction.
+  - If missing, the backend will return a clear error message.
+
+- **News Scraping Issues:**
+  - If a news site changes its structure, scraping may fail for that site. Check backend logs for details.
+  - The system will still work if at least some scrapers succeed.
+
+- **Frontend Error Messages:**
+  - The frontend will now display backend error details if available, making debugging easier.
+
+- **General Debugging:**
+  - Check backend logs for `[ERROR]` or `[INFO]` messages.
+  - If you see a 500 error, the backend will include a traceback in the error detail for easier diagnosis.
 
 ## Acknowledgements
 - Bengali NLP: [NLTK](https://www.nltk.org/), [scikit-learn](https://scikit-learn.org/)

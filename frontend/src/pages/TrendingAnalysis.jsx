@@ -80,7 +80,11 @@ function TrendingAnalysis() {
       const response = await apiV2.getTrendingPhrases(filters);
       setTrendingData(response.data);
     } catch (err) {
-      setError('ট্রেন্ডিং ডেটা লোড করতে ব্যর্থ');
+      let msg = 'ট্রেন্ডিং ডেটা লোড করতে ব্যর্থ';
+      if (err.response && err.response.data && err.response.data.detail) {
+        msg += `: ${err.response.data.detail}`;
+      }
+      setError(msg);
       console.error('Trending data error:', err);
     } finally {
       setLoading(false);
@@ -93,7 +97,11 @@ function TrendingAnalysis() {
       const response = await apiV2.getDailyTrending(filters.end_date);
       setDailyData(response.data);
     } catch (err) {
-      setError('দৈনিক ডেটা লোড করতে ব্যর্থ');
+      let msg = 'দৈনিক ডেটা লোড করতে ব্যর্থ';
+      if (err.response && err.response.data && err.response.data.detail) {
+        msg += `: ${err.response.data.detail}`;
+      }
+      setError(msg);
       console.error('Daily data error:', err);
     } finally {
       setLoading(false);
@@ -106,7 +114,11 @@ function TrendingAnalysis() {
       const response = await apiV2.getStats();
       setStats(response.data);
     } catch (err) {
-      setError('পরিসংখ্যান লোড করতে ব্যর্থ');
+      let msg = 'পরিসংখ্যান লোড করতে ব্যর্থ';
+      if (err.response && err.response.data && err.response.data.detail) {
+        msg += `: ${err.response.data.detail}`;
+      }
+      setError(msg);
       console.error('Stats error:', err);
     } finally {
       setLoading(false);

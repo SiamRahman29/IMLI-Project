@@ -52,7 +52,9 @@ def generate_candidates(db: Session = Depends(get_db)):
             "note": "Check /trending-phrases endpoint for detailed analysis"
         }
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error generating candidates: {str(e)}")
+        import traceback
+        detail = f"Error generating candidates: {str(e)}\n{traceback.format_exc()}"
+        raise HTTPException(status_code=500, detail=detail)
 
 @router.get("/trending-phrases", summary="Get trending phrases for a specific date range")
 def get_trending_phrases(

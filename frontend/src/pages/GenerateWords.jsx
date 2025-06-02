@@ -39,13 +39,13 @@ function GenerateWords() {
       setAnalysisComplete(true);
       setAiCandidates(response.data.ai_candidates || 'কোনো AI প্রার্থী পাওয়া যায়নি');
     } catch (err) {
-      if (err.code === "ECONNABORTED") {
-        setError('অনুরোধের সময় শেষ হয়েছে (timeout)। অনুগ্রহ করে কিছুক্ষণ পর আবার চেষ্টা করুন।');
-      } else if (err.response && err.response.data && err.response.data.detail) {
-        setError(`সার্ভার ত্রুটি: ${err.response.data.detail}`);
-      } else {
-        setError('বিশ্লেষণে ত্রুটি হয়েছে। পুনরায় চেষ্টা করুন।');
+      let msg = 'বিশ্লেষণ চালাতে ব্যর্থ';
+      if (err.response && err.response.data && err.response.data.detail) {
+        msg += `: ${err.response.data.detail}`;
       }
+      setError(msg);
+      setAnalysisComplete(false);
+      setAiCandidates('');
       console.error('Analysis error:', err);
     } finally {
       setLoading(false);
