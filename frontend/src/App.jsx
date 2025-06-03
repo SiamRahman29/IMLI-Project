@@ -38,7 +38,7 @@ function Navigation() {
     <AppBar position="static">
       <Toolbar>
         <Typography variant="h6" component="div" sx={{ flexGrow: 1 }}>
-          বার্তা - ইমলি
+          BARTA - IMLI
         </Typography>
         <Button 
           color="inherit" 

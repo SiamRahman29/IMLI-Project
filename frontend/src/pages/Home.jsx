@@ -56,7 +56,7 @@ function Home() {
     <Container maxWidth="lg" sx={{ mt: 4 }}>
       <Box textAlign="center" mb={4}>
         <Typography variant="h2" component="h1" gutterBottom sx={{ fontWeight: 'bold' }}>
-          বার্তা - ইমলি
+          BARTA - IMLI
         </Typography>
         <Typography variant="h5" color="text.secondary" gutterBottom>
           বাংলা ট্রেন্ডিং শব্দ বিশ্লেষণ সিস্টেম
