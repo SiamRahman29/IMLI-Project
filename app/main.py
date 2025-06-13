@@ -3,6 +3,7 @@ from fastapi import FastAPI
 from app.routes import routes
 from app.routes import routes_new
 from fastapi.middleware.cors import CORSMiddleware
+import os
 
 
 
@@ -19,6 +20,9 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Print the GROQ_API_KEY value at startup for debugging when running the server
+print('GROQ_API_KEY:', os.environ.get('GROQ_API_KEY'))
 
 # Include routes
 app.include_router(routes.router, tags=["Legacy"])

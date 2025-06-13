@@ -3,3 +3,5 @@
 __pycache__/
 
 words.db
+settings.json
+*.pyc

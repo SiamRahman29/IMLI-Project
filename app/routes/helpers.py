@@ -20,6 +20,7 @@ from app.services.social_media_scraper import scrape_social_media_content
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.common.by import By
+from app.services.text_preprocessing import get_google_trends_bangladesh, get_youtube_trending_bangladesh
 
 load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), '../../.env'))
 
@@ -82,7 +83,7 @@ BENGALI_STOP_WORDS = {
     'তিন', 'তিনি', 'তিনিও', 'তীক্ষ্ন', 'তুমি', 'তুলে', 'তেমন', 'তৈরীর', 'তো', 'তোমার', 'তোলে', 'থাকবে',
     'থাকবেন', 'থাকা', 'থাকায়', 'থাকায়', 'থাকে', 'থাকেন', 'থেকে', 'থেকেই', 'থেকেও', 'দরকারী', 'দলবদ্ধ',
     'দান', 'দিকে', 'দিতে', 'দিন', 'দিয়ে', 'দিয়েছে', 'দিয়েছেন', 'দিলেন', 'দিয়ে', 'দিয়েছে', 'দিয়েছেন',
-    'দু', 'দুই', 'দুটি', 'দুটো', 'দূরে', 'দেওয়ার', 'দেওয়া', 'দেওয়ার', 'দেখতে', 'দেখা', 'দেখাচ্ছে',
+    'দু', 'দুই', 'দুটি', 'দুটো', 'দূরে', 'দেওয়ার', 'দেওয়া', 'দেওয়ার', 'দেখতে', 'দেখা', 'দেখাচ্ছে',
     'দেখিয়েছেন', 'দেখে', 'দেখেন', 'দেন', 'দেয়', 'দেয়', 'দ্বারা', 'দ্বিগুণ', 'দ্বিতীয়', 'দ্য', 'ধরা',
     'ধরে', 'ধামার', 'নতুন', 'নব্বই', 'নয়', 'নাই', 'নাকি', 'নাগাদ', 'নানা', 'নাম', 'নিচে', 'নিছক',
     'নিজে', 'নিজেই', 'নিজেকে', 'নিজেদের', 'নিজেদেরকে', 'নিজের', 'নিতে', 'নিদিষ্ট', 'নিম্নাভিমুখে',
@@ -1129,99 +1130,110 @@ def parse_news(articles: List[Dict]) -> str:
     return "\n".join(combined_texts)
 
 def generate_trending_word_candidates(db: Session, limit: int = 10) -> str:
-    """Generate trending word candidates using Groq AI, with pre-processing"""
+    """Generate trending word candidates using both Groq AI and full Bengali analyzer pipeline (with debug output)"""
+    # Fetch news articles (existing)
+    articles = fetch_news() or []
+    # Keep your custom scraping extension
+    articles.extend(scrape_jai_jai_din())
+    # Selenium-based full-article scraping for each news article
+    from selenium import webdriver
+    from selenium.webdriver.chrome.options import Options
+    from selenium.webdriver.common.by import By
+    chrome_options = Options()
+    chrome_options.add_argument('--headless')
+    chrome_options.add_argument('--no-sandbox')
+    chrome_options.add_argument('--disable-dev-shm-usage')
+    driver = webdriver.Chrome(options=chrome_options)
+    for idx, a in enumerate(articles, 1):
+        if a.get('url'):
+            try:
+                driver.get(a['url'])
+                paragraphs = driver.find_elements(By.TAG_NAME, 'p')
+                content = ' '.join([p.text for p in paragraphs if p.text.strip()])
+                a['description'] = content[:2000]  # Always overwrite for completeness
+                print(f"Fetched content for article {idx} from {a['url']}")
+            except Exception as e:
+                print(f"Failed to fetch content for {a['url']}: {e}")
+        print(f"[{idx}] Title: {a.get('title', '')}\n    Desc: {a.get('description', '')}\n    URL: {a.get('url', '')}\n    Date: {a.get('published_date', '')}\n    Source: {a.get('source', '')}\n")
+    driver.quit()
+    # Fetch Google Trends
+    google_trends = get_google_trends_bangladesh()
+    # Fetch YouTube trending
+    youtube_trends = get_youtube_trending_bangladesh()
+    # Combine all sources for AI
+    texts = [f"{a.get('title', '')}। {a.get('description', '')}" for a in articles]
+    texts.extend([' '.join(words) for words in google_trends if words])
+    texts.extend([' '.join(words) for words in youtube_trends if words])
+    if not texts:
+        msg = "No articles or trends available for analysis"
+        print(msg)
+        return msg
+    # --- AI Response (Groq) ---
+    from app.services.advanced_bengali_nlp import TrendingBengaliAnalyzer
+    analyzer = TrendingBengaliAnalyzer()
+    cleaned_texts = [analyzer.processor.normalize_text(t) for t in texts]
+    tokenized = [analyzer.processor.advanced_tokenize(t) for t in cleaned_texts]
+    no_stopwords = [[w for w in words if w not in analyzer.processor.stop_words] for words in tokenized]
+    cleaned_for_groq = []
+    for words in no_stopwords[:15]:
+        cleaned_for_groq.append(' '.join(words)[:500])
+    combined_text = '\n'.join(cleaned_for_groq)
+    ai_response = None
     try:
-        articles = fetch_news()
-        if not articles:
-            msg = "No articles available for analysis"
-            print(msg)
-            return msg
+        from groq import Groq
+        api_key = os.environ.get("GROQ_API_KEY")
+        if not api_key:
+            raise ValueError("GROQ_API_KEY not set in environment.")
+        client = Groq(api_key=api_key)
+        prompt = f"""
+            নিচের বাংলা সংবাদের টেক্সট, গুগল ট্রেন্ডস ও ইউটিউব ট্রেন্ডিং থেকে আজকের জন্য সবচেয়ে গুরুত্বপূর্ণ এবং trending {limit}টি শব্দ বা বাক্যাংশ খুঁজে বের করো।
+            নিয়মাবলী:
+            1. শব্দগুলি অবশ্যই অর্থপূর্ণ, গুরুত্বপূর্ণ, trending এবং 'thematic' (বিষয়বস্তুর সাথে সম্পর্কিত) হতে হবে
+            2. সাধারণ stop words (যেমন: এই, সেই, করা, হওয়া) এড়িয়ে চলো
+            3. কোনো ব্যক্তির নাম (person name) একদমই দিও না
+            4. একক শব্দ বা ছোট বাক্যাংশ (২-৩ শব্দ) উভয়ই গ্রহণযোগ্য
+            5. প্রতিটি শব্দ/বাক্যাংশ আলাদা লাইনে লেখো
+            6. শুধুমাত্র বাংলা শব্দ/বাক্যাংশ দাও, অন্য কিছু নয়
 
-        # Pre-process: Clean, remove stopwords, NER, frequency, topic modeling
-        from app.services.advanced_bengali_nlp import TrendingBengaliAnalyzer
-        analyzer = TrendingBengaliAnalyzer()
-        print(f"  Fetched articles (count={len(articles)}):")
-        print("  Fetching content for every article URL.")
-        chrome_options = Options()
-        chrome_options.add_argument('--headless')
-        chrome_options.add_argument('--no-sandbox')
-        chrome_options.add_argument('--disable-dev-shm-usage')
-        driver = webdriver.Chrome(options=chrome_options)
-        for idx, a in enumerate(articles, 1):
-            if a.get('url'):
-                try:
-                    driver.get(a['url'])
-                    paragraphs = driver.find_elements(By.TAG_NAME, 'p')
-                    content = ' '.join([p.text for p in paragraphs if p.text.strip()])
-                    a['description'] = content[:2000]  # Always overwrite for completeness
-                    print(f"  Fetched content for article {idx} from {a['url']}")
-                except Exception as e:
-                    print(f"  Failed to fetch content for {a['url']}: {e}")
-            print(f"[{idx}] Title: {a.get('title', '')}\n    Desc: {a.get('description', '')}\n    URL: {a.get('url', '')}\n    Date: {a.get('published_date', '')}\n    Source: {a.get('source', '')}\n")
-        driver.quit()
-        texts = [f"{a.get('title', '')}। {a.get('description', '')}" for a in articles]
-        print(f"  Raw texts count: {len(texts)}")
+            টেক্সট:
+            {combined_text}
 
-        # Use analyzer's own methods for text processing
-        cleaned_texts = [analyzer.processor.normalize_text(t) for t in texts]
-        print(f"  Cleaned texts (first 2): {cleaned_texts[:2]}")
-
-        tokenized = [analyzer.processor.advanced_tokenize(t) for t in cleaned_texts]
-        # Remove stopwords using analyzer.processor.stop_words
-        no_stopwords = [[w for w in words if w not in analyzer.processor.stop_words] for words in tokenized]
-        print(f"  No stopwords (first 2): {no_stopwords[:2]}")
-        # Print a sample for stopword removal verification
-        if tokenized:
-            print(f"[STOPWORDS] Before: {tokenized[0][:20]}")
-            print(f"[STOPWORDS] After: {[w for w in tokenized[0] if w not in analyzer.processor.stop_words][:20]}")
-
-        # Frequency count
-        all_words = [w for words in no_stopwords for w in words]
-        freq_counter = Counter(all_words)
-        print(f"  Top 20 word frequencies: {freq_counter.most_common(20)}")
-
-        # NER (simple regex-based)
-        named_entities = set()
-        for words in no_stopwords:
-            for w in words:
-                if w and w[0].isupper():
-                    named_entities.add(w)
-        print(f"  Named Entities (sample): {list(named_entities)[:10]}")
-
-        #TODO Topic modeling (placeholder, real LDA etc. can be added)
-        bigrams = []
-        for words in no_stopwords:
-            bigrams.extend([' '.join(words[i:i+2]) for i in range(len(words)-1)])
-        bigram_counter = Counter(bigrams)
-        print(f"  Top 10 bigrams (topics): {bigram_counter.most_common(10)}")
-
-        # Prepare cleaned text for Groq (truncate to avoid token limit)
-        cleaned_for_groq = []
-        for words in no_stopwords[:15]:
-            cleaned_for_groq.append(' '.join(words)[:500])
-        combined_text = '\n'.join(cleaned_for_groq)
-        print(f"Combined cleaned text for Groq: {combined_text}")
-        # print(f"  Cleaned text sent to Groq (first 500 chars): {combined_text[:500]}")
-
-        try:
-            from groq import Groq
-            import os
-            api_key = os.environ.get("GROQ_API_KEY")
-            if not api_key:
-                raise ValueError("GROQ_API_KEY not set in environment.")
-            client = Groq(api_key=api_key)
-            prompt = f"""
-নিচের বাংলা সংবাদের টেক্সট থেকে আজকের জন্য সবচেয়ে গুরুত্বপূর্ণ এবং trending {limit}টি শব্দ বা বাক্যাংশ খুঁজে বের করো।\n\nনিয়মাবলী:\n1. শব্দগুলি অবশ্যই অর্থপূর্ণ এবং গুরুত্বপূর্ণ হতে হবে\n2. সাধারণ stop words (যেমন: এই, সেই, করা, হওয়া) এড়িয়ে চলো\n4. একক শব্দ বা ছোট বাক্যাংশ (২-৩ শব্দ) উভয়ই গ্রহণযোগ্য\n5. প্রতিটি শব্দ/বাক্যাংশ আলাদা লাইনে লেখো\n6. শুধুমাত্র বাংলা শব্দ/বাক্যাংশ দাও, অন্য কিছু নয়\n\nটেক্সট:\n{combined_text}\n\ntrending শব্দ/বাক্যাংশ ({limit}টি):\n"""
-            response = client.chat.completions.create(
-                messages=[{"role": "user", "content": prompt}],
-                model="llama-3.3-70b-versatile",
-                stream=False,
-            )
-            print(f"  Groq response: {response.choices[0].message.content}")
-            return response.choices[0].message.content
-        except Exception as e:
-            print(f"Error generating trending words with Groq: {e}")
-            return f"Error generating trending words: {e}"
+            trending শব্দ/বাক্যাংশ ({limit}টি):
+            """
+        response = client.chat.completions.create(
+            messages=[{"role": "user", "content": prompt}],
+            model="llama-3.1-8b-instant",
+            # model="llama-3.3-70b-versatile",
+            stream=False,
+        )
+        ai_response = response.choices[0].message.content
+        print(f"  Groq response: {ai_response}")
     except Exception as e:
-        print(f"[ERROR] generate_trending_word_candidates: {e}")
-        return f"Error in trending word candidate generation: {e}"
+        print(f"Error generating trending words with Groq: {e}")
+        ai_response = f"Error generating trending words: {e}"
+    # --- Analyzer Response ---
+    analyzer_inputs = []
+    for a in articles:
+        analyzer_inputs.append({
+            'title': a.get('title', ''),
+            'description': a.get('description', ''),
+            'source': a.get('source', 'news')
+        })
+    for trend in google_trends:
+        analyzer_inputs.append({'title': ' '.join(trend), 'description': '', 'source': 'google_trends'})
+    for trend in youtube_trends:
+        analyzer_inputs.append({'title': ' '.join(trend), 'description': '', 'source': 'youtube_trends'})
+    analyzer_response = analyzer.analyze_trending_content(analyzer_inputs, source_type='mixed')
+    summary = []
+    summary.append("Trending Keywords (Top 10):")
+    for keyword, score in analyzer_response['trending_keywords'][:10]:
+        summary.append(f"  {keyword}: {score:.4f}")
+    summary.append("\nNamed Entities:")
+    for entity_type, entities in analyzer_response['named_entities'].items():
+        if entities:
+            summary.append(f"  {entity_type}: {entities[:5]}")
+    summary.append(f"\nSentiment: {analyzer_response['sentiment_analysis']}")
+    summary.append(f"\nStatistics: {analyzer_response['content_statistics']}")
+    # --- Output both ---
+    # return f"=== AI Response (Groq LLM) ===\n{ai_response}\n\n=== Analyzer Response (TrendingBengaliAnalyzer) ===\n" + '\n'.join(summary)
+    return ai_response
