@@ -124,49 +124,46 @@ BENGALI_STOP_WORDS = {
 class BengaliTextProcessor:
     def __init__(self):
         self.stop_words = BENGALI_STOP_WORDS
-        
+
     def clean_text(self, text: str) -> str:
         """Clean and normalize Bengali text"""
         if not text:
             return ""
-            
         # Remove HTML tags
         text = BeautifulSoup(text, 'html.parser').get_text()
-        
         # Remove URLs
         text = re.sub(r'http\S+|www\S+|https\S+', '', text, flags=re.MULTILINE)
-        
         # Remove email addresses
         text = re.sub(r'\S+@\S+', '', text)
-        
         # Remove special characters but keep Bengali characters
         text = re.sub(r'[^\u0980-\u09FF\s\u0964\u0965]', ' ', text)
-        
         # Remove extra whitespace
         text = re.sub(r'\s+', ' ', text).strip()
-        
         return text
-    
+
     def tokenize_sentences(self, text: str) -> List[str]:
         """Tokenize text into sentences"""
-        # Bengali sentence endings
         sentences = re.split(r'[।!?]', text)
-        return [sent.strip() for sent in sentences if sent.strip()]
-    
+        sentences = [sent.strip() for sent in sentences if sent.strip()]
+        return sentences
+
     def tokenize_words(self, text: str) -> List[str]:
         """Tokenize text into words"""
-        words = re.findall(r'\b[\u0980-\u09FF]+\b', text)
-        return [word for word in words if len(word) > 1]  # Filter single characters
-    
+        words = re.findall(r'[\u0980-\u09FF]+', text)
+        filtered_words = [word for word in words if len(word) > 1]  # Filter single characters
+        return filtered_words
+
     def remove_stop_words(self, words: List[str]) -> List[str]:
         """Remove Bengali stop words"""
-        return [word for word in words if word not in self.stop_words]
-    
+        filtered_words = [word for word in words if word not in self.stop_words]
+        return filtered_words
+
     def generate_ngrams(self, words: List[str], n: int) -> List[str]:
         """Generate n-grams from word list"""
         if len(words) < n:
             return []
-        return [' '.join(words[i:i+n]) for i in range(len(words) - n + 1)]
+        ngrams = [' '.join(words[i:i+n]) for i in range(len(words) - n + 1)]
+        return ngrams
 
 class TrendingAnalyzer:
     def __init__(self):
