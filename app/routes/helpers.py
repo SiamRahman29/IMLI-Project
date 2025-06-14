@@ -304,11 +304,8 @@ def get_trending_words(db: Session):
     social_media_posts = []
     # Combine all content
     all_content = news_articles + social_media_posts
-    
     if not all_content:
-        print("No content fetched, skipping analysis")
-        return
-    
+        return []
     # Store articles and posts in database
     print("Storing content in the database...")
     store_news(db, news_articles)
@@ -318,16 +315,13 @@ def get_trending_words(db: Session):
     # Analyze trending phrases for each source separately
     print("Analyzing trending phrases...")
     analyzer = TrendingAnalyzer()
-    
     today = date.today()
-    
     # Clear existing data for today
     db.query(TrendingPhrase).filter(TrendingPhrase.date == today).delete()
-    
     # Analyze news content
     if news_articles:
+        # Use heading instead of description
         analyze_and_store_trends(db, analyzer, news_articles, 'news', today)
-    
     # Analyze social media content  
     if social_media_posts:
         analyze_and_store_trends(db, analyzer, social_media_posts, 'social_media', today)
@@ -338,16 +332,14 @@ def get_trending_words(db: Session):
 def analyze_and_store_trends(db: Session, analyzer: TrendingAnalyzer, 
                            content: List[Dict], source: str, target_date: date):
     """Analyze trends for a specific content source and store in database"""
-    
     # Prepare text data
     texts = []
     for item in content:
-        if source == 'news':
-            combined_text = f"{item.get('title', '')} {item.get('description', '')}"
-        else:  # social_media
-            combined_text = item.get('content', '')
-        texts.append(combined_text)
-    
+        # Use heading instead of description
+        if item.get('heading'):
+            texts.append(item['heading'])
+        elif item.get('title'):
+            texts.append(item['title'])
     if not texts:
         return
     
@@ -471,13 +463,26 @@ def scrape_prothom_alo():
         feed_url = "https://www.prothomalo.com/feed/"
         feed = feedparser.parse(feed_url)
         for entry in feed.entries[:10]:
-            articles.append({
-                'title': entry.get('title', ''),
-                'description': entry.get('summary', ''),
-                'url': entry.get('link', ''),
-                'published_date': datetime.now().date(),
-                'source': 'prothom_alo'
-            })
+            url = entry.get('link', '')
+            try:
+                res = robust_request(url)
+                if not res:
+                    continue
+                soup = BeautifulSoup(res.text, "html.parser")
+                headings = []
+                for tag in soup.find_all(['h1', 'h2']):
+                    if tag.text.strip():
+                        headings.append(tag.text.strip())
+                heading_text = ' '.join(headings)
+                articles.append({
+                    'title': headings[0] if headings else entry.get('title', ''),
+                    'heading': heading_text,
+                    'url': url,
+                    'published_date': datetime.now().date(),
+                    'source': 'prothom_alo'
+                })
+            except Exception as e:
+                print(f"Error scraping Prothom Alo article: {e}")
     except Exception as e:
         print(f"Error scraping Prothom Alo: {e}")
     return articles
@@ -499,18 +504,19 @@ def scrape_jugantor():
         soup = BeautifulSoup(res.text, "html.parser")
         for link in soup.select(".lead-news a, .lead-news-title a"):
             url = link.get('href')
-            if not url.startswith('http'):
+            if url and not url.startswith('http'):
                 url = homepage.rstrip('/') + '/' + url.lstrip('/')
+            article_res = robust_request(url)
+            if not article_res:
+                continue
             try:
-                article_res = robust_request(url)
-                if not article_res:
-                    continue
                 article_soup = BeautifulSoup(article_res.text, "html.parser")
-                title = article_soup.select_one("h1").text.strip() if article_soup.select_one("h1") else ""
-                body = " ".join([p.text for p in article_soup.select(".news-details p")])
+                headings = [tag.text.strip() for tag in article_soup.find_all(['h1', 'h2']) if tag.text.strip()]
+                heading_text = ' '.join(headings)
+                print(f"[scrape_jugantor] url: {url}\n  headings: {headings}")
                 articles.append({
-                    "title": title,
-                    "description": body,
+                    "title": headings[0] if headings else "",
+                    "heading": heading_text,
                     "url": url,
                     "published_date": datetime.now().date(),
                     "source": "jugantor"
@@ -538,11 +544,12 @@ def scrape_kaler_kantho():
                 continue
             try:
                 article_soup = BeautifulSoup(article_res.text, "html.parser")
-                title = article_soup.select_one("h1").text.strip() if article_soup.select_one("h1") else ""
-                body = " ".join([p.text for p in article_soup.select(".details p")])
+                headings = [tag.text.strip() for tag in article_soup.find_all(['h1', 'h2']) if tag.text.strip()]
+                heading_text = ' '.join(headings)
+                print(f"[scrape_kaler_kantho] url: {url}\n  headings: {headings}")
                 articles.append({
-                    "title": title,
-                    "description": body,
+                    "title": headings[0] if headings else "",
+                    "heading": heading_text,
                     "url": url,
                     "published_date": datetime.now().date(),
                     "source": "kaler_kantho"
@@ -570,11 +577,12 @@ def scrape_ittefaq():
                 continue
             try:
                 article_soup = BeautifulSoup(article_res.text, "html.parser")
-                title = article_soup.select_one("h1").text.strip() if article_soup.select_one("h1") else ""
-                body = " ".join([p.text for p in article_soup.select(".details-content p")])
+                headings = [tag.text.strip() for tag in article_soup.find_all(['h1', 'h2']) if tag.text.strip()]
+                heading_text = ' '.join(headings)
+                print(f"[scrape_ittefaq] url: {url}\n  headings: {headings}")
                 articles.append({
-                    "title": title,
-                    "description": body,
+                    "title": headings[0] if headings else "",
+                    "heading": heading_text,
                     "url": url,
                     "published_date": datetime.now().date(),
                     "source": "ittefaq"
@@ -602,11 +610,12 @@ def scrape_bd_pratidin():
                 continue
             try:
                 article_soup = BeautifulSoup(article_res.text, "html.parser")
-                title = article_soup.select_one("h1").text.strip() if article_soup.select_one("h1") else ""
-                body = " ".join([p.text for p in article_soup.select(".details-content p")])
+                headings = [tag.text.strip() for tag in article_soup.find_all(['h1', 'h2']) if tag.text.strip()]
+                heading_text = ' '.join(headings)
+                print(f"[scrape_bd_pratidin] url: {url}\n  headings: {headings}")
                 articles.append({
-                    "title": title,
-                    "description": body,
+                    "title": headings[0] if headings else "",
+                    "heading": heading_text,
                     "url": url,
                     "published_date": datetime.now().date(),
                     "source": "bd_pratidin"
@@ -634,11 +643,12 @@ def scrape_manab_zamin():
                 continue
             try:
                 article_soup = BeautifulSoup(article_res.text, "html.parser")
-                title = article_soup.select_one("h1").text.strip() if article_soup.select_one("h1") else ""
-                body = " ".join([p.text for p in article_soup.select(".details-content p, .news-details p")])
+                headings = [tag.text.strip() for tag in article_soup.find_all(['h1', 'h2']) if tag.text.strip()]
+                heading_text = ' '.join(headings)
+                print(f"[scrape_manab_zamin] url: {url}\n  headings: {headings}")
                 articles.append({
-                    "title": title,
-                    "description": body,
+                    "title": headings[0] if headings else "",
+                    "heading": heading_text,
                     "url": url,
                     "published_date": datetime.now().date(),
                     "source": "manab_zamin"
@@ -666,11 +676,12 @@ def scrape_samakal():
                 continue
             try:
                 article_soup = BeautifulSoup(article_res.text, "html.parser")
-                title = article_soup.select_one("h1").text.strip() if article_soup.select_one("h1") else ""
-                body = " ".join([p.text for p in article_soup.select(".details-content p, .news-details p")])
+                headings = [tag.text.strip() for tag in article_soup.find_all(['h1', 'h2']) if tag.text.strip()]
+                heading_text = ' '.join(headings)
+                print(f"[scrape_samakal] url: {url}\n  headings: {headings}")
                 articles.append({
-                    "title": title,
-                    "description": body,
+                    "title": headings[0] if headings else "",
+                    "heading": heading_text,
                     "url": url,
                     "published_date": datetime.now().date(),
                     "source": "samakal"
@@ -698,11 +709,12 @@ def scrape_amader_shomoy():
                 continue
             try:
                 article_soup = BeautifulSoup(article_res.text, "html.parser")
-                title = article_soup.select_one("h1").text.strip() if article_soup.select_one("h1") else ""
-                body = " ".join([p.text for p in article_soup.select(".details-content p, .news-details p")])
+                headings = [tag.text.strip() for tag in article_soup.find_all(['h1', 'h2']) if tag.text.strip()]
+                heading_text = ' '.join(headings)
+                print(f"[scrape_amader_shomoy] url: {url}\n  headings: {headings}")
                 articles.append({
-                    "title": title,
-                    "description": body,
+                    "title": headings[0] if headings else "",
+                    "heading": heading_text,
                     "url": url,
                     "published_date": datetime.now().date(),
                     "source": "amader_shomoy"
@@ -730,11 +742,12 @@ def scrape_janakantha():
                 continue
             try:
                 article_soup = BeautifulSoup(article_res.text, "html.parser")
-                title = article_soup.select_one("h1").text.strip() if article_soup.select_one("h1") else ""
-                body = " ".join([p.text for p in article_soup.select(".details-content p, .news-details p")])
+                headings = [tag.text.strip() for tag in article_soup.find_all(['h1', 'h2']) if tag.text.strip()]
+                heading_text = ' '.join(headings)
+                print(f"[scrape_janakantha] url: {url}\n  headings: {headings}")
                 articles.append({
-                    "title": title,
-                    "description": body,
+                    "title": headings[0] if headings else "",
+                    "heading": heading_text,
                     "url": url,
                     "published_date": datetime.now().date(),
                     "source": "janakantha"
@@ -762,11 +775,12 @@ def scrape_inqilab():
                 continue
             try:
                 article_soup = BeautifulSoup(article_res.text, "html.parser")
-                title = article_soup.select_one("h1").text.strip() if article_soup.select_one("h1") else ""
-                body = " ".join([p.text for p in article_soup.select(".details-content p, .news-details p")])
+                headings = [tag.text.strip() for tag in article_soup.find_all(['h1', 'h2']) if tag.text.strip()]
+                heading_text = ' '.join(headings)
+                print(f"[scrape_inqilab] url: {url}\n  headings: {headings}")
                 articles.append({
-                    "title": title,
-                    "description": body,
+                    "title": headings[0] if headings else "",
+                    "heading": heading_text,
                     "url": url,
                     "published_date": datetime.now().date(),
                     "source": "inqilab"
@@ -794,11 +808,12 @@ def scrape_sangbad():
                 continue
             try:
                 article_soup = BeautifulSoup(article_res.text, "html.parser")
-                title = article_soup.select_one("h1").text.strip() if article_soup.select_one("h1") else ""
-                body = " ".join([p.text for p in article_soup.select(".details-content p, .news-details p")])
+                headings = [tag.text.strip() for tag in article_soup.find_all(['h1', 'h2']) if tag.text.strip()]
+                heading_text = ' '.join(headings)
+                print(f"[scrape_sangbad] url: {url}\n  headings: {headings}")
                 articles.append({
-                    "title": title,
-                    "description": body,
+                    "title": headings[0] if headings else "",
+                    "heading": heading_text,
                     "url": url,
                     "published_date": datetime.now().date(),
                     "source": "sangbad"
@@ -826,11 +841,12 @@ def scrape_noya_diganta():
                 continue
             try:
                 article_soup = BeautifulSoup(article_res.text, "html.parser")
-                title = article_soup.select_one("h1").text.strip() if article_soup.select_one("h1") else ""
-                body = " ".join([p.text for p in article_soup.select(".details-content p, .news-details p")])
+                headings = [tag.text.strip() for tag in article_soup.find_all(['h1', 'h2']) if tag.text.strip()]
+                heading_text = ' '.join(headings)
+                print(f"[scrape_noya_diganta] url: {url}\n  headings: {headings}")
                 articles.append({
-                    "title": title,
-                    "description": body,
+                    "title": headings[0] if headings else "",
+                    "heading": heading_text,
                     "url": url,
                     "published_date": datetime.now().date(),
                     "source": "noya_diganta"
@@ -858,11 +874,15 @@ def scrape_jai_jai_din():
                 continue
             try:
                 article_soup = BeautifulSoup(article_res.text, "html.parser")
-                title = article_soup.select_one("h1").text.strip() if article_soup.select_one("h1") else ""
-                body = " ".join([p.text for p in article_soup.select(".details-content p, .news-details p")])
+                # Collect all h1 and h2 headings as a single string
+                headings = []
+                for tag in article_soup.find_all(['h1', 'h2']):
+                    if tag.text.strip():
+                        headings.append(tag.text.strip())
+                heading_text = ' '.join(headings)
                 articles.append({
-                    "title": title,
-                    "description": body,
+                    "title": headings[0] if headings else "",
+                    "heading": heading_text,
                     "url": url,
                     "published_date": datetime.now().date(),
                     "source": "jai_jai_din"
@@ -890,11 +910,12 @@ def scrape_manobkantha():
                 continue
             try:
                 article_soup = BeautifulSoup(article_res.text, "html.parser")
-                title = article_soup.select_one("h1").text.strip() if article_soup.select_one("h1") else ""
-                body = " ".join([p.text for p in article_soup.select(".details-content p, .news-details p")])
+                headings = [tag.text.strip() for tag in article_soup.find_all(['h1', 'h2']) if tag.text.strip()]
+                heading_text = ' '.join(headings)
+                print(f"[scrape_manobkantha] url: {url}\n  headings: {headings}")
                 articles.append({
-                    "title": title,
-                    "description": body,
+                    "title": headings[0] if headings else "",
+                    "heading": heading_text,
                     "url": url,
                     "published_date": datetime.now().date(),
                     "source": "manobkantha"
@@ -922,11 +943,12 @@ def scrape_ajkaler_khobor():
                 continue
             try:
                 article_soup = BeautifulSoup(article_res.text, "html.parser")
-                title = article_soup.select_one("h1").text.strip() if article_soup.select_one("h1") else ""
-                body = " ".join([p.text for p in article_soup.select(".details-content p, .news-details p")])
+                headings = [tag.text.strip() for tag in article_soup.find_all(['h1', 'h2']) if tag.text.strip()]
+                heading_text = ' '.join(headings)
+                print(f"[scrape_ajkaler_khobor] url: {url}\n  headings: {headings}")
                 articles.append({
-                    "title": title,
-                    "description": body,
+                    "title": headings[0] if headings else "",
+                    "heading": heading_text,
                     "url": url,
                     "published_date": datetime.now().date(),
                     "source": "ajkaler_khobor"
@@ -954,11 +976,12 @@ def scrape_ajker_patrika():
                 continue
             try:
                 article_soup = BeautifulSoup(article_res.text, "html.parser")
-                title = article_soup.select_one("h1").text.strip() if article_soup.select_one("h1") else ""
-                body = " ".join([p.text for p in article_soup.select(".details-content p, .news-details p")])
+                headings = [tag.text.strip() for tag in article_soup.find_all(['h1', 'h2']) if tag.text.strip()]
+                heading_text = ' '.join(headings)
+                print(f"[scrape_ajker_patrika] url: {url}\n  headings: {headings}")
                 articles.append({
-                    "title": title,
-                    "description": body,
+                    "title": headings[0] if headings else "",
+                    "heading": heading_text,
                     "url": url,
                     "published_date": datetime.now().date(),
                     "source": "ajker_patrika"
@@ -986,11 +1009,12 @@ def scrape_protidiner_sangbad():
                 continue
             try:
                 article_soup = BeautifulSoup(article_res.text, "html.parser")
-                title = article_soup.select_one("h1").text.strip() if article_soup.select_one("h1") else ""
-                body = " ".join([p.text for p in article_soup.select(".details-content p, .news-details p")])
+                headings = [tag.text.strip() for tag in article_soup.find_all(['h1', 'h2']) if tag.text.strip()]
+                heading_text = ' '.join(headings)
+                print(f"[scrape_protidiner_sangbad] url: {url}\n  headings: {headings}")
                 articles.append({
-                    "title": title,
-                    "description": body,
+                    "title": headings[0] if headings else "",
+                    "heading": heading_text,
                     "url": url,
                     "published_date": datetime.now().date(),
                     "source": "protidiner_sangbad"
@@ -1018,11 +1042,12 @@ def scrape_bangladesher_khabor():
                 continue
             try:
                 article_soup = BeautifulSoup(article_res.text, "html.parser")
-                title = article_soup.select_one("h1").text.strip() if article_soup.select_one("h1") else ""
-                body = " ".join([p.text for p in article_soup.select(".details-content p, .news-details p")])
+                headings = [tag.text.strip() for tag in article_soup.find_all(['h1', 'h2']) if tag.text.strip()]
+                heading_text = ' '.join(headings)
+                print(f"[scrape_bangladesher_khabor] url: {url}\n  headings: {headings}")
                 articles.append({
-                    "title": title,
-                    "description": body,
+                    "title": headings[0] if headings else "",
+                    "heading": heading_text,
                     "url": url,
                     "published_date": datetime.now().date(),
                     "source": "bangladesher_khabor"
@@ -1050,11 +1075,12 @@ def scrape_bangladesh_journal():
                 continue
             try:
                 article_soup = BeautifulSoup(article_res.text, "html.parser")
-                title = article_soup.select_one("h1").text.strip() if article_soup.select_one("h1") else ""
-                body = " ".join([p.text for p in article_soup.select(".details-content p, .news-details p")])
+                headings = [tag.text.strip() for tag in article_soup.find_all(['h1', 'h2']) if tag.text.strip()]
+                heading_text = ' '.join(headings)
+                print(f"[scrape_bangladesh_journal] url: {url}\n  headings: {headings}")
                 articles.append({
-                    "title": title,
-                    "description": body,
+                    "title": headings[0] if headings else "",
+                    "heading": heading_text,
                     "url": url,
                     "published_date": datetime.now().date(),
                     "source": "bangladesh_journal"
@@ -1069,26 +1095,51 @@ def scrape_bangladesh_journal():
 def scrape_bengali_news() -> List[Dict]:
     """Scrape Bengali news from multiple sources (modular, only user-supplied sites)"""
     articles = []
-    articles.extend(scrape_prothom_alo())
-    articles.extend(scrape_kaler_kantho())
-    articles.extend(scrape_jugantor())
-    articles.extend(scrape_ittefaq())
-    articles.extend(scrape_bd_pratidin())
-    articles.extend(scrape_manab_zamin())
-    articles.extend(scrape_samakal())
-    articles.extend(scrape_amader_shomoy())
-    articles.extend(scrape_janakantha())
-    articles.extend(scrape_inqilab())
-    articles.extend(scrape_sangbad())
-    articles.extend(scrape_noya_diganta())
-    articles.extend(scrape_jai_jai_din())
-    articles.extend(scrape_manobkantha())
-    articles.extend(scrape_ajkaler_khobor())
-    articles.extend(scrape_ajker_patrika())
-    articles.extend(scrape_protidiner_sangbad())
-    articles.extend(scrape_bangladesher_khabor())
-    articles.extend(scrape_bangladesh_journal())
-    return articles
+    source_counts = {}
+    all_sources = [
+        ("prothom_alo", scrape_prothom_alo),
+        ("kaler_kantho", scrape_kaler_kantho),
+        ("jugantor", scrape_jugantor),
+        ("ittefaq", scrape_ittefaq),
+        ("bd_pratidin", scrape_bd_pratidin),
+        ("manab_zamin", scrape_manab_zamin),
+        ("samakal", scrape_samakal),
+        ("amader_shomoy", scrape_amader_shomoy),
+        ("janakantha", scrape_janakantha),
+        ("inqilab", scrape_inqilab),
+        ("sangbad", scrape_sangbad),
+        ("noya_diganta", scrape_noya_diganta),
+        ("jai_jai_din", scrape_jai_jai_din),
+        ("manobkantha", scrape_manobkantha),
+        ("ajkaler_khobor", scrape_ajkaler_khobor),
+        ("ajker_patrika", scrape_ajker_patrika),
+        ("protidiner_sangbad", scrape_protidiner_sangbad),
+        ("bangladesher_khabor", scrape_bangladesher_khabor),
+        ("bangladesh_journal", scrape_bangladesh_journal)
+    ]
+    print("\n[Scraping: Starting all newspaper scrapers]")
+    for source, func in all_sources:
+        print(f"[DEBUG] Calling {func.__name__}() for {source}...")
+        src_articles = func()
+        print(f"[DEBUG] {func.__name__}() returned {len(src_articles)} articles.")
+        if src_articles:
+            for art in src_articles[:3]:
+                print(f"    url: {art.get('url', '')} | heading: {art.get('heading', '')[:60]}")
+        source_counts[source] = len(src_articles)
+        articles.extend(src_articles)
+    # Deduplicate by URL
+    seen_urls = set()
+    deduped_articles = []
+    for art in articles:
+        url = art.get('url')
+        if url and url not in seen_urls:
+            deduped_articles.append(art)
+            seen_urls.add(url)
+    print("\n[Scraping Summary]")
+    for source, count in source_counts.items():
+        print(f"  {source}: {count} articles scraped")
+    print(f"  Total (after deduplication): {len(deduped_articles)} unique articles")
+    return deduped_articles
 
 def store_news(db: Session, articles: List[Dict]):
     """Store news articles in database"""
@@ -1131,26 +1182,8 @@ def generate_trending_word_candidates(db: Session, limit: int = 10) -> str:
     """Generate trending word candidates using both Groq AI and full Bengali analyzer pipeline (with debug output)"""
     # Fetch news articles (existing)
     articles = fetch_news() or []
-    # Keep your custom scraping extension
-    # articles.extend(scrape_jai_jai_din())
-    # Selenium-based full-article scraping for each news article
-    chrome_options = Options()
-    chrome_options.add_argument('--headless')
-    chrome_options.add_argument('--no-sandbox')
-    chrome_options.add_argument('--disable-dev-shm-usage')
-    driver = webdriver.Chrome(options=chrome_options)
-    for idx, a in enumerate(articles, 1):
-        if a.get('url'):
-            try:
-                driver.get(a['url'])
-                paragraphs = driver.find_elements(By.TAG_NAME, 'p')
-                content = ' '.join([p.text for p in paragraphs if p.text.strip()])
-                a['description'] = content[:2000]  # Always overwrite for completeness
-                print(f"Fetched content for article {idx} from {a['url']}")
-            except Exception as e:
-                print(f"Failed to fetch content for {a['url']}: {e}")
-        print(f"[{idx}] Title: {a.get('title', '')}\n    Desc: {a.get('description', '')}\n    URL: {a.get('url', '')}\n    Date: {a.get('published_date', '')}\n    Source: {a.get('source', '')}\n")
-    driver.quit()
+    # Use heading only
+    texts = [a.get('heading', '') for a in articles if a.get('heading')]
     # Fetch Google Trends
     google_trends = get_google_trends_bangladesh()
     # Fetch YouTube trending
@@ -1161,7 +1194,6 @@ def generate_trending_word_candidates(db: Session, limit: int = 10) -> str:
     for idx, trend in enumerate(serpapi_trends, 1):
         print(f"  {idx}. {' '.join(trend) if isinstance(trend, list) else trend}")
     # Combine all sources for AI
-    texts = [f"{a.get('title', '')}। {a.get('description', '')}" for a in articles]
     texts.extend([' '.join(words) for words in google_trends if words])
     texts.extend([' '.join(words) for words in youtube_trends if words])
     texts.extend([' '.join(trend) for trend in serpapi_trends if trend])
@@ -1217,26 +1249,35 @@ def generate_trending_word_candidates(db: Session, limit: int = 10) -> str:
     for a in articles:
         analyzer_inputs.append({
             'title': a.get('title', ''),
-            'description': a.get('description', ''),
+            'heading': a.get('heading', ''),
             'source': a.get('source', 'news')
         })
     for trend in google_trends:
-        analyzer_inputs.append({'title': ' '.join(trend), 'description': '', 'source': 'google_trends'})
+        analyzer_inputs.append({'title': ' '.join(trend), 'heading': '', 'source': 'google_trends'})
     for trend in youtube_trends:
-        analyzer_inputs.append({'title': ' '.join(trend), 'description': '', 'source': 'youtube_trends'})
+        analyzer_inputs.append({'title': ' '.join(trend), 'heading': '', 'source': 'youtube_trending'})
     for trend in serpapi_trends:
-        analyzer_inputs.append({'title': ' '.join(trend) if isinstance(trend, list) else trend, 'description': '', 'source': 'serpapi_trends'})
+        analyzer_inputs.append({'title': ' '.join(trend) if isinstance(trend, list) else trend, 'heading': '', 'source': 'serpapi_trends'})
     analyzer_response = analyzer.analyze_trending_content(analyzer_inputs, source_type='mixed')
     summary = []
+    # Defensive: check if 'trending_keywords' exists and is a list
+    trending_keywords = analyzer_response.get('trending_keywords', [])
+    if not isinstance(trending_keywords, list):
+        print(f"[Analyzer] 'trending_keywords' missing or not a list. analyzer_response: {analyzer_response}")
+        trending_keywords = []
     summary.append("Trending Keywords (Top 10):")
-    for keyword, score in analyzer_response['trending_keywords'][:10]:
-        summary.append(f"  {keyword}: {score:.4f}")
+    for keyword_score in trending_keywords[:10]:
+        if isinstance(keyword_score, (list, tuple)) and len(keyword_score) == 2:
+            keyword, score = keyword_score
+            summary.append(f"  {keyword}: {score:.4f}")
+        else:
+            summary.append(f"  {keyword_score}")
     summary.append("\nNamed Entities:")
-    for entity_type, entities in analyzer_response['named_entities'].items():
+    for entity_type, entities in analyzer_response.get('named_entities', {}).items():
         if entities:
             summary.append(f"  {entity_type}: {entities[:5]}")
-    summary.append(f"\nSentiment: {analyzer_response['sentiment_analysis']}")
-    summary.append(f"\nStatistics: {analyzer_response['content_statistics']}")
-    # --- Output both ---
-    # return f"=== AI Response (Groq LLM) ===\n{ai_response}\n\n=== Analyzer Response (TrendingBengaliAnalyzer) ===\n" + '\n'.join(summary)
+    summary.append(f"\nSentiment: {analyzer_response.get('sentiment_analysis', '')}")
+    summary.append(f"\nStatistics: {analyzer_response.get('content_statistics', '')}")
+    # Print what is being sent to Groq
+    print(f"[Groq] Combined text sent to LLM:\n{combined_text}")
     return ai_response

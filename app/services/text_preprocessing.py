@@ -111,7 +111,7 @@ def get_serpapi_trending_bangladesh():
         'gl': 'bd',
         'google_domain': 'google.com',
         'num': '10',
-        'api_key': api_key
+        # 'api_key': api_key
     }
     try:
         response = requests.get(url, params=params, timeout=15)

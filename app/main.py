@@ -24,7 +24,7 @@ app.add_middleware(
 # Print the GROQ_API_KEY value at startup for debugging when running the server
 print('GROQ_API_KEY:', os.environ.get('GROQ_API_KEY'))
 print('FACEBOOK_GRAPH_API_KEY:', os.environ.get('FACEBOOK_GRAPH_API_KEY'))
-print('FACEBOOK_GRAPH_API_KEY:', os.environ.get('SERP_API_KEY'))
+print('SERPAPI_API_KEY:', os.environ.get('SERPAPI_API_KEY'))
 
 # Include routes
 app.include_router(routes.router, tags=["Legacy"])
