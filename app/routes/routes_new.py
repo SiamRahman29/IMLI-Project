@@ -3,6 +3,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import desc, and_
 from datetime import date, datetime, timedelta
 from typing import Optional, List
+import traceback
 
 from app.db.database import SessionLocal
 from app.models.word import Word, TrendingPhrase
@@ -52,7 +53,6 @@ def generate_candidates(db: Session = Depends(get_db)):
             "note": "Check /trending-phrases endpoint for detailed analysis"
         }
     except Exception as e:
-        import traceback
         detail = f"Error generating candidates: {str(e)}\n{traceback.format_exc()}"
         raise HTTPException(status_code=500, detail=detail)
 

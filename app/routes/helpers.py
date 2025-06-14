@@ -22,6 +22,7 @@ from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.common.by import By
 from app.services.text_preprocessing import get_google_trends_bangladesh, get_youtube_trending_bangladesh
 
+
 load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), '../../.env'))
 
 # Download required NLTK data
@@ -1136,9 +1137,6 @@ def generate_trending_word_candidates(db: Session, limit: int = 10) -> str:
     # Keep your custom scraping extension
     articles.extend(scrape_jai_jai_din())
     # Selenium-based full-article scraping for each news article
-    from selenium import webdriver
-    from selenium.webdriver.chrome.options import Options
-    from selenium.webdriver.common.by import By
     chrome_options = Options()
     chrome_options.add_argument('--headless')
     chrome_options.add_argument('--no-sandbox')
