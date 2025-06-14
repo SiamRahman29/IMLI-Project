@@ -330,61 +330,64 @@ class TrendingBengaliAnalyzer:
             else:
                 continue
             texts.append(text)
-        print("[DEBUG] Step 1 - Extracted Texts:")
-        for t in texts:
-            print(t)
-        print("\n")
+        # print("[DEBUG] Step 1 - Extracted Texts:")
+        # for t in texts:
+        #     print(t)
+        # print("\n")
         if not texts:
             return {}
         # Update word frequency cache
         self.processor.update_word_frequency_cache(texts)
-        print("[DEBUG] Step 2 - Word Frequency Cache:")
-        print(self.processor.word_freq_cache)
-        print("\n")
+        # print("[DEBUG] Step 2 - Word Frequency Cache:")
+        # print(self.processor.word_freq_cache)
+        # print("\n")
         # Extract trending keywords
         trending_keywords = self.processor.extract_trending_keywords(texts, top_k=100)
-        print("[DEBUG] Step 3 - Trending Keywords:")
-        print(trending_keywords)
-        print("\n")
+        # print("[DEBUG] Step 3 - Trending Keywords:")
+        # print(trending_keywords)
+        # print("\n")
         # Extract named entities
         all_entities = {'persons': [], 'places': [], 'organizations': [], 'dates': []}
         for text in texts:
             entities = self.processor.extract_named_entities(text)
             for entity_type in all_entities:
                 all_entities[entity_type].extend(entities[entity_type])
-        print("[DEBUG] Step 4 - Named Entities (raw):")
-        print(all_entities)
-        print("\n")
+        # print("[DEBUG] Step 4 - Named Entities (raw):")
+        # print(all_entities)
+        # print("\n")
         # Remove duplicates and count frequencies
         for entity_type in all_entities:
             entity_counter = Counter(all_entities[entity_type])
             all_entities[entity_type] = entity_counter.most_common(20)
-        print("[DEBUG] Step 5 - Named Entities (deduped, counted):")
-        print(all_entities)
-        print("\n")
+        # print("[DEBUG] Step 5 - Named Entities (deduped, counted):")
+        # print(all_entities)
+        # print("\n")
         # Sentiment analysis
         sentiment_scores = []
         for text in texts:
             sentiment = self.processor.calculate_text_sentiment(text)
             sentiment_scores.append(sentiment)
-        print("[DEBUG] Step 6 - Sentiment Scores:")
-        print(sentiment_scores)
-        print("\n")
+        # print("[DEBUG] Step 6 - Sentiment Scores:")
+        # print(sentiment_scores)
+        # print("\n")
         # Average sentiment
         avg_sentiment = {
             'positive': np.mean([s['positive'] for s in sentiment_scores]),
             'negative': np.mean([s['negative'] for s in sentiment_scores]),
             'neutral': np.mean([s['neutral'] for s in sentiment_scores])
         }
-        print("[DEBUG] Step 7 - Average Sentiment:")
-        print(avg_sentiment)
-        print("\n")
+        # print("[DEBUG] Step 7 - Average Sentiment:")
+        # print(avg_sentiment)
+        # print("\n")
         # Cluster similar phrases
         phrases = [kw[0] for kw in trending_keywords[:50]]
-        clustered_phrases = self.processor.cluster_similar_phrases(phrases, n_clusters=8)
-        print("[DEBUG] Step 8 - Clustered Phrases:")
-        print(clustered_phrases)
-        print("\n")
+        if not phrases:
+            clustered_phrases = {}
+        else:
+            clustered_phrases = self.processor.cluster_similar_phrases(phrases, n_clusters=8)
+        # print("[DEBUG] Step 8 - Clustered Phrases:")
+        # print(clustered_phrases)
+        # print("\n")
         return {
             'trending_keywords': trending_keywords,
             'named_entities': all_entities,

@@ -9,7 +9,7 @@ from app.db.database import SessionLocal
 from app.models.word import Word, TrendingPhrase
 from app.routes.helpers import get_trending_words, generate_trending_word_candidates
 from app.dto.dtos import TrendingWordsResponse, TrendingPhraseResponse, DailyTrendingResponse, TrendingPhrasesRequest
-from app.services.social_media_scraper import print_scraped_posts_pretty, scrape_social_media_content
+# from app.services.social_media_scraper import print_scraped_posts_pretty, scrape_social_media_content
 
 router = APIRouter()
 
@@ -43,7 +43,7 @@ def generate_candidates(db: Session = Depends(get_db)):
         get_trending_words(db)
 
         # Print all scraped posts in pretty format
-        print_scraped_posts_pretty(scrape_social_media_content())
+        # print_scraped_posts_pretty(scrape_social_media_content())
         
         ai_candidates = generate_trending_word_candidates(db, limit=15)
         

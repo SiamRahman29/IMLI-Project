@@ -20,7 +20,7 @@ from app.services.social_media_scraper import scrape_social_media_content
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.common.by import By
-from app.services.text_preprocessing import get_google_trends_bangladesh, get_youtube_trending_bangladesh
+from app.services.text_preprocessing import get_google_trends_bangladesh, get_youtube_trending_bangladesh, get_serpapi_trending_bangladesh
 
 
 load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), '../../.env'))
@@ -289,21 +289,19 @@ def get_trending_words(db: Session):
     Implements N-gram Frequency Analysis with TF-IDF scoring.
     """
     print("Starting comprehensive trending words analysis...")
-    
     # Fetch news articles
     print("Fetching news data...")
     news_articles = fetch_news()
     print(f"Fetched {len(news_articles)} news articles")
-    
-    # Fetch social media content
-    print("Fetching social media content...")
-    try:
-        social_media_posts = scrape_social_media_content()
-        print(f"Fetched {len(social_media_posts)} social media posts")
-    except Exception as e:
-        print(f"Error fetching social media content: {e}")
-        social_media_posts = []
-    
+    # Fetch social media content (DISABLED)
+    # print("Fetching social media content...")
+    # try:
+    #     social_media_posts = scrape_social_media_content()
+    #     print(f"Fetched {len(social_media_posts)} social media posts")
+    # except Exception as e:
+    #     print(f"Error fetching social media content: {e}")
+    #     social_media_posts = []
+    social_media_posts = []
     # Combine all content
     all_content = news_articles + social_media_posts
     
@@ -314,8 +312,8 @@ def get_trending_words(db: Session):
     # Store articles and posts in database
     print("Storing content in the database...")
     store_news(db, news_articles)
-    if social_media_posts:
-        store_social_media_content(db, social_media_posts)
+    # if social_media_posts:
+    #     store_social_media_content(db, social_media_posts)
     
     # Analyze trending phrases for each source separately
     print("Analyzing trending phrases...")
@@ -1109,13 +1107,15 @@ def store_news(db: Session, articles: List[Dict]):
 
 def fetch_social_media_posts():
     """Fetch social media posts from various Bengali platforms"""
-    try:
-        posts = scrape_social_media_content()
-        print(f"Fetched {len(posts)} social media posts")
-        return posts
-    except Exception as e:
-        print(f"Error fetching social media posts: {e}")
-        return []
+    # Disabled: Social media fetching
+    # try:
+    #     posts = scrape_social_media_content()
+    #     print(f"Fetched {len(posts)} social media posts")
+    #     return posts
+    # except Exception as e:
+    #     print(f"Error fetching social media posts: {e}")
+    #     return []
+    return []
 
 def parse_news(articles: List[Dict]) -> str:
     """Parse articles into combined text"""
@@ -1132,7 +1132,7 @@ def generate_trending_word_candidates(db: Session, limit: int = 10) -> str:
     # Fetch news articles (existing)
     articles = fetch_news() or []
     # Keep your custom scraping extension
-    articles.extend(scrape_jai_jai_din())
+    # articles.extend(scrape_jai_jai_din())
     # Selenium-based full-article scraping for each news article
     chrome_options = Options()
     chrome_options.add_argument('--headless')
@@ -1155,10 +1155,16 @@ def generate_trending_word_candidates(db: Session, limit: int = 10) -> str:
     google_trends = get_google_trends_bangladesh()
     # Fetch YouTube trending
     youtube_trends = get_youtube_trending_bangladesh()
+    # Fetch SerpApi Google Trends
+    serpapi_trends = get_serpapi_trending_bangladesh()
+    print("[SerpApi] Final trending phrases (Bangladesh):")
+    for idx, trend in enumerate(serpapi_trends, 1):
+        print(f"  {idx}. {' '.join(trend) if isinstance(trend, list) else trend}")
     # Combine all sources for AI
     texts = [f"{a.get('title', '')}। {a.get('description', '')}" for a in articles]
     texts.extend([' '.join(words) for words in google_trends if words])
     texts.extend([' '.join(words) for words in youtube_trends if words])
+    texts.extend([' '.join(trend) for trend in serpapi_trends if trend])
     if not texts:
         msg = "No articles or trends available for analysis"
         print(msg)
@@ -1218,6 +1224,8 @@ def generate_trending_word_candidates(db: Session, limit: int = 10) -> str:
         analyzer_inputs.append({'title': ' '.join(trend), 'description': '', 'source': 'google_trends'})
     for trend in youtube_trends:
         analyzer_inputs.append({'title': ' '.join(trend), 'description': '', 'source': 'youtube_trends'})
+    for trend in serpapi_trends:
+        analyzer_inputs.append({'title': ' '.join(trend) if isinstance(trend, list) else trend, 'description': '', 'source': 'serpapi_trends'})
     analyzer_response = analyzer.analyze_trending_content(analyzer_inputs, source_type='mixed')
     summary = []
     summary.append("Trending Keywords (Top 10):")

@@ -19,7 +19,7 @@ from selenium.common.exceptions import TimeoutException, NoSuchElementException
 
 
 class SocialMediaScraper:
-    ENABLE_SOCIAL_MEDIA_SCRAPING = True  # Set to True to enable scraping
+    ENABLE_SOCIAL_MEDIA_SCRAPING = False  # Disabled as per user request
 
     def __init__(self):
         self.headers = {
@@ -48,155 +48,72 @@ class SocialMediaScraper:
             print(f"Failed to setup Chrome driver: {e}")
             return None
 
-    def get_facebook_sources(self):
-        """Return a modular list of Facebook public pages, groups, and individuals to scrape"""
+    def get_facebook_page_ids(self):
+        """Return a list of Facebook public page usernames or IDs to fetch via Graph API"""
         return [
-            # Only add unique, non-news-organization pages/groups if needed
-            # Example Public Groups (add more as needed)
-            'https://www.facebook.com/groups/ProthomAloReaders',
-            'https://www.facebook.com/groups/bdnews24group',
-            # Example Individuals (public profiles)
-            # 'https://www.facebook.com/publicprofileid',
+            # 'shortstoriessbd',
+            # 'thepost360',
+            # 'bnpbd.org',
+            # '1NationalCitizenParty',
+            # 'gowtamkshuvo.page',
+            # 'Dr.Asifnazrul',
+            # 'Ishraque.ForMayor',
+            # 'ChiefAdviserGOB',
+            # 'PinakiRightsActivist',
+            # 'pricilanewyork',
         ]
+
+    def fetch_facebook_page_posts(self, page_id, access_token, limit=10):
+        # Commented out: Facebook Graph API fetching
+        # url = f"https://graph.facebook.com/v23.0/{page_id}/posts"
+        # params = {
+        #     "access_token": access_token,
+        #     "app_id": "1245613587284998",  # Explicitly provide your App ID
+        #     "fields": "message,created_time,id,permalink_url",
+        #     "limit": limit
+        # }
+        # try:
+        #     response = requests.get(url, params=params)
+        #     data = response.json()
+        #     posts = []
+        #     for post in data.get("data", []):
+        #         if 'message' in post:
+        #             posts.append({
+        #                 'content': post['message'],
+        #                 'source': 'facebook',
+        #                 'page': page_id,
+        #                 'scraped_date': post.get('created_time', ''),
+        #                 'platform': 'social_media',
+        #                 'url': post.get('permalink_url', '')
+        #             })
+        #     if 'error' in data:
+        #         print(f"[ERROR] Facebook Graph API error for {page_id}: {data['error']}")
+        #     return posts
+        # except Exception as e:
+        #     print(f"[ERROR] Facebook Graph API error for {page_id}: {e}")
+        #     return []
+        return []
 
     def scrape_facebook_public_pages(self) -> List[Dict]:
         """
-        Scrape Bengali Facebook public groups and individuals (modular, no news orgs)
+        Scrape Bengali Facebook public pages using the Graph API
         """
-        posts = []
-        public_pages = self.get_facebook_sources()
-        if not public_pages:
-            return posts
-        driver = self.setup_selenium_driver()
-        if not driver:
-            return posts
-        try:
-            for page_url in public_pages:
-                print(f"Scraping Facebook page/group: {page_url}")
-                try:
-                    driver.get(page_url)
-                    time.sleep(3)
-                    for _ in range(3):
-                        driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
-                        time.sleep(2)
-                    post_elements = driver.find_elements(By.CSS_SELECTOR, '[data-pagelet="FeedUnit_0"], [role="article"]')
-                    for post_element in post_elements[:10]:
-                        try:
-                            text_content = post_element.text
-                            if self._contains_bengali_text(text_content):
-                                posts.append({
-                                    'content': text_content,
-                                    'source': 'facebook',
-                                    'page': page_url.split('/')[-1],
-                                    'scraped_date': datetime.now().date(),
-                                    'platform': 'social_media',
-                                    'url': page_url
-                                })
-                        except Exception as e:
-                            print(f"Error extracting post: {e}")
-                            continue
-                except Exception as e:
-                    print(f"Error scraping {page_url}: {e}")
-                    continue
-        finally:
-            driver.quit()
-        return posts
+        # Disabled: Facebook scraping
+        return []
 
     def scrape_youtube_comments(self) -> List[Dict]:
         """
         Scrape comments from popular Bengali YouTube channels
         """
-        comments = []
-        
-        # Popular Bengali YouTube channels
-        channels = [
-            'UCKREJp-MrNaORDXDQhw3hNw',  # Prothom Alo
-            'UC-LG7HdKCmvvDJOQmOhzJOQ',  # Channel i
-            'UCrGhoBcQRl6jzrfh2wCKV_Q',  # Independent TV
-        ]
-        # TODO: BeautifulSoup - web app scraping
-        # FIXME : Selenium - web app scraping
-        # BUG
-        driver = self.setup_selenium_driver()
-        if not driver:
-            return comments
-            
-        try:
-            for channel_id in channels:
-                # Get recent videos from channel
-                videos_url = f"https://www.youtube.com/channel/{channel_id}/videos"
-                
-                try:
-                    driver.get(videos_url)
-                    time.sleep(3)
-                    
-                    video_links = driver.find_elements(By.CSS_SELECTOR, '#video-title')[:5]
-                    
-                    for video_link in video_links:
-                        try:
-                            video_url = video_link.get_attribute('href')
-                            if video_url:
-                                video_comments = self._scrape_video_comments(driver, video_url)
-                                comments.extend(video_comments)
-                        except Exception as e:
-                            print(f"Error getting video comments: {e}")
-                            continue
-                            
-                except Exception as e:
-                    print(f"Error scraping channel {channel_id}: {e}")
-                    continue
-                    
-        finally:
-            driver.quit()
-            
-        return comments
-
-    def _scrape_video_comments(self, driver: webdriver.Chrome, video_url: str) -> List[Dict]:
-        comments = []
-        
-        try:
-            driver.get(video_url)
-            time.sleep(3)
-            
-            # Scroll to load comments
-            driver.execute_script("window.scrollTo(0, 1000);")
-            time.sleep(2)
-            
-            # Find comment elements
-            comment_elements = driver.find_elements(By.CSS_SELECTOR, '#content-text')[:20]
-            
-            for comment_element in comment_elements:
-                try:
-                    comment_text = comment_element.text
-                    
-                    if self._contains_bengali_text(comment_text) and len(comment_text) > 10:
-                        comments.append({
-                            'content': comment_text,
-                            'source': 'youtube',
-                            'video_url': video_url,
-                            'scraped_date': datetime.now().date(),
-                            'platform': 'social_media'
-                        })
-                        
-                except Exception as e:
-                    print(f"Error extracting comment: {e}")
-                    continue
-                    
-        except Exception as e:
-            print(f"Error scraping video comments: {e}")
-            
-        return comments
+        # Disabled: YouTube scraping
+        return []
 
     def scrape_twitter_alternatives(self) -> List[Dict]:
         """
         Scrape Twitter alternatives for Bengali content
         """
-        posts = []
-        
-        # Note: This would require specific implementation based on available platforms
-        #TODO For now, implementing a placeholder structure
-        
-        return posts
+        # Disabled: Twitter-alternative scraping
+        return []
 
     def _contains_bengali_text(self, text: str) -> bool:
         """Check if text contains Bengali characters"""
@@ -207,11 +124,7 @@ class SocialMediaScraper:
         """
         Get content from all social media sources
         """
-        if not self.ENABLE_SOCIAL_MEDIA_SCRAPING:
-            print("[INFO] Social media scraping is currently disabled. Set ENABLE_SOCIAL_MEDIA_SCRAPING=True to enable.")
-            return []
-        # TODO: Implement actual scraping logic here
-        # Example: return self.scrape_facebook_public_pages() + self.scrape_youtube_comments() + self.scrape_twitter_alternatives()
+        print("[INFO] Social media scraping is disabled by user request.")
         return []
 
 
@@ -240,15 +153,15 @@ def scrape_social_media_content() -> List[Dict]:
     """
     Main function to scrape social media content
     """
-    scraper = SocialMediaScraper()
-    return scraper.get_all_social_media_content()
+    # Disabled: Social media scraping
+    return []
 
 def get_social_media_trends() -> List[Dict]:
     """
     Get trending analysis from social media
     """
-    trends_analyzer = BengaliSocialMediaTrends()
-    return trends_analyzer.get_trending_topics()
+    # Disabled: Social media scraping
+    return []
 
 def print_scraped_posts_pretty(posts: List[Dict]):
 
