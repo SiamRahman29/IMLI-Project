@@ -320,7 +320,7 @@ class TrendingBengaliAnalyzer:
         """
         Comprehensive analysis of trending content
         """
-        print("[DEBUG] Incoming contents:")
+        print(" Incoming contents:")
         print(contents)
         # Extract text content
         texts = []
@@ -332,29 +332,29 @@ class TrendingBengaliAnalyzer:
             else:
                 continue
             texts.append(text)
-        print("[DEBUG] Step 1 - Extracted Texts:")
+        print(" Step 1 - Extracted Texts:")
         for t in texts:
             print(t)
-        print(f"[DEBUG] Number of extracted texts: {len(texts)}")
+        print(f" Number of extracted texts: {len(texts)}")
         print("\n")
         if not texts:
-            print("[DEBUG] No texts extracted. Returning early.")
+            print(" No texts extracted. Returning early.")
             return {}
         # Update word frequency cache
         self.processor.update_word_frequency_cache(texts)
-        print("[DEBUG] Step 2 - Word Frequency Cache:")
+        print(" Step 2 - Word Frequency Cache:")
         print(self.processor.word_freq_cache)
         print("\n")
         # Extract trending keywords
         trending_keywords = self.processor.extract_trending_keywords(texts, top_k=100)
-        print("[DEBUG] Step 3 - Trending Keywords:")
+        print(" Step 3 - Trending Keywords:")
         print(trending_keywords)
         print("\n")
         # Prepare trending keywords (list of tuples) as a prompt for LLM
         llm_prompt = "ট্রেন্ডিং বাংলা শব্দ/বাক্যাংশ ও স্কোর (শব্দ:স্কোর):\n" + "\n".join(f"{i+1}. {kw}: {score:.4f}" for i, (kw, score) in enumerate(trending_keywords))
         # Example: Call your LLM here (replace with your actual LLM call)
         # llm_response = call_groq_llm(llm_prompt)
-        # print("[DEBUG] LLM Response:")
+        # print(" LLM Response:")
         # print(llm_response)
         # Extract named entities
         all_entities = {'persons': [], 'places': [], 'organizations': [], 'dates': []}
@@ -362,14 +362,14 @@ class TrendingBengaliAnalyzer:
             entities = self.processor.extract_named_entities(text)
             for entity_type in all_entities:
                 all_entities[entity_type].extend(entities[entity_type])
-        print("[DEBUG] Step 4 - Named Entities (raw):")
+        print(" Step 4 - Named Entities (raw):")
         print(all_entities)
         print("\n")
         # Remove duplicates and count frequencies
         for entity_type in all_entities:
             entity_counter = Counter(all_entities[entity_type])
             all_entities[entity_type] = entity_counter.most_common(20)
-        print("[DEBUG] Step 5 - Named Entities (deduped, counted):")
+        print(" Step 5 - Named Entities (deduped, counted):")
         print(all_entities)
         print("\n")
         # Sentiment analysis
@@ -377,7 +377,7 @@ class TrendingBengaliAnalyzer:
         for text in texts:
             sentiment = self.processor.calculate_text_sentiment(text)
             sentiment_scores.append(sentiment)
-        print("[DEBUG] Step 6 - Sentiment Scores:")
+        print(" Step 6 - Sentiment Scores:")
         print(sentiment_scores)
         print("\n")
         # Average sentiment
@@ -386,7 +386,7 @@ class TrendingBengaliAnalyzer:
             'negative': np.mean([s['negative'] for s in sentiment_scores]),
             'neutral': np.mean([s['neutral'] for s in sentiment_scores])
         }
-        print("[DEBUG] Step 7 - Average Sentiment:")
+        print(" Step 7 - Average Sentiment:")
         print(avg_sentiment)
         print("\n")
         # Cluster similar phrases
@@ -395,7 +395,7 @@ class TrendingBengaliAnalyzer:
             clustered_phrases = {}
         else:
             clustered_phrases = self.processor.cluster_similar_phrases(phrases, n_clusters=8)
-        print("[DEBUG] Step 8 - Clustered Phrases:")
+        print(" Step 8 - Clustered Phrases:")
         print(clustered_phrases)
         print("\n")
         return {

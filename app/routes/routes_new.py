@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 from sqlalchemy import desc, and_
 from datetime import date, datetime, timedelta
@@ -33,7 +34,12 @@ def get_word_of_the_day(db: Session = Depends(get_db)):
             words=word_entry.word
         )
     else:
-        raise HTTPException(status_code=404, detail="Today's word is not yet set")
+        # Instead of raising 404, return a default response
+        return {
+            "date": str(today),
+            "words": None,
+            "message": "Today's word is not yet set"
+        }
 
 @router.post("/generate_candidates", summary="Generate a list of candidates for trending words")
 def generate_candidates(db: Session = Depends(get_db)):
@@ -256,3 +262,5 @@ def get_trending_stats(db: Session = Depends(get_db)):
             } for stat in type_stats
         ]
     }
+
+# Removed duplicate root endpoint. Only the word of the day endpoint remains.

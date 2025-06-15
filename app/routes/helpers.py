@@ -1119,9 +1119,9 @@ def scrape_bengali_news() -> List[Dict]:
     ]
     print("\n[Scraping: Starting all newspaper scrapers]")
     for source, func in all_sources:
-        print(f"[DEBUG] Calling {func.__name__}() for {source}...")
+        print(f" Calling {func.__name__}() for {source}...")
         src_articles = func()
-        print(f"[DEBUG] {func.__name__}() returned {len(src_articles)} articles.")
+        print(f" {func.__name__}() returned {len(src_articles)} articles.")
         if src_articles:
             for art in src_articles[:3]:
                 print(f"    url: {art.get('url', '')} | heading: {art.get('heading', '')[:60]}")

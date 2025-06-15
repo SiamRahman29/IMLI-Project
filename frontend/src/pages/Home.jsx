@@ -1,19 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { 
-  Container, 
-  Typography, 
-  Card, 
-  CardContent, 
-  Box, 
-  Button, 
-  Grid,
-  Alert,
-  CircularProgress
-} from '@mui/material';
-import TrendingUpIcon from '@mui/icons-material/TrendingUp';
-import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome';
 import { apiV2 } from '../api';
+import { TrendingUp, Sparkles } from 'lucide-react';
 
 function Home() {
   const [word, setWord] = useState('');
@@ -43,102 +31,53 @@ function Home() {
 
   if (loading) {
     return (
-      <Container maxWidth="lg" sx={{ mt: 4, textAlign: 'center' }}>
-        <CircularProgress size={60} />
-        <Typography variant="h6" sx={{ mt: 2 }}>
-          লোড হচ্ছে...
-        </Typography>
-      </Container>
+      <div className="min-h-[calc(100vh-4rem)] flex flex-col justify-center items-center bg-white">
+        <svg className="animate-spin h-16 w-16 text-blue-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"></path></svg>
+        <p className="mt-4 text-lg font-medium text-gray-700">লোড হচ্ছে...</p>
+      </div>
     );
   }
 
   return (
-    <Container maxWidth="lg" sx={{ mt: 4 }}>
-      <Box textAlign="center" mb={4}>
-        <Typography variant="h2" component="h1" gutterBottom sx={{ fontWeight: 'bold' }}>
-          BARTA - IMLI
-        </Typography>
-        <Typography variant="h5" color="text.secondary" gutterBottom>
-          বাংলা ট্রেন্ডিং শব্দ বিশ্লেষণ সিস্টেম
-        </Typography>
-      </Box>
+    <div className="container mx-auto px-4 py-12 bg-white min-h-[calc(100vh-4rem)] flex flex-col justify-center">
+      <div className="text-center mb-10">
+        <h1 className="text-4xl md:text-5xl font-extrabold tracking-tight text-gray-900 mb-2">BARTA - IMLI</h1>
+        <p className="text-xl text-gray-600 mb-2">বাংলা ট্রেন্ডিং শব্দ বিশ্লেষণ সিস্টেম</p>
+      </div>
 
       {error ? (
-        <Alert severity="info" sx={{ mb: 4 }}>
+        <div className="bg-blue-100 border border-blue-300 text-blue-800 px-4 py-3 rounded mb-8 text-center">
           {error}
-        </Alert>
+        </div>
       ) : (
-        <Card sx={{ mb: 4, textAlign: 'center', py: 4 }}>
-          <CardContent>
-            <Typography variant="h4" component="h2" gutterBottom>
-              আজকের শব্দ
-            </Typography>
-            {date && (
-              <Typography variant="h6" color="text.secondary" gutterBottom>
-                {new Date(date).toLocaleDateString('bn-BD')}
-              </Typography>
-            )}
-            <Typography variant="h3" sx={{ fontWeight: 'bold', color: 'primary.main', mt: 2 }}>
-              {word}
-            </Typography>
-          </CardContent>
-        </Card>
+        <div className="bg-white shadow-lg rounded-lg mb-10 p-8 text-center">
+          <h2 className="text-2xl font-bold mb-2">আজকের শব্দ</h2>
+          {date && (
+            <div className="text-gray-500 mb-2">{new Date(date).toLocaleDateString('bn-BD')}</div>
+          )}
+          <div className="text-3xl font-extrabold text-blue-600 mt-2">{word}</div>
+        </div>
       )}
 
-      <Grid container spacing={3}>
-        <Grid item xs={12} md={6}>
-          <Card sx={{ height: '100%' }}>
-            <CardContent sx={{ textAlign: 'center', py: 4 }}>
-              <TrendingUpIcon sx={{ fontSize: 60, color: 'primary.main', mb: 2 }} />
-              <Typography variant="h5" gutterBottom>
-                ট্রেন্ডিং বিশ্লেষণ
-              </Typography>
-              <Typography variant="body1" color="text.secondary" paragraph>
-                সংবাদ ও সোশ্যাল মিডিয়া থেকে বর্তমান ট্রেন্ডিং শব্দ ও বাক্যাংশ দেখুন
-              </Typography>
-              <Button 
-                component={Link} 
-                to="/trending" 
-                variant="contained" 
-                size="large"
-                sx={{ mt: 2 }}
-              >
-                বিশ্লেষণ দেখুন
-              </Button>
-            </CardContent>
-          </Card>
-        </Grid>
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-8 max-w-3xl mx-auto">
+        <div className="bg-white shadow-md rounded-lg h-full flex flex-col items-center p-8 text-center">
+          <TrendingUp className="w-14 h-14 text-blue-500 mb-3" />
+          <h3 className="text-xl font-semibold mb-2">ট্রেন্ডিং বিশ্লেষণ</h3>
+          <p className="text-gray-600 mb-4">সংবাদ ও সোশ্যাল মিডিয়া থেকে বর্তমান ট্রেন্ডিং শব্দ ও বাক্যাংশ দেখুন</p>
+          <Link to="/trending" className="inline-block bg-blue-600 hover:bg-blue-700 text-white font-semibold px-6 py-2 rounded-lg transition mt-2 shadow focus:outline-none focus:ring-2 focus:ring-blue-400 focus:ring-offset-2">বিশ্লেষণ দেখুন</Link>
+        </div>
+        <div className="bg-white shadow-md rounded-lg h-full flex flex-col items-center p-8 text-center">
+          <Sparkles className="w-14 h-14 text-pink-500 mb-3" />
+          <h3 className="text-xl font-semibold mb-2">শব্দ উৎপাদন</h3>
+          <p className="text-gray-600 mb-4">AI ব্যবহার করে নতুন ট্রেন্ডিং শব্দের প্রার্থী তৈরি করুন</p>
+          <Link to="/generate" className="inline-block border border-pink-500 text-pink-600 hover:bg-pink-500 hover:text-white font-semibold px-6 py-2 rounded-lg transition mt-2 shadow focus:outline-none focus:ring-2 focus:ring-pink-400 focus:ring-offset-2">শব্দ তৈরি করুন</Link>
+        </div>
+      </div>
 
-        <Grid item xs={12} md={6}>
-          <Card sx={{ height: '100%' }}>
-            <CardContent sx={{ textAlign: 'center', py: 4 }}>
-              <AutoAwesomeIcon sx={{ fontSize: 60, color: 'secondary.main', mb: 2 }} />
-              <Typography variant="h5" gutterBottom>
-                শব্দ উৎপাদন
-              </Typography>
-              <Typography variant="body1" color="text.secondary" paragraph>
-                AI ব্যবহার করে নতুন ট্রেন্ডিং শব্দের প্রার্থী তৈরি করুন
-              </Typography>
-              <Button 
-                component={Link} 
-                to="/generate" 
-                variant="outlined" 
-                size="large"
-                sx={{ mt: 2 }}
-              >
-                শব্দ তৈরি করুন
-              </Button>
-            </CardContent>
-          </Card>
-        </Grid>
-      </Grid>
-
-      <Box textAlign="center" mt={6} py={3}>
-        {/* <Typography variant="body2" color="text.secondary">
-          N-gram Frequency Analysis এবং TF-IDF পদ্ধতি ব্যবহার করে তৈরি
-        </Typography> */}
-      </Box>
-    </Container>
+      <div className="text-center mt-16 py-6">
+        {/* Optional: Add a footer or extra info here */}
+      </div>
+    </div>
   );
 }
 
