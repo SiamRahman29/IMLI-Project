@@ -1260,11 +1260,47 @@ def generate_trending_word_candidates(db: Session, limit: int = 10) -> str:
         analyzer_inputs.append({'title': ' '.join(trend) if isinstance(trend, list) else trend, 'heading': '', 'source': 'serpapi_trends'})
     analyzer_response = analyzer.analyze_trending_content(analyzer_inputs, source_type='mixed')
     summary = []
-    # Defensive: check if 'trending_keywords' exists and is a list
     trending_keywords = analyzer_response.get('trending_keywords', [])
     if not isinstance(trending_keywords, list):
         print(f"[Analyzer] 'trending_keywords' missing or not a list. analyzer_response: {analyzer_response}")
         trending_keywords = []
+    # --- Send trending_keywords (list of tuples) directly to LLM ---
+    # print("[Groq] Trending keywords (list of tuples) sent to LLM:")
+    # print(trending_keywords)
+    # ai_response = None
+    # try:
+    #     from groq import Groq
+    #     api_key = os.environ.get("GROQ_API_KEY")
+    #     if not api_key:
+    #         raise ValueError("GROQ_API_KEY not set in environment.")
+    #     client = Groq(api_key=api_key)
+    #     prompt = f"""
+    #         নিচের tuple list টি আজকের বাংলা সংবাদ, গুগল ট্রেন্ডস ও ইউটিউব ট্রেন্ডিং বিশ্লেষণ করে পাওয়া সবচেয়ে গুরুত্বপূর্ণ এবং trending শব্দ/বাক্যাংশ ও তাদের স্কোর।
+    #         tuple গুলোর মধ্যে থেকে সবচেয়ে গুরুত্বপূর্ণ {limit}টি trending শব্দ/বাক্যাংশ নির্বাচন করো।
+    #         নিয়মাবলী:
+    #         1. শব্দগুলি অবশ্যই অর্থপূর্ণ, গুরুত্বপূর্ণ, trending এবং 'thematic' (বিষয়বস্তুর সাথে সম্পর্কিত) হতে হবে
+    #         2. সাধারণ stop words (যেমন: এই, সেই, করা, হওয়া) এড়িয়ে চলো
+    #         3. কোনো ব্যক্তির নাম (person name) একদমই দিও না
+    #         4. একক শব্দ বা ছোট বাক্যাংশ (২-৩ শব্দ) উভয়ই গ্রহণযোগ্য
+    #         5. প্রতিটি শব্দ/বাক্যাংশ আলাদা লাইনে লেখো
+    #         6. শুধুমাত্র বাংলা শব্দ/বাক্যাংশ দাও, অন্য কিছু নয়
+
+    #         trending_keywords_tuple_list:
+    #         {trending_keywords}
+
+    #         trending শব্দ/বাক্যাংশ ({limit}টি):
+    #         """
+    #     response = client.chat.completions.create(
+    #         messages=[{"role": "user", "content": prompt}],
+    #         model="llama-3.1-8b-instant",
+    #         stream=False,
+    #     )
+    #     ai_response = response.choices[0].message.content
+    #     print(f"  Groq response: {ai_response}")
+    # except Exception as e:
+    #     print(f"Error generating trending words with Groq: {e}")
+    #     ai_response = f"Error generating trending words: {e}"
+    # --- Summary Output (unchanged) ---
     summary.append("Trending Keywords (Top 10):")
     for keyword_score in trending_keywords[:10]:
         if isinstance(keyword_score, (list, tuple)) and len(keyword_score) == 2:

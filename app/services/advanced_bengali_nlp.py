@@ -350,6 +350,12 @@ class TrendingBengaliAnalyzer:
         print("[DEBUG] Step 3 - Trending Keywords:")
         print(trending_keywords)
         print("\n")
+        # Prepare trending keywords (list of tuples) as a prompt for LLM
+        llm_prompt = "ট্রেন্ডিং বাংলা শব্দ/বাক্যাংশ ও স্কোর (শব্দ:স্কোর):\n" + "\n".join(f"{i+1}. {kw}: {score:.4f}" for i, (kw, score) in enumerate(trending_keywords))
+        # Example: Call your LLM here (replace with your actual LLM call)
+        # llm_response = call_groq_llm(llm_prompt)
+        # print("[DEBUG] LLM Response:")
+        # print(llm_response)
         # Extract named entities
         all_entities = {'persons': [], 'places': [], 'organizations': [], 'dates': []}
         for text in texts:
