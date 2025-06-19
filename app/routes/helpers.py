@@ -3,7 +3,7 @@ import re
 import requests
 from requests.exceptions import Timeout, ConnectionError
 from datetime import date, datetime, timedelta
-from typing import List, Dict, Tuple
+from typing import List, Dict, Tuple, TYPE_CHECKING
 from collections import Counter, defaultdict
 import pandas as pd
 import numpy as np
@@ -14,12 +14,15 @@ from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
 from dotenv import load_dotenv
 from groq import Groq
+import traceback
+
+# Type checking imports
+if TYPE_CHECKING:
+    from app.services.advanced_bengali_nlp import TrendingBengaliAnalyzer
+
+# Database and model imports
 from sqlalchemy.orm import Session
-from app.models.word import Article, TrendingPhrase, WeeklyTrendingPhrase
-from app.services.social_media_scraper import scrape_social_media_content
-from selenium import webdriver
-from selenium.webdriver.chrome.options import Options
-from selenium.webdriver.common.by import By
+from app.models.word import TrendingPhrase, Article
 from app.services.text_preprocessing import get_google_trends_bangladesh, get_youtube_trending_bangladesh, get_serpapi_trending_bangladesh
 
 
@@ -52,7 +55,7 @@ BENGALI_STOP_WORDS = {
     'এই', 'সেই', 'যে', 'যেই', 'কোন', 'কোনো', 'একজন', 'দুজন', 'তিনজন', 'চারজন', 'পাঁচজন',
     'নতুন', 'পুরাতন', 'পুরোনো', 'বড়', 'ছোট', 'ভালো', 'খারাপ', 'সুন্দর', 'কুৎসিত', 'উচ্চ', 'নিম্ন',
     'অই', 'অগত্যা','বাংলাদেশ', 'টাকা','শতাংশ','পানি', 'অত: পর', 'অতএব', 'অথচ', 'অথবা', 'অধিক', 'অধীনে', 'অধ্যায়', 'অনুগ্রহ',
-    'অনুভূত', 'অনুযায়ী','ঋণ', 'অনুরূপ', 'অনুসন্ধান', 'অনুসরণ', 'অনুসারে', 'অনুসৃত', 'অনেক', 'অনেকে',
+    'অনুভূত', 'অনুযায়ী','ঋণ', 'অনুরূপ', 'অনুসন্ধান', 'অনুসরণ', 'অনুসারে', 'অনুসৃত', 'অনেক', 'অনেকে',
     'অনেকেই', 'অন্তত', 'অন্য', 'অন্যত্র', 'অন্যান্য', 'অপেক্ষাকৃতভাবে', 'অবধি', 'অবশ্য', 'অবশ্যই',
     'অবস্থা', 'অবিলম্বে', 'অভ্যন্তরস্থ', 'অর্জিত', 'অর্থাত', 'অসদৃশ', 'অসম্ভাব্য', 'আইন', 'আউট',
     'আক্রান্ত', 'আগামী', 'আগে', 'আগেই', 'আগ্রহী', 'আছে', 'আজ', 'আট', 'আদেশ', 'আদ্যভাগে', 'আন্দাজ',
@@ -389,19 +392,26 @@ def get_trending_words(db: Session):
     # if social_media_posts:
     #     store_social_media_content(db, social_media_posts)
     
-    # Analyze trending phrases for each source separately
-    print("Analyzing trending phrases...")
-    analyzer = TrendingAnalyzer()
+    # Analyze trending phrases using advanced Bengali NLP
+    print("Analyzing trending phrases with advanced Bengali NLP...")
+    from app.services.advanced_bengali_nlp import TrendingBengaliAnalyzer
+    
     today = date.today()
     # Clear existing data for today
     db.query(TrendingPhrase).filter(TrendingPhrase.date == today).delete()
-    # Analyze news content
+    
+    # Use advanced Bengali analyzer for main analysis
+    advanced_analyzer = TrendingBengaliAnalyzer()
+    
+    # Analyze news content with advanced NLP
     if news_articles:
-        # Use heading instead of description
-        analyze_and_store_trends(db, analyzer, news_articles, 'news', today)
+        print(f"\n🔍 Analyzing {len(news_articles)} news articles with advanced Bengali NLP...")
+        analyze_trending_content_and_store(db, advanced_analyzer, news_articles, 'news', today)
+    
     # Analyze social media content  
     if social_media_posts:
-        analyze_and_store_trends(db, analyzer, social_media_posts, 'social_media', today)
+        print(f"\n📱 Analyzing {len(social_media_posts)} social media posts...")
+        analyze_trending_content_and_store(db, advanced_analyzer, social_media_posts, 'social_media', today)
     
     db.commit()
     print("Comprehensive trending phrases analysis completed and stored!")
@@ -1295,29 +1305,37 @@ def parse_news(articles: List[Dict]) -> str:
     
     return "\n".join(combined_texts)
 
-def generate_trending_word_candidates(db: Session, limit: int = 10) -> str:
-    """Generate trending word candidates using both Groq AI and full Bengali analyzer pipeline (with debug output)"""
+def generate_trending_word_candidates_realtime(limit: int = 10) -> str:
+    """Generate trending word candidates using REAL-TIME analysis (NO DATABASE USAGE)"""
+    print("Starting real-time trending analysis...")
+    print("=" * 60)
+    
     # Fetch news articles (existing)
     articles = fetch_news() or []
     # Use heading only
     texts = [a.get('heading', '') for a in articles if a.get('heading')]
+    
     # Fetch Google Trends
     google_trends = get_google_trends_bangladesh()
     # Fetch YouTube trending
     youtube_trends = get_youtube_trending_bangladesh()
     # Fetch SerpApi Google Trends
     serpapi_trends = get_serpapi_trending_bangladesh()
+    
     print("[SerpApi] Final trending phrases (Bangladesh):")
     for idx, trend in enumerate(serpapi_trends, 1):
         print(f"  {idx}. {' '.join(trend) if isinstance(trend, list) else trend}")
+    
     # Combine all sources for AI
     texts.extend([' '.join(words) for words in google_trends if words])
     texts.extend([' '.join(words) for words in youtube_trends if words])
     texts.extend([' '.join(trend) for trend in serpapi_trends if trend])
+    
     if not texts:
         msg = "No articles or trends available for analysis"
         print(msg)
         return msg
+    
     # --- AI Response (Groq) ---
     from app.services.advanced_bengali_nlp import TrendingBengaliAnalyzer
     analyzer = TrendingBengaliAnalyzer()
@@ -1325,21 +1343,27 @@ def generate_trending_word_candidates(db: Session, limit: int = 10) -> str:
     tokenized = [analyzer.processor.advanced_tokenize(t) for t in cleaned_texts]
     no_stopwords = [[w for w in words if w not in analyzer.processor.stop_words] for words in tokenized]
     cleaned_for_groq = []
+    
     for words in no_stopwords[:15]:
-        cleaned_for_groq.append(' '.join(words)[:500])
+        if words:
+            cleaned_for_groq.append(' '.join(words)[:500])
+    
     combined_text = '\n'.join(cleaned_for_groq)
     ai_response = None
+    
     try:
         from groq import Groq
+        import os
         api_key = os.environ.get("GROQ_API_KEY")
         if not api_key:
             raise ValueError("GROQ_API_KEY not set in environment.")
         client = Groq(api_key=api_key)
+        
         prompt = f"""
             নিচের বাংলা সংবাদের টেক্সট, গুগল ট্রেন্ডস ও ইউটিউব ট্রেন্ডিং থেকে আজকের জন্য সবচেয়ে গুরুত্বপূর্ণ এবং trending {limit}টি শব্দ বা বাক্যাংশ খুঁজে বের করো।
-            
+
             **গুরুত্বপূর্ণ নিয়মাবলী:**
-            1. **একটি টপিকের জন্য শুধুমাত্র একটি প্রতিনিধিত্বকারী phrase দাও** - যেমন "ইরানে হামলা", "ইরান", "হামলা" আলাদাভাবে নয়, বরং "ইসরায়েল-ইরানের সংঘাত" বা "মধ্যপ্রাচ্যের উত্তেজনা" এর মতো
+            1. **একটি টপিকের জন্য শুধুমাত্র একটি প্রতিনিধিত্বকারী phrase দাও**
             2. **কোনো ব্যক্তির নাম দিও না** (যেমন: ট্রাম্প, বাইডেন, মোদি ইত্যাদি)
             3. **ছোট ও সংক্ষিপ্ত phrase দাও** - সর্বোচ্চ ২-৪ শব্দ। দীর্ঘ বাক্য দিও না
             4. **সাধারণ stop words এড়িয়ে চলো** (যেমন: এই, সেই, করা, হওয়া, যে, যার)
@@ -1357,18 +1381,20 @@ def generate_trending_word_candidates(db: Session, limit: int = 10) -> str:
 
             trending শব্দ/বাক্যাংশ ({limit}টি):
             """
+        
         response = client.chat.completions.create(
             messages=[{"role": "user", "content": prompt}],
-            # model="llama-3.1-8b-instant",
             model="llama-3.3-70b-versatile",
             stream=False,
         )
         ai_response = response.choices[0].message.content
-        print(f"  Groq response: {ai_response}")
+        print(f"🤖 Groq AI Response: {ai_response}")
+        
     except Exception as e:
         print(f"Error generating trending words with Groq: {e}")
         ai_response = f"Error generating trending words: {e}"
-    # --- Analyzer Response ---
+    
+    # --- NLP Analysis Response (WITHOUT DATABASE) ---
     analyzer_inputs = []
     for a in articles:
         analyzer_inputs.append({
@@ -1376,154 +1402,306 @@ def generate_trending_word_candidates(db: Session, limit: int = 10) -> str:
             'heading': a.get('heading', ''),
             'source': a.get('source', 'news')
         })
+    
     for trend in google_trends:
         analyzer_inputs.append({'title': ' '.join(trend), 'heading': '', 'source': 'google_trends'})
+    
     for trend in youtube_trends:
         analyzer_inputs.append({'title': ' '.join(trend), 'heading': '', 'source': 'youtube_trending'})
+    
     for trend in serpapi_trends:
         analyzer_inputs.append({'title': ' '.join(trend) if isinstance(trend, list) else trend, 'heading': '', 'source': 'serpapi_trends'})
+    
+    print(f"\n🧠 Running NLP Analysis on {len(analyzer_inputs)} inputs...")
     analyzer_response = analyzer.analyze_trending_content(analyzer_inputs, source_type='mixed')
+    
     summary = []
     trending_keywords = analyzer_response.get('trending_keywords', [])
+    
     if not isinstance(trending_keywords, list):
         print(f"[Analyzer] 'trending_keywords' missing or not a list. analyzer_response: {analyzer_response}")
         trending_keywords = []
-    # --- Send trending_keywords (list of tuples) directly to LLM ---
-    # print("[Groq] Trending keywords (list of tuples) sent to LLM:")
-    # print(trending_keywords)
-    # ai_response = None
-    # try:
-    #     from groq import Groq
-    #     api_key = os.environ.get("GROQ_API_KEY")
-    #     if not api_key:
-    #         raise ValueError("GROQ_API_KEY not set in environment.")
-    #     client = Groq(api_key=api_key)
-    #     prompt = f"""
-    #         নিচের tuple list টি আজকের বাংলা সংবাদ, গুগল ট্রেন্ডস ও ইউটিউব ট্রেন্ডিং বিশ্লেষণ করে পাওয়া সবচেয়ে গুরুত্বপূর্ণ এবং trending শব্দ/বাক্যাংশ ও তাদের স্কোর।
-    #         tuple গুলোর মধ্যে থেকে সবচেয়ে গুরুত্বপূর্ণ {limit}টি trending শব্দ/বাক্যাংশ নির্বাচন করো।
-    #         নিয়মাবলী:
-    #         1. শব্দগুলি অবশ্যই অর্থপূর্ণ, গুরুত্বপূর্ণ, trending এবং 'thematic' (বিষয়বস্তুর সাথে সম্পর্কিত) হতে হবে
-    #         2. সাধারণ stop words (যেমন: এই, সেই, করা, হওয়া) এড়িয়ে চলো
-    #         3. কোনো ব্যক্তির নাম (person name) একদমই দিও না
-    #         4. একক শব্দ বা ছোট বাক্যাংশ (২-৩ শব্দ) উভয়ই গ্রহণযোগ্য
-    #         5. প্রতিটি শব্দ/বাক্যাংশ আলাদা লাইনে লেখো
-    #         6. শুধুমাত্র বাংলা শব্দ/বাক্যাংশ দাও, অন্য কিছু নয়
-
-    #         trending_keywords_tuple_list:
-    #         {trending_keywords}
-
-    #         trending শব্দ/বাক্যাংশ ({limit}টি):
-    #         """
-    #     response = client.chat.completions.create(
-    #         messages=[{"role": "user", "content": prompt}],
-    #         model="llama-3.1-8b-instant",
-    #         stream=False,
-    #     )
-    #     ai_response = response.choices[0].message.content
-    #     print(f"  Groq response: {ai_response}")
-    # except Exception as e:
-    #     print(f"Error generating trending words with Groq: {e}")
-    #     ai_response = f"Error generating trending words: {e}"
-    # --- Summary Output (unchanged) ---
-    summary.append("Trending Keywords (Top 10):")
+    
+    summary.append("📊 NLP Trending Keywords (Top 10):")
     for keyword_score in trending_keywords[:10]:
         if isinstance(keyword_score, (list, tuple)) and len(keyword_score) == 2:
             keyword, score = keyword_score
-            summary.append(f"  {keyword}: {score:.4f}")
+            summary.append(f"  🔸 {keyword}: {score:.4f}")
         else:
-            summary.append(f"  {keyword_score}")
-    summary.append("\nNamed Entities:")
+            summary.append(f"  🔸 {keyword_score}")
+    
+    summary.append("\n🏷️ Named Entities:")
     for entity_type, entities in analyzer_response.get('named_entities', {}).items():
         if entities:
-            summary.append(f"  {entity_type}: {entities[:5]}")
-    summary.append(f"\nSentiment: {analyzer_response.get('sentiment_analysis', '')}")
-    summary.append(f"\nStatistics: {analyzer_response.get('content_statistics', '')}")
-    # Print what is being sent to Groq
-    print(f"[Groq] Combined text sent to LLM:\n{combined_text}")
-    return ai_response
+            summary.append(f"  📍 {entity_type}: {entities[:5]}")
+    
+    summary.append(f"\n💭 Sentiment: {analyzer_response.get('sentiment_analysis', '')}")
+    summary.append(f"\n📈 Statistics: {analyzer_response.get('content_statistics', '')}")
+    
+    # Final summary
+    summary.append(f"\n🤖 AI Generated Trending Words:\n{ai_response}")
+    
+    print(f"[Summary] Real-time analysis completed without database usage")
+    return '\n'.join(summary)
 
-def aggregate_weekly_trending(db: Session, target_week_start: date = None):
-    """Aggregate daily trending phrases into weekly trending summaries"""
-    from app.models.word import WeeklyTrendingPhrase
+def generate_trending_word_candidates_realtime_with_save(db: Session, limit: int = 10) -> str:
+    """Generate trending word candidates using REAL-TIME analysis and save top 10 LLM words to database"""
+    print("Starting real-time trending analysis with database save...")
+    print("=" * 60)
     
-    if target_week_start is None:
-        # Get current week start (Monday)
-        today = date.today()
-        days_since_monday = today.weekday()
-        target_week_start = today - timedelta(days=days_since_monday)
+    from datetime import date
+    today = date.today()
     
-    week_end = target_week_start + timedelta(days=6)
+    # Fetch news articles (existing)
+    articles = fetch_news() or []
+    # Use heading only
+    texts = [a.get('heading', '') for a in articles if a.get('heading')]
     
-    print(f"Aggregating weekly trending data for {target_week_start} to {week_end}")
+    # Fetch Google Trends
+    google_trends = get_google_trends_bangladesh()
+    # Fetch YouTube trending
+    youtube_trends = get_youtube_trending_bangladesh()
+    # Fetch SerpApi Google Trends
+    serpapi_trends = get_serpapi_trending_bangladesh()
     
-    # Clear existing weekly data for this week
-    db.query(WeeklyTrendingPhrase).filter(
-        WeeklyTrendingPhrase.week_start == target_week_start
-    ).delete()
+    print("[SerpApi] Final trending phrases (Bangladesh):")
+    for idx, trend in enumerate(serpapi_trends, 1):
+        print(f"  {idx}. {' '.join(trend) if isinstance(trend, list) else trend}")
     
-    # Get all daily trending phrases for this week
-    daily_phrases = db.query(TrendingPhrase).filter(
-        TrendingPhrase.date >= target_week_start,
-        TrendingPhrase.date <= week_end
-    ).all()
+    # Combine all sources for AI
+    texts.extend([' '.join(words) for words in google_trends if words])
+    texts.extend([' '.join(words) for words in youtube_trends if words])
+    texts.extend([' '.join(trend) for trend in serpapi_trends if trend])
     
-    if not daily_phrases:
-        print(f"No daily phrases found for week {target_week_start}")
-        return 0
+    if not texts:
+        msg = "No articles or trends available for analysis"
+        print(msg)
+        return msg
     
-    # Group by phrase text and aggregate metrics
-    phrase_aggregates = defaultdict(lambda: {
-        'total_score': 0.0,
-        'total_frequency': 0,
-        'appearance_days': set(),
-        'phrase_types': defaultdict(int),
-        'sources': defaultdict(int)
-    })
+    # --- AI Response (Groq) ---
+    from app.services.advanced_bengali_nlp import TrendingBengaliAnalyzer
+    analyzer = TrendingBengaliAnalyzer()
+    cleaned_texts = [analyzer.processor.normalize_text(t) for t in texts]
+    tokenized = [analyzer.processor.advanced_tokenize(t) for t in cleaned_texts]
+    no_stopwords = [[w for w in words if w not in analyzer.processor.stop_words] for words in tokenized]
+    cleaned_for_groq = []
     
-    for phrase in daily_phrases:
-        key = phrase.phrase.strip().lower()
-        agg = phrase_aggregates[key]
+    for words in no_stopwords[:15]:
+        if words:
+            cleaned_for_groq.append(' '.join(words)[:500])
+    
+    combined_text = '\n'.join(cleaned_for_groq)
+    ai_response = None
+    
+    try:
+        from groq import Groq
+        import os
+        api_key = os.environ.get("GROQ_API_KEY")
+        if not api_key:
+            raise ValueError("GROQ_API_KEY not set in environment.")
+        client = Groq(api_key=api_key)
         
-        agg['total_score'] += phrase.score
-        agg['total_frequency'] += phrase.frequency
-        agg['appearance_days'].add(phrase.date)
-        agg['phrase_types'][phrase.phrase_type] += 1
-        agg['sources'][phrase.source] += 1
-        agg['original_phrase'] = phrase.phrase  # Keep original casing
+        prompt = f"""
+            নিচের বাংলা সংবাদের টেক্সট, গুগল ট্রেন্ডস ও ইউটিউব ট্রেন্ডিং থেকে আজকের জন্য সবচেয়ে গুরুত্বপূর্ণ এবং trending {limit}টি শব্দ বা বাক্যাংশ খুঁজে বের করো।
+
+            **গুরুত্বপূর্ণ নিয়মাবলী:**
+            1. **একটি টপিকের জন্য শুধুমাত্র একটি প্রতিনিধিত্বকারী phrase দাও**
+            2. **কোনো ব্যক্তির নাম দিও না** (যেমন: ট্রাম্প, বাইডেন, মোদি ইত্যাদি)
+            3. **ছোট ও সংক্ষিপ্ত phrase দাও** - সর্বোচ্চ ২-৪ শব্দ। দীর্ঘ বাক্য দিও না
+            4. **সাধারণ stop words এড়িয়ে চলো** (যেমন: এই, সেই, করা, হওয়া, যে, যার)
+            5. **শুধুমাত্র বিষয়বস্তু/থিম ভিত্তিক phrase দাও** - খবরের মূল বিষয় যা trending
+            6. **প্রতিটি শব্দ/বাক্যাংশ আলাদা লাইনে লেখো**
+            7. **শুধুমাত্র বাংলা শব্দ/বাক্যাংশ দাও**
+            8. **একই টপিকের ভিন্ন ভিন্ন রূপ এড়িয়ে চলো** - সবচেয়ে প্রতিনিধিত্বকারী একটি phrase দাও
+
+            উদাহরণ:
+            ✅ ভালো: "ইসরায়েল-ইরানের সংঘাত", "জ্বালানি সংকট", "নির্বাচনী প্রচারণা"
+            ❌ খারাপ: "ইরান", "হামলা", "ট্রাম্প বলেছেন যে...", "সরকার নিশ্চিত করেছে যে..."
+
+            টেক্সট:
+            {combined_text}
+
+            trending শব্দ/বাক্যাংশ ({limit}টি):
+            """
+        
+        response = client.chat.completions.create(
+            messages=[{"role": "user", "content": prompt}],
+            # model="llama-3.3-70b-versatile",
+            model="llama-3.1-8b-instant",
+            # model="meta-llama/llama-guard-4-12b",
+            # model="Qwen/Qwen3-32B",
+            stream=False,
+        )
+        ai_response = response.choices[0].message.content
+        print(f"🤖 Groq AI Response: {ai_response}")
+        
+        # Save top 10 LLM trending words to database
+        save_llm_trending_words_to_db(db, ai_response, today, limit=10)
+        
+    except Exception as e:
+        print(f"Error generating trending words with Groq: {e}")
+        ai_response = f"Error generating trending words: {e}"
     
-    # Create weekly trending phrases
-    weekly_phrases = []
-    for phrase_text, agg in phrase_aggregates.items():
-        if len(agg['appearance_days']) >= 2:  # Appeared at least 2 days
-            # Calculate average score
-            avg_score = agg['total_score'] / len(agg['appearance_days'])
+    # --- NLP Analysis Response (WITHOUT DATABASE for NLP results) ---
+    analyzer_inputs = []
+    for a in articles:
+        analyzer_inputs.append({
+            'title': a.get('title', ''),
+            'heading': a.get('heading', ''),
+            'source': a.get('source', 'news')
+        })
+    
+    for trend in google_trends:
+        analyzer_inputs.append({'title': ' '.join(trend), 'heading': '', 'source': 'google_trends'})
+    
+    for trend in youtube_trends:
+        analyzer_inputs.append({'title': ' '.join(trend), 'heading': '', 'source': 'youtube_trending'})
+    
+    for trend in serpapi_trends:
+        analyzer_inputs.append({'title': ' '.join(trend) if isinstance(trend, list) else trend, 'heading': '', 'source': 'serpapi_trends'})
+    
+    print(f"\n🧠 Running NLP Analysis on {len(analyzer_inputs)} inputs...")
+    analyzer_response = analyzer.analyze_trending_content(analyzer_inputs, source_type='mixed')
+    
+    # Start with empty summary array and add heading separately at the end
+    summary = []
+    trending_keywords = analyzer_response.get('trending_keywords', [])
+    
+    if not isinstance(trending_keywords, list):
+        print(f"[Analyzer] 'trending_keywords' missing or not a list. analyzer_response: {analyzer_response}")
+        trending_keywords = []
+    
+    # Add only the trending keywords to summary (not the heading)
+    for keyword_score in trending_keywords[:10]:
+        if isinstance(keyword_score, (list, tuple)) and len(keyword_score) == 2:
+            keyword, score = keyword_score
+            summary.append(f"  🔸 {keyword}: {score:.4f}")
+        else:
+            summary.append(f"  🔸 {keyword_score}")
+    
+    summary.append("\n🏷️ Named Entities:")
+    for entity_type, entities in analyzer_response.get('named_entities', {}).items():
+        if entities:
+            summary.append(f"  📍 {entity_type}: {entities[:5]}")
+    
+    summary.append(f"\n💭 Sentiment: {analyzer_response.get('sentiment_analysis', '')}")
+    summary.append(f"\n📈 Statistics: {analyzer_response.get('content_statistics', '')}")
+    
+    # Final summary
+    summary.append(f"\n🤖 AI Generated Trending Words:\n{ai_response}")
+    summary.append(f"\n💾 Database Status: Top 10 LLM trending words saved for trending analysis section")
+    
+    # Add heading at the beginning
+    final_output = "📊 NLP Trending Keywords থেকে আজকের শব্দ নির্বাচন করুন\n\n" + '\n'.join(summary)
+    
+    print(f"[Summary] Real-time analysis completed with database save for LLM words")
+    return final_output
+
+def analyze_trending_content_and_store(db: Session, analyzer, content: List[Dict], source: str, target_date: date):
+    """Analyze trending content using advanced Bengali NLP and store results in database"""
+    try:
+        print(f"🔍 Analyzing {len(content)} items from {source} for {target_date}")
+        
+        # Analyze content using advanced Bengali analyzer
+        analysis_result = analyzer.analyze_trending_content(content, source_type=source)
+        
+        if not analysis_result or 'trending_keywords' not in analysis_result:
+            print(f"No analysis results for {source}")
+            return
+        
+        trending_keywords = analysis_result.get('trending_keywords', [])
+        print(f"📊 Found {len(trending_keywords)} trending keywords from {source}")
+        
+        # Store trending phrases in database
+        for keyword, score in trending_keywords[:50]:  # Store top 50
+            if len(keyword.strip()) > 1:  # Skip very short words
+                # Determine phrase type based on word count
+                word_count = len(keyword.split())
+                if word_count == 1:
+                    phrase_type = 'unigram'
+                elif word_count == 2:
+                    phrase_type = 'bigram'
+                else:
+                    phrase_type = 'trigram'
+                
+                trending_phrase = TrendingPhrase(
+                    date=target_date,
+                    phrase=keyword.strip(),
+                    score=float(score),
+                    frequency=1,  # Frequency is embedded in the score
+                    phrase_type=phrase_type,
+                    source=source
+                )
+                db.add(trending_phrase)
+        
+        print(f"✅ Stored trending phrases for {source}")
+        
+    except Exception as e:
+        print(f"❌ Error analyzing content from {source}: {e}")
+        import traceback
+        traceback.print_exc()
+
+def save_llm_trending_words_to_db(db: Session, ai_response: str, target_date: date, limit: int = 10):
+    """Parse LLM response and save top trending words to database"""
+    try:
+        if not ai_response or ai_response.strip() == "":
+            print("❌ No AI response to parse")
+            return
+        
+        # Parse the LLM response to extract trending words
+        lines = ai_response.strip().split('\n')
+        saved_count = 0
+        
+        for line in lines:
+            if saved_count >= limit:
+                break
+                
+            # Clean the line and extract the trending word/phrase
+            line = line.strip()
+            if not line:
+                continue
             
-            # Determine dominant phrase type and source
-            dominant_phrase_type = max(agg['phrase_types'], key=agg['phrase_types'].get)
-            dominant_source = max(agg['sources'], key=agg['sources'].get)
+            # Remove numbering if present (1. , 2. , etc.)
+            import re
+            cleaned_line = re.sub(r'^\d+\.\s*', '', line)
+            cleaned_line = cleaned_line.strip()
             
-            weekly_phrase = WeeklyTrendingPhrase(
-                week_start=target_week_start,
-                week_end=week_end,
-                phrase=agg['original_phrase'],
-                total_score=agg['total_score'],
-                average_score=avg_score,
-                total_frequency=agg['total_frequency'],
-                appearance_days=len(agg['appearance_days']),
-                phrase_type=dominant_phrase_type,
-                dominant_source=dominant_source
+            # Skip if too short or contains unwanted patterns
+            if len(cleaned_line) < 2:
+                continue
+            
+            # Skip if contains person indicators or unwanted patterns
+            person_indicators = ['মাননীয়', 'জনাব', 'মিসেস', 'মিস', 'ডঃ', 'প্রফেসর']
+            if any(indicator in cleaned_line for indicator in person_indicators):
+                continue
+            
+            # Determine phrase type
+            word_count = len(cleaned_line.split())
+            if word_count == 1:
+                phrase_type = 'unigram'
+            elif word_count == 2:
+                phrase_type = 'bigram'
+            else:
+                phrase_type = 'trigram'
+            
+            # Create TrendingPhrase object
+            trending_phrase = TrendingPhrase(
+                date=target_date,
+                phrase=cleaned_line,
+                score=1.0 - (saved_count * 0.1),  # Decreasing score based on order
+                frequency=1,
+                phrase_type=phrase_type,
+                source='llm_generated'
             )
-            weekly_phrases.append(weekly_phrase)
-    
-    # Sort by average score and take top phrases
-    weekly_phrases.sort(key=lambda x: x.average_score, reverse=True)
-    top_weekly_phrases = weekly_phrases[:50]  # Keep top 50
-    
-    # Save to database
-    for phrase in top_weekly_phrases:
-        db.add(phrase)
-    
-    db.commit()
-    
-    print(f"Aggregated {len(top_weekly_phrases)} weekly trending phrases for week {target_week_start}")
-    return len(top_weekly_phrases)
+            
+            db.add(trending_phrase)
+            saved_count += 1
+            print(f"💾 Saved LLM trending word {saved_count}: {cleaned_line}")
+        
+        # Commit the changes
+        db.commit()
+        print(f"✅ Successfully saved {saved_count} LLM trending words to database")
+        
+    except Exception as e:
+        print(f"❌ Error saving LLM trending words: {e}")
+        db.rollback()

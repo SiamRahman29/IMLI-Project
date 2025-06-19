@@ -423,18 +423,18 @@ class AdvancedBengaliProcessor:
             print(" No texts extracted. Returning early.")
             return {}
         # Update word frequency cache
-        self.processor.update_word_frequency_cache(texts)
+        self.update_word_frequency_cache(texts)
         print(" Step 2 - Word Frequency Cache Updated:")
-        print(f"   Total unique words in cache: {len(self.processor.word_freq_cache)}")
-        if self.processor.word_freq_cache:
+        print(f"   Total unique words in cache: {len(self.word_freq_cache)}")
+        if self.word_freq_cache:
             # Show top 10 most frequent words
-            top_words = sorted(self.processor.word_freq_cache.items(), key=lambda x: x[1], reverse=True)[:10]
+            top_words = sorted(self.word_freq_cache.items(), key=lambda x: x[1], reverse=True)[:10]
             print("   Top 10 most frequent words:")
             for i, (word, freq) in enumerate(top_words, 1):
                 print(f"     {i:2d}. {word:20s} - {freq:3d} times")
         print("\n")
         # Extract trending keywords with TF-IDF scores (sorted by importance)
-        trending_keywords = self.processor.extract_trending_keywords(texts, top_k=100)
+        trending_keywords = self.extract_trending_keywords(texts, top_k=100)
         print(" Step 3 - Trending Keywords (TF-IDF sorted by importance):")
         print("Top 10 Keywords with highest TF-IDF scores:")
         for i, (keyword, score) in enumerate(trending_keywords[:10], 1):
@@ -459,7 +459,7 @@ class AdvancedBengaliProcessor:
         # Extract named entities
         all_entities = {'persons': [], 'places': [], 'organizations': [], 'dates': []}
         for text in texts:
-            entities = self.processor.extract_named_entities(text)
+            entities = self.extract_named_entities(text)
             for entity_type in all_entities:
                 all_entities[entity_type].extend(entities[entity_type])
         print(" Step 4 - Named Entities (raw):")
@@ -475,7 +475,7 @@ class AdvancedBengaliProcessor:
         # Sentiment analysis
         sentiment_scores = []
         for text in texts:
-            sentiment = self.processor.calculate_text_sentiment(text)
+            sentiment = self.calculate_text_sentiment(text)
             sentiment_scores.append(sentiment)
         print(" Step 6 - Sentiment Scores:")
         print(sentiment_scores)
@@ -494,12 +494,12 @@ class AdvancedBengaliProcessor:
         if not phrases:
             clustered_phrases = {}
         else:
-            clustered_phrases = self.processor.cluster_similar_phrases(phrases, n_clusters=8)
+            clustered_phrases = self.cluster_similar_phrases(phrases, n_clusters=8)
         print(" Step 8 - Clustered Phrases:")
         print(clustered_phrases)
         print("\n")
         # Filter and deduplicate trending keywords for better quality
-        filtered_trending_keywords = self.processor.filter_and_deduplicate_keywords(trending_keywords, max_results=15)
+        filtered_trending_keywords = self.filter_and_deduplicate_keywords(trending_keywords, max_results=15)
         print(" Step 9 - Filtered and Deduplicated Trending Keywords:")
         for i, (keyword, score) in enumerate(filtered_trending_keywords, 1):
             print(f"  {i:2d}. {keyword:30s} - Score: {score:.6f}")
@@ -512,8 +512,8 @@ class AdvancedBengaliProcessor:
             'phrase_clusters': clustered_phrases,
             'content_statistics': {
                 'total_texts': len(texts),
-                'total_words': sum(len(self.processor.advanced_tokenize(text)) for text in texts),
-                'unique_words': len(set(word for text in texts for word in self.processor.advanced_tokenize(text))),
+                'total_words': sum(len(self.advanced_tokenize(text)) for text in texts),
+                'unique_words': len(set(word for text in texts for word in self.advanced_tokenize(text))),
                 'source_type': source_type
             }
         }

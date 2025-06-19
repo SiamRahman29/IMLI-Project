@@ -6,7 +6,7 @@ from typing import Optional, List
 
 from app.db.database import SessionLocal
 from app.models.word import Word, TrendingPhrase
-from app.routes.helpers import get_trending_words, generate_trending_word_candidates
+from app.routes.helpers import get_trending_words, generate_trending_word_candidates_realtime
 from app.dto.dtos import TrendingWordsResponse, TrendingPhraseResponse, DailyTrendingResponse, TrendingPhrasesRequest
 
 router = APIRouter()
@@ -41,7 +41,7 @@ def generate_candidates(db: Session = Depends(get_db)):
         get_trending_words(db)
         
         # Also generate AI candidates
-        ai_candidates = generate_trending_word_candidates(db, limit=15)
+        ai_candidates = generate_trending_word_candidates_realtime(limit=15)
         
         return {
             "message": "Trending analysis completed!",

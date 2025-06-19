@@ -20,7 +20,7 @@ import random
 
 from app.db.database import SessionLocal
 from app.models.word import Word, TrendingPhrase
-from app.routes.helpers import get_trending_words, generate_trending_word_candidates
+from app.routes.helpers import get_trending_words, generate_trending_word_candidates_realtime
 from app.dto.dtos import TrendingWordsResponse, TrendingPhraseResponse, DailyTrendingResponse, TrendingPhrasesRequest
 # from app.services.social_media_scraper import print_scraped_posts_pretty, scrape_social_media_content
 
@@ -55,20 +55,17 @@ def get_word_of_the_day(db: Session = Depends(get_db)):
 
 @router.post("/generate_candidates", summary="Generate a list of candidates for trending words")
 def generate_candidates(db: Session = Depends(get_db)):
-    """Generate trending word candidates using AI and NLP analysis"""
+    """Generate trending word candidates using real-time AI and NLP analysis, save top 10 to database"""
+    from app.routes.helpers import generate_trending_word_candidates_realtime_with_save
+    
     try:
-        # Run full trending analysis
-        get_trending_words(db)
-
-        # Print all scraped posts in pretty format
-        # print_scraped_posts_pretty(scrape_social_media_content())
-        
-        ai_candidates = generate_trending_word_candidates(db, limit=15)
+        # Real-time analysis with database storage for top 10 LLM words
+        ai_candidates = generate_trending_word_candidates_realtime_with_save(db, limit=15)
         
         return {
-            "message": "Trending analysis completed!",
+            "message": "Real-time trending word candidates generated and top 10 saved to database!",
             "ai_candidates": ai_candidates,
-            "note": "Check /trending-phrases endpoint for detailed analysis"
+            "note": "Top 10 LLM trending words saved to database for trending analysis section."
         }
     except Exception as e:
         detail = f"Error generating candidates: {str(e)}\n{traceback.format_exc()}"
