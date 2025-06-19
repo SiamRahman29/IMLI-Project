@@ -1,6 +1,7 @@
-from sqlalchemy import Column, String, Date, Float, Integer, Text
+from sqlalchemy import Column, String, Date, Float, Integer, Text, DateTime
 from app.db.database import Base
 from sqlalchemy import Sequence
+from datetime import datetime
 
 class Word(Base):
     __tablename__ = "words"
@@ -18,6 +19,21 @@ class TrendingPhrase(Base):
     frequency = Column(Integer, nullable=False)
     phrase_type = Column(String, nullable=False)  # 'unigram', 'bigram', 'trigram'
     source = Column(String, nullable=False)  # 'news', 'social_media'
+
+class WeeklyTrendingPhrase(Base):
+    __tablename__ = "weekly_trending_phrases"
+    
+    id = Column(Integer, Sequence('weekly_phrase_id_seq'), primary_key=True, index=True)
+    week_start = Column(Date, nullable=False, index=True)
+    week_end = Column(Date, nullable=False)
+    phrase = Column(String, nullable=False)
+    total_score = Column(Float, nullable=False)
+    average_score = Column(Float, nullable=False)
+    total_frequency = Column(Integer, nullable=False)
+    appearance_days = Column(Integer, nullable=False)  # How many days this week the phrase appeared
+    phrase_type = Column(String, nullable=False)
+    dominant_source = Column(String, nullable=False)  # Most common source for this phrase
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
 
 class Article(Base):
     __tablename__ = "articles"

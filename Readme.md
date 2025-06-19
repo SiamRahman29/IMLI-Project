@@ -53,6 +53,7 @@ This project is a full-stack system for extracting, analyzing, and visualizing t
 
 - **Groq API Key Required:**
   - Make sure you have a valid `GROQ_API_KEY` in your `.env` file for AI-powered trending word extraction.
+  - To obtain a key, visit the [Groq API website](https://groq.com/) and follow their instructions for signing up and generating an API key.
   - If missing, the backend will return a clear error message.
 
 - **News Scraping Issues:**
@@ -84,4 +85,3 @@ For any issues or contributions, please open an issue or pull request!
 7. Tailwind CSS implementation
 8. Prompt engineer to implement TFIDF
 9. Link sources
-  

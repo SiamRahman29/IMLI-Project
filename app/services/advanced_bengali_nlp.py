@@ -306,17 +306,99 @@ class AdvancedBengaliProcessor:
             words = self.advanced_tokenize(text)
             for word in words:
                 self.word_freq_cache[word] = self.word_freq_cache.get(word, 0) + 1
-
-
-class TrendingBengaliAnalyzer:
-    """
-    Main analyzer class for Bengali trending content
-    """
     
-    def __init__(self):
-        self.processor = AdvancedBengaliProcessor()
-    
-    def analyze_trending_content(self, contents: List[Dict], source_type: str = 'mixed') -> Dict:
+    def filter_and_deduplicate_keywords(self, trending_keywords, max_results=15):
+        """
+        Filter and deduplicate trending keywords to avoid repetitive and low-quality phrases
+        """
+        if not trending_keywords:
+            return []
+        
+        # Person name patterns to exclude
+        person_indicators = [
+            'মাননীয়', 'জনাব', 'মিসেস', 'মিস', 'ডঃ', 'প্রফেসর', 'শেখ', 'মোঃ', 'সৈয়দ',
+            'সাহেব', 'সাহেবা', 'বেগম', 'খান', 'চৌধুরী', 'আহমেদ', 'হোসেন', 'উদ্দিন', 'রহমান'
+        ]
+        
+        # Low-quality phrase patterns to exclude
+        exclude_patterns = [
+            r'বলেছেন যে',
+            r'নিশ্চিত করেছে যে',
+            r'জানিয়েছেন যে',
+            r'সরকার.*যে',
+            r'প্রধানমন্ত্রী.*যে',
+            r'মন্ত্রী.*যে',
+            r'.{30,}',  # Very long phrases (30+ characters)
+        ]
+        
+        filtered_keywords = []
+        seen_topics = set()
+        
+        for keyword, score in trending_keywords:
+            keyword_text = keyword.strip()
+            
+            # Skip if empty or too short
+            if len(keyword_text) < 2:
+                continue
+            
+            # Skip if contains person indicators
+            if any(indicator in keyword_text for indicator in person_indicators):
+                continue
+            
+            # Skip if matches exclude patterns
+            if any(re.search(pattern, keyword_text) for pattern in exclude_patterns):
+                continue
+            
+            # Skip common stop words that might slip through
+            if keyword_text in ['করা', 'হওয়া', 'দেওয়া', 'নেওয়া', 'বলা', 'আসা', 'যাওয়া']:
+                continue
+            
+            # Deduplicate similar topics
+            # Check if this keyword is too similar to already selected ones
+            is_duplicate = False
+            normalized_keyword = keyword_text.lower().strip()
+            
+            for seen_topic in seen_topics:
+                # Check for substring relationship
+                if (normalized_keyword in seen_topic or seen_topic in normalized_keyword):
+                    # If current has higher score and is more comprehensive, replace
+                    if len(normalized_keyword) > len(seen_topic):
+                        seen_topics.remove(seen_topic)
+                        # Remove the old entry from filtered_keywords
+                        filtered_keywords = [(k, s) for k, s in filtered_keywords if k.lower().strip() != seen_topic]
+                        break
+                    else:
+                        is_duplicate = True
+                        break
+                
+                # Check for word overlap (if 70% words are common, consider duplicate)
+                words1 = set(normalized_keyword.split())
+                words2 = set(seen_topic.split())
+                if words1 and words2:
+                    overlap = len(words1.intersection(words2)) / min(len(words1), len(words2))
+                    if overlap > 0.7:
+                        if score > dict(filtered_keywords).get(seen_topic, 0):
+                            seen_topics.remove(seen_topic)
+                            filtered_keywords = [(k, s) for k, s in filtered_keywords if k.lower().strip() != seen_topic]
+                            break
+                        else:
+                            is_duplicate = True
+                            break
+            
+            if not is_duplicate:
+                filtered_keywords.append((keyword_text, score))
+                seen_topics.add(normalized_keyword)
+            
+            # Stop when we have enough results
+            if len(filtered_keywords) >= max_results:
+                break
+        
+        # Sort by score in descending order
+        filtered_keywords.sort(key=lambda x: x[1], reverse=True)
+        
+        return filtered_keywords
+
+    def analyze_trending_content(self, contents, source_type='news'):
         """
         Comprehensive analysis of trending content
         """
@@ -342,13 +424,31 @@ class TrendingBengaliAnalyzer:
             return {}
         # Update word frequency cache
         self.processor.update_word_frequency_cache(texts)
-        print(" Step 2 - Word Frequency Cache:")
-        print(self.processor.word_freq_cache)
+        print(" Step 2 - Word Frequency Cache Updated:")
+        print(f"   Total unique words in cache: {len(self.processor.word_freq_cache)}")
+        if self.processor.word_freq_cache:
+            # Show top 10 most frequent words
+            top_words = sorted(self.processor.word_freq_cache.items(), key=lambda x: x[1], reverse=True)[:10]
+            print("   Top 10 most frequent words:")
+            for i, (word, freq) in enumerate(top_words, 1):
+                print(f"     {i:2d}. {word:20s} - {freq:3d} times")
         print("\n")
-        # Extract trending keywords
+        # Extract trending keywords with TF-IDF scores (sorted by importance)
         trending_keywords = self.processor.extract_trending_keywords(texts, top_k=100)
-        print(" Step 3 - Trending Keywords:")
-        print(trending_keywords)
+        print(" Step 3 - Trending Keywords (TF-IDF sorted by importance):")
+        print("Top 10 Keywords with highest TF-IDF scores:")
+        for i, (keyword, score) in enumerate(trending_keywords[:10], 1):
+            print(f"  {i:2d}. {keyword:30s} - Score: {score:.6f}")
+        print(f"Total keywords extracted: {len(trending_keywords)}")
+        print("\n")
+        
+        # Filter and deduplicate keywords for better quality
+        trending_keywords = self.filter_and_deduplicate_keywords(trending_keywords, max_results=15)
+        print(" Step 3.1 - Filtered & Deduplicated Keywords:")
+        print("After filtering and deduplication:")
+        for i, (keyword, score) in enumerate(trending_keywords[:10], 1):
+            print(f"  {i:2d}. {keyword:30s} - Score: {score:.6f}")
+        print(f"Final filtered keywords count: {len(trending_keywords)}")
         print("\n")
         # Prepare trending keywords (list of tuples) as a prompt for LLM
         llm_prompt = "ট্রেন্ডিং বাংলা শব্দ/বাক্যাংশ ও স্কোর (শব্দ:স্কোর):\n" + "\n".join(f"{i+1}. {kw}: {score:.4f}" for i, (kw, score) in enumerate(trending_keywords))
@@ -397,6 +497,13 @@ class TrendingBengaliAnalyzer:
             clustered_phrases = self.processor.cluster_similar_phrases(phrases, n_clusters=8)
         print(" Step 8 - Clustered Phrases:")
         print(clustered_phrases)
+        print("\n")
+        # Filter and deduplicate trending keywords for better quality
+        filtered_trending_keywords = self.processor.filter_and_deduplicate_keywords(trending_keywords, max_results=15)
+        print(" Step 9 - Filtered and Deduplicated Trending Keywords:")
+        for i, (keyword, score) in enumerate(filtered_trending_keywords, 1):
+            print(f"  {i:2d}. {keyword:30s} - Score: {score:.6f}")
+        print(f"Total filtered keywords: {len(filtered_trending_keywords)}")
         print("\n")
         return {
             'trending_keywords': trending_keywords,
@@ -448,3 +555,183 @@ def test_bengali_analyzer():
 
 if __name__ == "__main__":
     test_bengali_analyzer()
+
+
+# Add TrendingBengaliAnalyzer class for compatibility
+class TrendingBengaliAnalyzer:
+    """
+    Wrapper class for advanced Bengali text analysis
+    Provides trending analysis capabilities for Bengali content
+    """
+    
+    def __init__(self):
+        self.processor = AdvancedBengaliProcessor()
+    
+    def analyze_trending_content(self, contents: List[Dict], source_type: str = 'news') -> Dict:
+        """
+        Analyze trending content and return comprehensive analysis results
+        
+        Args:
+            contents: List of content dictionaries with 'title', 'heading', 'source' fields
+            source_type: Type of source ('news', 'social_media', 'mixed')
+        
+        Returns:
+            Dictionary containing trending analysis results
+        """
+        # Extract texts from content
+        texts = []
+        for content in contents:
+            text_parts = []
+            if content.get('title'):
+                text_parts.append(content['title'])
+            if content.get('heading'):
+                text_parts.append(content['heading'])
+            if text_parts:
+                texts.append(' '.join(text_parts))
+        
+        if not texts:
+            return {
+                'trending_keywords': [],
+                'named_entities': {'persons': [], 'places': [], 'organizations': [], 'dates': []},
+                'sentiment_analysis': {'positive': 0, 'negative': 0, 'neutral': 1},
+                'phrase_clusters': {},
+                'content_statistics': {'total_texts': 0, 'total_words': 0, 'unique_words': 0, 'source_type': source_type}
+            }
+        
+        # Extract trending keywords
+        trending_keywords = self.processor.extract_trending_keywords(texts, top_k=50)
+        
+        # Filter and deduplicate keywords
+        trending_keywords = self.filter_and_deduplicate_keywords(trending_keywords, max_results=15)
+        
+        # Extract named entities
+        all_entities = {'persons': [], 'places': [], 'organizations': [], 'dates': []}
+        for text in texts:
+            entities = self.processor.extract_named_entities(text)
+            for entity_type in all_entities:
+                all_entities[entity_type].extend(entities[entity_type])
+        
+        # Remove duplicates from entities
+        for entity_type in all_entities:
+            all_entities[entity_type] = list(set(all_entities[entity_type]))
+        
+        # Calculate sentiment
+        sentiment_scores = []
+        for text in texts:
+            sentiment = self.processor.calculate_text_sentiment(text)
+            sentiment_scores.append(sentiment)
+        
+        avg_sentiment = {
+            'positive': np.mean([s['positive'] for s in sentiment_scores]),
+            'negative': np.mean([s['negative'] for s in sentiment_scores]),
+            'neutral': np.mean([s['neutral'] for s in sentiment_scores])
+        }
+        
+        # Cluster phrases
+        phrases = [kw[0] for kw in trending_keywords[:20]]
+        clustered_phrases = {}
+        if phrases:
+            try:
+                clustered_phrases = self.processor.cluster_similar_phrases(phrases, n_clusters=min(5, len(phrases)))
+            except Exception as e:
+                print(f"Error clustering phrases: {e}")
+                clustered_phrases = {}
+        
+        return {
+            'trending_keywords': trending_keywords,
+            'named_entities': all_entities,
+            'sentiment_analysis': avg_sentiment,
+            'phrase_clusters': clustered_phrases,
+            'content_statistics': {
+                'total_texts': len(texts),
+                'total_words': sum(len(self.processor.advanced_tokenize(text)) for text in texts),
+                'unique_words': len(set(word for text in texts for word in self.processor.advanced_tokenize(text))),
+                'source_type': source_type
+            }
+        }
+    
+    def filter_and_deduplicate_keywords(self, trending_keywords, max_results=15):
+        """Filter and deduplicate trending keywords for better quality"""
+        if not trending_keywords:
+            return []
+        
+        # Person name patterns to exclude
+        person_indicators = [
+            'মাননীয়', 'জনাব', 'মিসেস', 'মিস', 'ডঃ', 'প্রফেসর', 'শেখ', 'মোঃ', 'সৈয়দ',
+            'সাহেব', 'সাহেবা', 'বেগম', 'খান', 'চৌধুরী', 'আহমেদ', 'হোসেন', 'উদ্দিন', 'রহমান'
+        ]
+        
+        # Low-quality phrase patterns to exclude
+        exclude_patterns = [
+            r'বলেছেন যে',
+            r'নিশ্চিত করেছে যে',
+            r'জানিয়েছেন যে',
+            r'সরকার.*যে',
+            r'প্রধানমন্ত্রী.*যে',
+            r'মন্ত্রী.*যে',
+            r'.{30,}',  # Very long phrases (30+ characters)
+        ]
+        
+        filtered_keywords = []
+        seen_topics = set()
+        
+        for keyword, score in trending_keywords:
+            keyword_text = keyword.strip()
+            
+            # Skip if empty or too short
+            if len(keyword_text) < 2:
+                continue
+            
+            # Skip if contains person indicators
+            if any(indicator in keyword_text for indicator in person_indicators):
+                continue
+            
+            # Skip if matches exclude patterns
+            if any(re.search(pattern, keyword_text) for pattern in exclude_patterns):
+                continue
+            
+            # Skip common stop words that might slip through
+            if keyword_text in ['করা', 'হওয়া', 'দেওয়া', 'নেওয়া', 'বলা', 'আসা', 'যাওয়া']:
+                continue
+            
+            # Deduplicate similar topics
+            is_duplicate = False
+            normalized_keyword = keyword_text.lower().strip()
+            
+            for seen_topic in seen_topics:
+                # Check for substring relationship
+                if (normalized_keyword in seen_topic or seen_topic in normalized_keyword):
+                    # If current has higher score and is more comprehensive, replace
+                    if len(normalized_keyword) > len(seen_topic):
+                        seen_topics.remove(seen_topic)
+                        filtered_keywords = [(k, s) for k, s in filtered_keywords if k.lower().strip() != seen_topic]
+                        break
+                    else:
+                        is_duplicate = True
+                        break
+                
+                # Check for word overlap
+                words1 = set(normalized_keyword.split())
+                words2 = set(seen_topic.split())
+                if words1 and words2:
+                    overlap = len(words1.intersection(words2)) / min(len(words1), len(words2))
+                    if overlap > 0.7:
+                        if score > dict(filtered_keywords).get(seen_topic, 0):
+                            seen_topics.remove(seen_topic)
+                            filtered_keywords = [(k, s) for k, s in filtered_keywords if k.lower().strip() != seen_topic]
+                            break
+                        else:
+                            is_duplicate = True
+                            break
+            
+            if not is_duplicate:
+                filtered_keywords.append((keyword_text, score))
+                seen_topics.add(normalized_keyword)
+            
+            if len(filtered_keywords) >= max_results:
+                break
+        
+        # Sort by score in descending order
+        filtered_keywords.sort(key=lambda x: x[1], reverse=True)
+        
+        return filtered_keywords

@@ -1,10 +1,12 @@
 import { useEffect, useState } from 'react';
 import { apiV2, formatDate, getScoreColor, groupPhrasesByType, groupPhrasesBySource } from '../api';
-import { TrendingUp, Globe, Newspaper, Users, RefreshCw, Filter } from 'lucide-react';
+import { TrendingUp, Globe, Newspaper, Users, RefreshCw, Filter, Zap, Calendar } from 'lucide-react';
+import ProgressiveAnalysis from '../components/ProgressiveAnalysis';
 
 function TrendingAnalysis() {
   const [trendingData, setTrendingData] = useState(null);
   const [dailyData, setDailyData] = useState(null);
+  const [weeklyData, setWeeklyData] = useState(null);
   const [stats, setStats] = useState(null);
   const [sources, setSources] = useState({ sources: [], phrase_types: [] });
   const [loading, setLoading] = useState(true);
@@ -21,6 +23,14 @@ function TrendingAnalysis() {
   });
   const [searchInput, setSearchInput] = useState('');
   const [toast, setToast] = useState(null);
+  const [showProgressiveAnalysis, setShowProgressiveAnalysis] = useState(false);
+  const [progressiveAnalysisCompleted, setProgressiveAnalysisCompleted] = useState(false);
+  const [preventModalClose, setPreventModalClose] = useState(false); // Add protection flag
+
+  // Add debugging for modal state changes
+  useEffect(() => {
+    console.log('=== 📊 showProgressiveAnalysis state changed:', showProgressiveAnalysis);
+  }, [showProgressiveAnalysis]);
 
   const showToast = (message, type = 'success') => {
     setToast({ message, type });
@@ -59,6 +69,8 @@ function TrendingAnalysis() {
     } else if (tabValue === 1) {
       fetchDailyData();
     } else if (tabValue === 2) {
+      fetchWeeklyData();
+    } else if (tabValue === 3) {
       fetchStats();
     }
   }, [filters, tabValue]);
@@ -67,6 +79,7 @@ function TrendingAnalysis() {
     await Promise.all([
       fetchTrendingData(),
       fetchDailyData(),
+      fetchWeeklyData(),
       fetchStats()
     ]);
   };
@@ -105,6 +118,23 @@ function TrendingAnalysis() {
     }
   };
 
+  const fetchWeeklyData = async () => {
+    try {
+      setLoading(true);
+      const response = await apiV2.getWeeklyTrending();
+      setWeeklyData(response.data);
+    } catch (err) {
+      let msg = 'সাপ্তাহিক ডেটা লোড করতে ব্যর্থ';
+      if (err.response && err.response.data && err.response.data.detail) {
+        msg += `: ${err.response.data.detail}`;
+      }
+      setError(msg);
+      console.error('Weekly data error:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const fetchStats = async () => {
     try {
       setLoading(true);
@@ -132,6 +162,43 @@ function TrendingAnalysis() {
   };
 
   const runNewAnalysis = async () => {
+    console.log('=== 🚀 Starting new progressive analysis ===');
+    setLoading(false); // Progressive analysis should NOT trigger main loading indicator
+    setShowProgressiveAnalysis(true);
+    setProgressiveAnalysisCompleted(false);
+    setPreventModalClose(false);
+  };
+
+  const handleProgressiveAnalysisComplete = async (analysisResult) => {
+    console.log('=== 🎯 handleProgressiveAnalysisComplete called ===');
+    console.log('Current showProgressiveAnalysis state:', showProgressiveAnalysis);
+    console.log('Analysis result received:', analysisResult);
+    
+    // Mark analysis as completed and prevent modal closure
+    setProgressiveAnalysisCompleted(true);
+    setPreventModalClose(true); // Prevent any accidental closure
+    
+    // IMPORTANT: Stop the main loading indicator
+    setLoading(false);
+    
+    // DON'T refresh data immediately - just show success toast
+    // The data refresh will happen when user manually closes the modal
+    showToast('প্রগ্রেসিভ বিশ্লেষণ সফলভাবে সম্পন্ন হয়েছে! এখন steps এ click করে details দেখুন।', 'success');
+    
+    // Modal stays open so user can click on completed steps
+    console.log('=== 🎉 MODAL SHOULD REMAIN OPEN FOR STEP EXPLORATION ===');
+  };
+
+  const handleProgressiveAnalysisClose = async () => {
+    console.log('=== 🚪 User manually closing progressive analysis ===');
+    setShowProgressiveAnalysis(false);
+    setProgressiveAnalysisCompleted(false); // Reset completion state
+    setPreventModalClose(false); // Reset protection flag
+    // Refresh data when progressive analysis is closed
+    await fetchAllData();
+  };
+
+  const runSimpleAnalysis = async () => {
     try {
       setLoading(true);
       setError(null);
@@ -156,6 +223,8 @@ function TrendingAnalysis() {
     } else if (tabValue === 1) {
       await fetchDailyData();
     } else if (tabValue === 2) {
+      await fetchWeeklyData();
+    } else if (tabValue === 3) {
       await fetchStats();
     }
   };
@@ -183,6 +252,16 @@ function TrendingAnalysis() {
         'উৎস': phrase.source
       }));
       filename = `daily-summary-${dailyData.date}.csv`;
+    } else if (tabValue === 2 && weeklyData?.top_weekly_phrases) {
+      dataToExport = weeklyData.top_weekly_phrases.map(phrase => ({
+        'ফ্রেজ': phrase.phrase,
+        'স্কোর': phrase.score,
+        'ফ্রিকোয়েন্সি': phrase.frequency,
+        'ধরণ': phrase.phrase_type,
+        'উৎস': phrase.source,
+        'তারিখ': phrase.date
+      }));
+      filename = `weekly-summary-${weeklyData.week_start}-to-${weeklyData.week_end}.csv`;
     }
     
     if (dataToExport.length === 0) {
@@ -288,18 +367,33 @@ function TrendingAnalysis() {
         </div>
         
         {/* New Analysis Button - Top Right */}
-        <button 
-          onClick={runNewAnalysis} 
-          disabled={loading} 
-          className={`flex items-center gap-2 px-6 py-3 rounded-xl font-bold transition-all duration-300 shadow-lg focus:outline-none focus:ring-4 focus:ring-offset-2 transform hover:scale-105 active:scale-95 ${
-            loading 
-              ? 'bg-gradient-to-r from-gray-400 to-gray-500 text-gray-200 cursor-not-allowed' 
-              : 'bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white focus:ring-blue-400 hover:shadow-xl'
-          }`}
-        >
-          <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} /> 
-          <span className="text-sm tracking-wide">{loading ? 'বিশ্লেষণ চলছে...' : 'নতুন বিশ্লেষণ'}</span>
-        </button>
+        <div className="flex gap-2">
+          <button 
+            onClick={() => setShowProgressiveAnalysis(true)} 
+            disabled={loading} 
+            className={`flex items-center gap-2 px-6 py-3 rounded-xl font-bold transition-all duration-300 shadow-lg focus:outline-none focus:ring-4 focus:ring-offset-2 transform hover:scale-105 active:scale-95 ${
+              loading 
+                ? 'bg-gradient-to-r from-gray-400 to-gray-500 text-gray-200 cursor-not-allowed' 
+                : 'bg-gradient-to-r from-purple-600 to-purple-700 hover:from-purple-700 hover:to-purple-800 text-white focus:ring-purple-400 hover:shadow-xl'
+            }`}
+          >
+            <Zap className={`w-4 h-4 ${loading ? '' : 'animate-pulse'}`} /> 
+            <span className="text-sm tracking-wide">প্রগ্রেসিভ বিশ্লেষণ</span>
+          </button>
+          
+          <button 
+            onClick={runSimpleAnalysis} 
+            disabled={loading} 
+            className={`flex items-center gap-2 px-6 py-3 rounded-xl font-bold transition-all duration-300 shadow-lg focus:outline-none focus:ring-4 focus:ring-offset-2 transform hover:scale-105 active:scale-95 ${
+              loading 
+                ? 'bg-gradient-to-r from-gray-400 to-gray-500 text-gray-200 cursor-not-allowed' 
+                : 'bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white focus:ring-blue-400 hover:shadow-xl'
+            }`}
+          >
+            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} /> 
+            <span className="text-sm tracking-wide">{loading ? 'বিশ্লেষণ চলছে...' : 'সাধারণ বিশ্লেষণ'}</span>
+          </button>
+        </div>
       </div>
 
       {/* Search at the top */}
@@ -308,7 +402,7 @@ function TrendingAnalysis() {
         <div className="relative">
           <input 
             type="text" 
-            placeholder="ফ্রেজ বা শব্দ দিয়ে খুঁজুন... (Enter চেপে খুঁজুন)" 
+            placeholder="ফ্রেজ বা শব্দ দিয়ে খুঁজুন... (Ctrl+K চেপে খুঁজুন)" 
             value={searchInput} 
             onChange={e => handleSearchInputChange(e.target.value)} 
             className="w-full border-2 border-gray-300 rounded-xl px-4 py-3 pl-12 pr-32 focus:outline-none focus:ring-4 focus:ring-blue-400/50 focus:border-blue-500 transition-all duration-300 bg-white text-slate-800 shadow-lg hover:shadow-xl font-medium"
@@ -591,6 +685,66 @@ function TrendingAnalysis() {
     );
   };
 
+  const renderWeeklyTab = () => {
+    if (loading && !weeklyData) {
+      return <LoadingSkeleton />;
+    }
+    
+    if (!weeklyData || weeklyData.total_phrases === 0) {
+      return <div className="bg-gradient-to-r from-yellow-50 to-yellow-100 border border-yellow-200 text-yellow-800 px-6 py-4 rounded-xl text-center shadow-sm">
+        <div className="flex items-center justify-center gap-2">
+          <Calendar className="w-5 h-5" />
+          <span>কোনো সাপ্তাহিক ডেটা পাওয়া যায়নি। প্রথমে বিশ্লেষণ চালান।</span>
+        </div>
+      </div>;
+    }
+    
+    return (
+      <div className="bg-white shadow rounded-lg p-6">
+        <div className="mb-4">
+          <h2 className="text-lg font-bold mb-2">সাপ্তাহিক সারসংক্ষেপ - {weeklyData.week_start} থেকে {weeklyData.week_end}</h2>
+          <div className="text-gray-500 mb-2">মোট ফ্রেজ: {weeklyData.total_phrases}টি</div>
+        </div>
+        
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          {/* Top Weekly Phrases */}
+          <div className="bg-white shadow rounded-lg p-6">
+            <h3 className="font-semibold mb-4">শীর্ষ সাপ্তাহিক ফ্রেজ</h3>
+            <ul className="divide-y divide-gray-200">
+              {weeklyData.top_weekly_phrases.slice(0, 10).map((phrase, idx) => (
+                <li key={idx} className="py-2 flex flex-col gap-1">
+                  <span className="font-medium">{phrase.phrase}</span>
+                  <div className="flex gap-2 text-xs text-gray-500">
+                    <span>স্কোর: {phrase.score.toFixed(2)}</span>
+                    <span>ফ্রিকোয়েন্সি: {phrase.frequency}</span>
+                    <span>তারিখ: {phrase.date}</span>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          </div>
+          
+          {/* Daily Breakdown */}
+          <div className="bg-white shadow rounded-lg p-6">
+            <h3 className="font-semibold mb-4">দৈনিক ভাঙ্গন</h3>
+            <div className="space-y-3">
+              {Object.entries(weeklyData.daily_breakdown).map(([date, phrases]) => (
+                <div key={date} className="border-l-4 border-blue-400 pl-3">
+                  <div className="font-medium">{date}</div>
+                  <div className="text-sm text-gray-500">{phrases.length}টি ফ্রেজ</div>
+                  <div className="text-xs text-gray-400 mt-1">
+                    {phrases.slice(0, 3).map(p => p.phrase).join(', ')}
+                    {phrases.length > 3 && '...'}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   const renderStatsTab = () => {
     if (loading && !stats) {
       return <LoadingSkeleton />;
@@ -697,6 +851,7 @@ function TrendingAnalysis() {
         {[
           { label: "ট্রেন্ডিং ফ্রেজ", icon: TrendingUp },
           { label: "দৈনিক সারসংক্ষেপ", icon: Globe },
+          { label: "সাপ্তাহিক সারসংক্ষেপ", icon: Calendar },
           { label: "পরিসংখ্যান", icon: Users }
         ].map(({ label, icon: Icon }, idx) => (
           <button
@@ -720,7 +875,8 @@ function TrendingAnalysis() {
         <>
           {tabValue === 0 && renderTrendingTab()}
           {tabValue === 1 && renderDailyTab()}
-          {tabValue === 2 && renderStatsTab()}
+          {tabValue === 2 && renderWeeklyTab()}
+          {tabValue === 3 && renderStatsTab()}
         </>
       )}
       
@@ -744,6 +900,15 @@ function TrendingAnalysis() {
             <span className="font-semibold">{toast.message}</span>
           </div>
         </div>
+      )}
+      
+      {/* Progressive Analysis Modal */}
+      {showProgressiveAnalysis && (
+        <ProgressiveAnalysis
+          key="progressive-analysis-modal" // Add stable key to prevent remounting
+          onAnalysisComplete={handleProgressiveAnalysisComplete}
+          onClose={handleProgressiveAnalysisClose}
+        />
       )}
     </div>
   );

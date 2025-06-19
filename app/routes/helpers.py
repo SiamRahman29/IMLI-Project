@@ -15,7 +15,7 @@ from sklearn.metrics.pairwise import cosine_similarity
 from dotenv import load_dotenv
 from groq import Groq
 from sqlalchemy.orm import Session
-from app.models.word import Article, TrendingPhrase
+from app.models.word import Article, TrendingPhrase, WeeklyTrendingPhrase
 from app.services.social_media_scraper import scrape_social_media_content
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
@@ -168,6 +168,83 @@ class BengaliTextProcessor:
 class TrendingAnalyzer:
     def __init__(self):
         self.text_processor = BengaliTextProcessor()
+        
+    def filter_quality_phrases(self, phrases_dict: Dict[str, int], min_length=3, max_length=50) -> Dict[str, int]:
+        """Filter phrases for better quality by removing duplicates and low-quality entries"""
+        
+        # Person name indicators to exclude
+        person_indicators = [
+            'মাননীয়', 'জনাব', 'মিসেস', 'মিস', 'ডঃ', 'প্রফেসর', 'শেখ', 'মোঃ', 'সৈয়দ',
+            'সাহেব', 'সাহেবা', 'বেগম', 'খান', 'চৌধুরী', 'আহমেদ', 'হোসেন', 'উদ্দিন', 'রহমান',
+            'মন্ত্রী', 'প্রধানমন্ত্রী', 'রাষ্ট্রপতি', 'সচিব'
+        ]
+        
+        # Low-quality patterns to exclude
+        exclude_phrases = [
+            'বলেছেন', 'জানিয়েছেন', 'নিশ্চিত করেছেন', 'উল্লেখ করেছেন',
+            'করা হয়েছে', 'হয়েছে বলে', 'বলা হয়েছে', 'জানা গেছে',
+            'সংবাদদাতা', 'প্রতিবেদক', 'সংবাদ সম্মেলন'
+        ]
+        
+        filtered_phrases = {}
+        seen_topics = set()
+        
+        for phrase, freq in phrases_dict.items():
+            phrase_clean = phrase.strip()
+            
+            # Length filtering
+            if len(phrase_clean) < min_length or len(phrase_clean) > max_length:
+                continue
+                
+            # Skip phrases with person indicators
+            if any(indicator in phrase_clean for indicator in person_indicators):
+                continue
+                
+            # Skip low-quality phrases
+            if any(exclude in phrase_clean for exclude in exclude_phrases):
+                continue
+                
+            # Skip if it's mostly numbers or contains too many English characters
+            if re.search(r'[0-9]{3,}', phrase_clean) or re.search(r'[a-zA-Z]{5,}', phrase_clean):
+                continue
+                
+            # Topic deduplication - avoid similar phrases
+            phrase_lower = phrase_clean.lower()
+            words = set(phrase_lower.split())
+            
+            is_duplicate = False
+            for seen_topic in list(seen_topics):
+                seen_words = set(seen_topic.split())
+                
+                # Check for significant word overlap
+                if words and seen_words:
+                    overlap = len(words.intersection(seen_words)) / min(len(words), len(seen_words))
+                    if overlap > 0.75:  # 75% word overlap = duplicate
+                        # Keep the one with higher frequency
+                        existing_freq = filtered_phrases.get(seen_topic, 0)
+                        if freq > existing_freq:
+                            # Remove old entry
+                            filtered_phrases.pop(seen_topic, None)
+                            seen_topics.remove(seen_topic)
+                        else:
+                            is_duplicate = True
+                        break
+                        
+                # Check for substring relationship
+                if phrase_lower in seen_topic or seen_topic in phrase_lower:
+                    # Keep the longer, more descriptive phrase
+                    if len(phrase_clean) > len(seen_topic):
+                        filtered_phrases.pop(seen_topic, None)
+                        seen_topics.remove(seen_topic)
+                    else:
+                        is_duplicate = True
+                    break
+            
+            if not is_duplicate:
+                filtered_phrases[phrase_clean] = freq
+                seen_topics.add(phrase_lower)
+        
+        return filtered_phrases
         
     def calculate_tfidf_scores(self, documents: List[str]) -> Dict[str, float]:
         """Calculate TF-IDF scores for terms in documents"""
@@ -328,6 +405,15 @@ def get_trending_words(db: Session):
     
     db.commit()
     print("Comprehensive trending phrases analysis completed and stored!")
+    
+    # Aggregate weekly trending data
+    print("Aggregating weekly trending data...")
+    try:
+        weekly_count = aggregate_weekly_trending(db)
+        print(f"Weekly aggregation completed: {weekly_count} phrases")
+    except Exception as e:
+        print(f"Error in weekly aggregation: {e}")
+        traceback.print_exc()
 
 def analyze_and_store_trends(db: Session, analyzer: TrendingAnalyzer, 
                            content: List[Dict], source: str, target_date: date):
@@ -343,8 +429,38 @@ def analyze_and_store_trends(db: Session, analyzer: TrendingAnalyzer,
     if not texts:
         return
     
-    # Calculate frequency scores
+    # Use advanced Bengali analyzer for better quality filtering
+    from app.services.advanced_bengali_nlp import TrendingBengaliAnalyzer
+    advanced_analyzer = TrendingBengaliAnalyzer()
+    
+    # Calculate frequency scores using old method
     frequency_scores = analyzer.calculate_frequency_scores(texts)
+    
+    # Basic filtering first
+    print(f"Before filtering - Unigrams: {len(frequency_scores['unigrams'])}, Bigrams: {len(frequency_scores['bigrams'])}, Trigrams: {len(frequency_scores['trigrams'])}")
+    
+    # Apply basic quality filtering to each n-gram type
+    frequency_scores['unigrams'] = analyzer.filter_quality_phrases(frequency_scores['unigrams'])
+    frequency_scores['bigrams'] = analyzer.filter_quality_phrases(frequency_scores['bigrams'])  
+    frequency_scores['trigrams'] = analyzer.filter_quality_phrases(frequency_scores['trigrams'])
+    
+    # Apply advanced filtering to remove duplicates and person names
+    # Convert frequency dict to list of tuples for advanced filtering
+    unigrams_list = [(phrase, 1.0) for phrase in frequency_scores['unigrams'].keys()]
+    bigrams_list = [(phrase, 1.0) for phrase in frequency_scores['bigrams'].keys()]
+    trigrams_list = [(phrase, 1.0) for phrase in frequency_scores['trigrams'].keys()]
+    
+    # Apply advanced filtering
+    filtered_unigrams = advanced_analyzer.filter_and_deduplicate_keywords(unigrams_list, max_results=50)
+    filtered_bigrams = advanced_analyzer.filter_and_deduplicate_keywords(bigrams_list, max_results=30) 
+    filtered_trigrams = advanced_analyzer.filter_and_deduplicate_keywords(trigrams_list, max_results=20)
+    
+    # Convert back to frequency dict format
+    frequency_scores['unigrams'] = {phrase: frequency_scores['unigrams'][phrase] for phrase, _ in filtered_unigrams if phrase in frequency_scores['unigrams']}
+    frequency_scores['bigrams'] = {phrase: frequency_scores['bigrams'][phrase] for phrase, _ in filtered_bigrams if phrase in frequency_scores['bigrams']}
+    frequency_scores['trigrams'] = {phrase: frequency_scores['trigrams'][phrase] for phrase, _ in filtered_trigrams if phrase in frequency_scores['trigrams']}
+    
+    print(f"After advanced filtering - Unigrams: {len(frequency_scores['unigrams'])}, Bigrams: {len(frequency_scores['bigrams'])}, Trigrams: {len(frequency_scores['trigrams'])}")
     
     # Calculate TF-IDF scores
     tfidf_scores = analyzer.calculate_tfidf_scores(texts)
@@ -1107,7 +1223,7 @@ def scrape_bengali_news() -> List[Dict]:
         ("amader_shomoy", scrape_amader_shomoy),
         ("janakantha", scrape_janakantha),
         ("inqilab", scrape_inqilab),
-        ("sangbad", scrape_sangbad),
+        # ("sangbad", scrape_sangbad),
         ("noya_diganta", scrape_noya_diganta),
         ("jai_jai_din", scrape_jai_jai_din),
         ("manobkantha", scrape_manobkantha),
@@ -1144,9 +1260,12 @@ def scrape_bengali_news() -> List[Dict]:
 def store_news(db: Session, articles: List[Dict]):
     """Store news articles in database"""
     for article_data in articles:
+        # Use heading as description if description is not available
+        description = article_data.get('description') or article_data.get('heading') or ''
+        
         article = Article(
             title=article_data.get('title', ''),
-            description=article_data.get('description') or '',  # Ensure not None
+            description=description,  # Use heading if description is not available
             url=article_data.get('url', ''),
             published_date=article_data.get('published_date'),
             source=article_data.get('source', 'unknown')
@@ -1157,8 +1276,6 @@ def store_news(db: Session, articles: List[Dict]):
     print(f"Stored {len(articles)} articles in database")
 
 def fetch_social_media_posts():
-    """Fetch social media posts from various Bengali platforms"""
-    # Disabled: Social media fetching
     # try:
     #     posts = scrape_social_media_content()
     #     print(f"Fetched {len(posts)} social media posts")
@@ -1220,13 +1337,20 @@ def generate_trending_word_candidates(db: Session, limit: int = 10) -> str:
         client = Groq(api_key=api_key)
         prompt = f"""
             নিচের বাংলা সংবাদের টেক্সট, গুগল ট্রেন্ডস ও ইউটিউব ট্রেন্ডিং থেকে আজকের জন্য সবচেয়ে গুরুত্বপূর্ণ এবং trending {limit}টি শব্দ বা বাক্যাংশ খুঁজে বের করো।
-            নিয়মাবলী:
-            1. শব্দগুলি অবশ্যই অর্থপূর্ণ, গুরুত্বপূর্ণ, trending এবং 'thematic' (বিষয়বস্তুর সাথে সম্পর্কিত) হতে হবে
-            2. সাধারণ stop words (যেমন: এই, সেই, করা, হওয়া) এড়িয়ে চলো
-            3. কোনো ব্যক্তির নাম (person name) একদমই দিও না
-            4. একক শব্দ বা ছোট বাক্যাংশ (২-৩ শব্দ) উভয়ই গ্রহণযোগ্য
-            5. প্রতিটি শব্দ/বাক্যাংশ আলাদা লাইনে লেখো
-            6. শুধুমাত্র বাংলা শব্দ/বাক্যাংশ দাও, অন্য কিছু নয়
+            
+            **গুরুত্বপূর্ণ নিয়মাবলী:**
+            1. **একটি টপিকের জন্য শুধুমাত্র একটি প্রতিনিধিত্বকারী phrase দাও** - যেমন "ইরানে হামলা", "ইরান", "হামলা" আলাদাভাবে নয়, বরং "ইসরায়েল-ইরানের সংঘাত" বা "মধ্যপ্রাচ্যের উত্তেজনা" এর মতো
+            2. **কোনো ব্যক্তির নাম দিও না** (যেমন: ট্রাম্প, বাইডেন, মোদি ইত্যাদি)
+            3. **ছোট ও সংক্ষিপ্ত phrase দাও** - সর্বোচ্চ ২-৪ শব্দ। দীর্ঘ বাক্য দিও না
+            4. **সাধারণ stop words এড়িয়ে চলো** (যেমন: এই, সেই, করা, হওয়া, যে, যার)
+            5. **শুধুমাত্র বিষয়বস্তু/থিম ভিত্তিক phrase দাও** - খবরের মূল বিষয় যা trending
+            6. **প্রতিটি শব্দ/বাক্যাংশ আলাদা লাইনে লেখো**
+            7. **শুধুমাত্র বাংলা শব্দ/বাক্যাংশ দাও**
+            8. **একই টপিকের ভিন্ন ভিন্ন রূপ এড়িয়ে চলো** - সবচেয়ে প্রতিনিধিত্বকারী একটি phrase দাও
+
+            উদাহরণ:
+            ✅ ভালো: "ইসরায়েল-ইরানের সংঘাত", "জ্বালানি সংকট", "নির্বাচনী প্রচারণা"
+            ❌ খারাপ: "ইরান", "হামলা", "ট্রাম্প বলেছেন যে...", "সরকার নিশ্চিত করেছে যে..."
 
             টেক্সট:
             {combined_text}
@@ -1235,8 +1359,8 @@ def generate_trending_word_candidates(db: Session, limit: int = 10) -> str:
             """
         response = client.chat.completions.create(
             messages=[{"role": "user", "content": prompt}],
-            model="llama-3.1-8b-instant",
-            # model="llama-3.3-70b-versatile",
+            # model="llama-3.1-8b-instant",
+            model="llama-3.3-70b-versatile",
             stream=False,
         )
         ai_response = response.choices[0].message.content
@@ -1317,3 +1441,89 @@ def generate_trending_word_candidates(db: Session, limit: int = 10) -> str:
     # Print what is being sent to Groq
     print(f"[Groq] Combined text sent to LLM:\n{combined_text}")
     return ai_response
+
+def aggregate_weekly_trending(db: Session, target_week_start: date = None):
+    """Aggregate daily trending phrases into weekly trending summaries"""
+    from app.models.word import WeeklyTrendingPhrase
+    
+    if target_week_start is None:
+        # Get current week start (Monday)
+        today = date.today()
+        days_since_monday = today.weekday()
+        target_week_start = today - timedelta(days=days_since_monday)
+    
+    week_end = target_week_start + timedelta(days=6)
+    
+    print(f"Aggregating weekly trending data for {target_week_start} to {week_end}")
+    
+    # Clear existing weekly data for this week
+    db.query(WeeklyTrendingPhrase).filter(
+        WeeklyTrendingPhrase.week_start == target_week_start
+    ).delete()
+    
+    # Get all daily trending phrases for this week
+    daily_phrases = db.query(TrendingPhrase).filter(
+        TrendingPhrase.date >= target_week_start,
+        TrendingPhrase.date <= week_end
+    ).all()
+    
+    if not daily_phrases:
+        print(f"No daily phrases found for week {target_week_start}")
+        return 0
+    
+    # Group by phrase text and aggregate metrics
+    phrase_aggregates = defaultdict(lambda: {
+        'total_score': 0.0,
+        'total_frequency': 0,
+        'appearance_days': set(),
+        'phrase_types': defaultdict(int),
+        'sources': defaultdict(int)
+    })
+    
+    for phrase in daily_phrases:
+        key = phrase.phrase.strip().lower()
+        agg = phrase_aggregates[key]
+        
+        agg['total_score'] += phrase.score
+        agg['total_frequency'] += phrase.frequency
+        agg['appearance_days'].add(phrase.date)
+        agg['phrase_types'][phrase.phrase_type] += 1
+        agg['sources'][phrase.source] += 1
+        agg['original_phrase'] = phrase.phrase  # Keep original casing
+    
+    # Create weekly trending phrases
+    weekly_phrases = []
+    for phrase_text, agg in phrase_aggregates.items():
+        if len(agg['appearance_days']) >= 2:  # Appeared at least 2 days
+            # Calculate average score
+            avg_score = agg['total_score'] / len(agg['appearance_days'])
+            
+            # Determine dominant phrase type and source
+            dominant_phrase_type = max(agg['phrase_types'], key=agg['phrase_types'].get)
+            dominant_source = max(agg['sources'], key=agg['sources'].get)
+            
+            weekly_phrase = WeeklyTrendingPhrase(
+                week_start=target_week_start,
+                week_end=week_end,
+                phrase=agg['original_phrase'],
+                total_score=agg['total_score'],
+                average_score=avg_score,
+                total_frequency=agg['total_frequency'],
+                appearance_days=len(agg['appearance_days']),
+                phrase_type=dominant_phrase_type,
+                dominant_source=dominant_source
+            )
+            weekly_phrases.append(weekly_phrase)
+    
+    # Sort by average score and take top phrases
+    weekly_phrases.sort(key=lambda x: x.average_score, reverse=True)
+    top_weekly_phrases = weekly_phrases[:50]  # Keep top 50
+    
+    # Save to database
+    for phrase in top_weekly_phrases:
+        db.add(phrase)
+    
+    db.commit()
+    
+    print(f"Aggregated {len(top_weekly_phrases)} weekly trending phrases for week {target_week_start}")
+    return len(top_weekly_phrases)

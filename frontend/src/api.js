@@ -53,10 +53,22 @@ export const apiV2 = {
     return apiV2Client.get(`/daily-trending${params}`);
   },
   
+  // Get weekly trending summary
+  getWeeklyTrending: (targetWeek = null) => {
+    const params = targetWeek ? `?target_week=${targetWeek}` : '';
+    return apiV2Client.get(`/weekly-trending${params}`);
+  },
+  
+  // Get monthly trending summary
+  getMonthlyTrending: (targetMonth = null) => {
+    const params = targetMonth ? `?target_month=${targetMonth}` : '';
+    return apiV2Client.get(`/monthly-trending${params}`);
+  },
+  
   // Run trending analysis
   runAnalysis: () => apiV2Client.post('/analyze'),
   
-  // Get available sources and metadata
+  // Get available sources and metadata (enhanced with detailed stats)
   getSources: () => apiV2Client.get('/sources'),
   
   // Get statistics
