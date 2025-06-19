@@ -71,10 +71,26 @@ function GenerateWords() {
 
   const parseCandidates = (candidatesText) => {
     if (!candidatesText) return [];
-    return candidatesText.split('\n')
-      .map(line => line.trim())
-      .filter(line => line && !line.includes(':') && line.length > 1)
-      .slice(0, 10); // Limit to 10 candidates
+    
+    // Extract only the NLP keywords that start with 🔸
+    const keywords = [];
+    const lines = candidatesText.split('\n');
+    
+    for (const line of lines) {
+      const trimmed = line.trim();
+      // Look for lines that contain 🔸 (NLP keywords)
+      if (trimmed.includes('🔸')) {
+        const match = trimmed.match(/🔸\s*([^:]+):/);
+        if (match) {
+          const keyword = match[1].trim();
+          if (keyword && keyword.length > 1) {
+            keywords.push(keyword);
+          }
+        }
+      }
+    }
+    
+    return keywords.slice(0, 10); // Limit to 10 candidates
   };
 
   if (success) {
