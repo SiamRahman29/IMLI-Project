@@ -55,17 +55,17 @@ def get_word_of_the_day(db: Session = Depends(get_db)):
 
 @router.post("/generate_candidates", summary="Generate a list of candidates for trending words")
 def generate_candidates(db: Session = Depends(get_db)):
-    """Generate trending word candidates using real-time AI and NLP analysis, save top 10 to database"""
+    """Generate trending word candidates using real-time AI and NLP analysis, save top 15 to database"""
     from app.routes.helpers import generate_trending_word_candidates_realtime_with_save
     
     try:
-        # Real-time analysis with database storage for top 10 LLM words
+        # Real-time analysis with database storage for top 15 LLM words
         ai_candidates = generate_trending_word_candidates_realtime_with_save(db, limit=15)
         
         return {
-            "message": "Real-time trending word candidates generated and top 10 saved to database!",
+            "message": "Real-time trending word candidates generated and top 15 saved to database!",
             "ai_candidates": ai_candidates,
-            "note": "Top 10 LLM trending words saved to database for trending analysis section."
+            "note": "Top 15 LLM trending words saved to database for trending analysis section."
         }
     except Exception as e:
         detail = f"Error generating candidates: {str(e)}\n{traceback.format_exc()}"

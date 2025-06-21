@@ -111,25 +111,47 @@ function GenerateWords() {
   const parseCandidates = (candidatesText) => {
     if (!candidatesText) return [];
     
-    // Extract only the NLP keywords that start with 🔸
+    // Extract AI Generated Trending Words section
     const keywords = [];
     const lines = candidatesText.split('\n');
+    let inAISection = false;
     
     for (const line of lines) {
       const trimmed = line.trim();
-      // Look for lines that contain 🔸 (NLP keywords)
-      if (trimmed.includes('🔸')) {
-        const match = trimmed.match(/🔸\s*([^:]+):/);
-        if (match) {
-          const keyword = match[1].trim();
-          if (keyword && keyword.length > 1) {
-            keywords.push(keyword);
-          }
+      
+      // Look for AI Generated Trending Words section
+      if (trimmed.includes('🤖 AI Generated Trending Words:')) {
+        inAISection = true;
+        continue;
+      }
+      
+      // Stop when we reach another section
+      if (inAISection && (trimmed.includes('💾 Database Status:') || trimmed.includes('📊 NLP'))) {
+        break;
+      }
+      
+      // Extract keywords from AI section
+      if (inAISection && trimmed.length > 0) {
+        // Remove numbering if present (1. , 2. , etc.)
+        let cleanedLine = trimmed.replace(/^\d+\.\s*/, '').trim();
+        // Remove Bengali numbering (১. , ২. , etc.)
+        cleanedLine = cleanedLine.replace(/^[\u09E6-\u09EF]+\.\s*/, '').trim();
+        // Remove markdown formatting
+        cleanedLine = cleanedLine.replace(/\*\*([^*]+)\*\*/g, '$1'); // Remove **bold**
+        cleanedLine = cleanedLine.replace(/\*([^*]+)\*/g, '$1');     // Remove *italic*
+        cleanedLine = cleanedLine.replace(/`([^`]+)`/g, '$1');       // Remove `code`
+        // Remove quotation marks around phrases
+        cleanedLine = cleanedLine.replace(/^["'](.+)["']$/, '$1');
+        cleanedLine = cleanedLine.trim();
+        
+        // Skip empty lines and section headers
+        if (cleanedLine && !cleanedLine.includes('trending শব্দ/বাক্যাংশ') && !cleanedLine.includes('টি)')) {
+          keywords.push(cleanedLine);
         }
       }
     }
     
-    return keywords.slice(0, 10); // Limit to 10 candidates
+    return keywords.slice(0, 15); // Show 15 AI generated words
   };
 
   if (success) {

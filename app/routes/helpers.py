@@ -1376,13 +1376,6 @@ def generate_trending_word_candidates_realtime(limit: int = 15) -> str:
             9. **শুধুমাত্র বাংলা শব্দ/বাক্যাংশ দাও**
             10. **একই টপিকের ভিন্ন ভিন্ন রূপ এড়িয়ে চলো** - সবচেয়ে প্রতিনিধিত্বকারী একটি phrase দাও
 
-            **পছন্দনীয় শব্দের ধরন:**
-            - রাজনৈতিক ইস্যু (noun): "নির্বাচনী প্রচারণা", "রাজনৈতিক সংকট"
-            - অর্থনৈতিক বিষয় (noun): "জ্বালানি সংকট", "মূল্যবৃদ্ধি", "অর্থনৈতিক মন্দা"
-            - সামাজিক ইস্যু (noun): "শিক্ষা সংস্কার", "স্বাস্থ্যসেবা"
-            - আন্তর্জাতিক বিষয় (noun): "যুদ্ধ-সংঘাত", "কূটনৈতিক সম্পর্ক"
-            - বিশেষণ যুক্ত বাক্যাংশ (adjective + noun): "নতুন নীতি", "গুরুত্বপূর্ণ সিদ্ধান্ত"
-
             উদাহরণ:
             ✔️ ভালো: "ইসরাইল-ইরানের সংঘাত", "জ্বালানি সংকট", "নির্বাচনী প্রচারণা","অর্থনৈতিক মন্দা", "শিক্ষা সংকট"
             ❌ খারাপ: "ইরানের", "হামলা", "ট্রাম্প বলছেন যে...", "সরকার নিখোঁজ করে...","বলেছেন", "করেছেন", "আজকবর", "গণতন্ত্রের"
@@ -1394,11 +1387,52 @@ def generate_trending_word_candidates_realtime(limit: int = 15) -> str:
         
         response = client.chat.completions.create(
             messages=[{"role": "user", "content": prompt}],
-            model="llama-3.3-70b-versatile",
+            model="meta-llama/Llama-4-Maverick-17B-128E-Instruct-FP8",
             stream=False,
         )
         ai_response = response.choices[0].message.content
-        print(f"🤖 Groq AI Response: {ai_response}")
+        
+        # Clean markdown formatting from AI response
+        def clean_markdown_text(text):
+            if not text:
+                return text
+            import re
+            
+            # Remove markdown bold, italic, code formatting
+            text = re.sub(r'\*\*([^*]+)\*\*', r'\1', text)  # **bold**
+            text = re.sub(r'\*([^*]+)\*', r'\1', text)      # *italic*
+            text = re.sub(r'`([^`]+)`', r'\1', text)        # `code`
+            
+            # Split into lines and filter
+            lines = text.split('\n')
+            cleaned_lines = []
+            
+            for line in lines:
+                line = line.strip()
+                if not line:
+                    continue
+                
+                # Skip introductory and concluding messages
+                if any(phrase in line for phrase in [
+                    'বাংলা সংবাদ থেকে গুগল ট্রেন্ডস',
+                    'গুরুত্বপূর্ণ এবং trending',
+                    'নিচে রয়েছে',
+                    'এই সবগুলোই গুরুত্বপূর্ণ বিষয়',
+                    'এখনকার সময়ে সবচেয়ে আলোচিত',
+                    'trending শব্দ/বাক্যাংশ'
+                ]):
+                    continue
+                
+                # Keep only numbered items
+                if re.match(r'^\d+\.|^[\u09E6-\u09EF]+\.', line):
+                    # Remove quotes around entire phrases
+                    line = re.sub(r'^["\'](.+)["\']$', r'\1', line)
+                    cleaned_lines.append(line)
+            
+            return '\n'.join(cleaned_lines)
+        
+        ai_response = clean_markdown_text(ai_response)
+        print(f"🤖 Groq AI Response (cleaned): {ai_response}")
         
     except Exception as e:
         print(f"Error generating trending words with Groq: {e}")
@@ -1454,8 +1488,8 @@ def generate_trending_word_candidates_realtime(limit: int = 15) -> str:
     print(f"[Summary] Real-time analysis completed without database usage")
     return '\n'.join(summary)
 
-def generate_trending_word_candidates_realtime_with_save(db: Session, limit: int = 10) -> str:
-    """Generate trending word candidates using REAL-TIME analysis and save top 10 LLM words to database"""
+def generate_trending_word_candidates_realtime_with_save(db: Session, limit: int = 15) -> str:
+    """Generate trending word candidates using REAL-TIME analysis and save top 15 LLM words to database"""
     print("Starting real-time trending analysis with database save...")
     print("=" * 60)
     
@@ -1502,7 +1536,8 @@ def generate_trending_word_candidates_realtime_with_save(db: Session, limit: int
     
     combined_text = '\n'.join(cleaned_for_groq)
     ai_response = None
-    
+    print(f"Combined Text: {combined_text}")
+
     try:
         from groq import Groq
         import os
@@ -1526,16 +1561,9 @@ def generate_trending_word_candidates_realtime_with_save(db: Session, limit: int
             9. **শুধুমাত্র বাংলা শব্দ/বাক্যাংশ দাও**
             10. **একই টপিকের ভিন্ন ভিন্ন রূপ এড়িয়ে চলো** - সবচেয়ে প্রতিনিধিত্বকারী একটি phrase দাও
 
-            **পছন্দনীয় শব্দের ধরন:**
-            - রাজনৈতিক ইস্যু (noun): "নির্বাচনী প্রচারণা", "রাজনৈতিক সংকট"
-            - অর্থনৈতিক বিষয় (noun): "জ্বালানি সংকট", "মূল্যবৃদ্ধি", "অর্থনৈতিক মন্দা"
-            - সামাজিক ইস্যু (noun): "শিক্ষা সংস্কার", "স্বাস্থ্যসেবা"
-            - আন্তর্জাতিক বিষয় (noun): "যুদ্ধ-সংঘাত", "কূটনৈতিক সম্পর্ক"
-            - বিশেষণ যুক্ত বাক্যাংশ (adjective + noun): "নতুন নীতি", "গুরুত্বপূর্ণ সিদ্ধান্ত"
-
             উদাহরণ:
-            ✅ ভালো: "নির্বাচনী প্রচারণা", "জ্বালানি সংকট", "অর্থনৈতিক মন্দা", "শিক্ষা সংস্কার"
-            ❌ খারাপ: "বলেছেন", "করেছেন", "আজকের", "গতকালের"
+            ✔️ ভালো: "ইসরাইল-ইরানের সংঘাত", "জ্বালানি সংকট", "নির্বাচনী প্রচারণা","অর্থনৈতিক মন্দা", "শিক্ষা সংকট"
+            ❌ খারাপ: "ইরানের", "হামলা", "ট্রাম্প বলছেন যে...", "সরকার নিখোঁজ করে...","বলেছেন", "করেছেন", "আজকবর", "গণতন্ত্রের"
 
             টেক্সট:
             {combined_text}
@@ -1552,10 +1580,51 @@ def generate_trending_word_candidates_realtime_with_save(db: Session, limit: int
             stream=False,
         )
         ai_response = response.choices[0].message.content
-        print(f"🤖 Groq AI Response: {ai_response}")
         
-        # Save top 10 LLM trending words to database
-        save_llm_trending_words_to_db(db, ai_response, today, limit=10)
+        # Clean markdown formatting from AI response
+        def clean_markdown_text(text):
+            if not text:
+                return text
+            import re
+            
+            # Remove markdown bold, italic, code formatting
+            text = re.sub(r'\*\*([^*]+)\*\*', r'\1', text)  # **bold**
+            text = re.sub(r'\*([^*]+)\*', r'\1', text)      # *italic*
+            text = re.sub(r'`([^`]+)`', r'\1', text)        # `code`
+            
+            # Split into lines and filter
+            lines = text.split('\n')
+            cleaned_lines = []
+            
+            for line in lines:
+                line = line.strip()
+                if not line:
+                    continue
+                
+                # Skip introductory and concluding messages
+                if any(phrase in line for phrase in [
+                    'বাংলা সংবাদ থেকে গুগল ট্রেন্ডস',
+                    'গুরুত্বপূর্ণ এবং trending',
+                    'নিচে রয়েছে',
+                    'এই সবগুলোই গুরুত্বপূর্ণ বিষয়',
+                    'এখনকার সময়ে সবচেয়ে আলোচিত',
+                    'trending শব্দ/বাক্যাংশ'
+                ]):
+                    continue
+                
+                # Keep only numbered items
+                if re.match(r'^\d+\.|^[\u09E6-\u09EF]+\.', line):
+                    # Remove quotes around entire phrases
+                    line = re.sub(r'^["\'](.+)["\']$', r'\1', line)
+                    cleaned_lines.append(line)
+            
+            return '\n'.join(cleaned_lines)
+        
+        ai_response = clean_markdown_text(ai_response)
+        print(f"🤖 Groq AI Response (cleaned): {ai_response}")
+        
+        # Save top 15 LLM trending words to database
+        save_llm_trending_words_to_db(db, ai_response, today, limit=15)
         
     except Exception as e:
         print(f"Error generating trending words with Groq: {e}")
@@ -1642,10 +1711,10 @@ def generate_trending_word_candidates_realtime_with_save(db: Session, limit: int
     
     # Final summary
     summary.append(f"\n🤖 AI Generated Trending Words:\n{ai_response}")
-    summary.append(f"\n💾 Database Status: Top 10 LLM trending words saved for trending analysis section")
+    summary.append(f"\n💾 Database Status: Top 15 LLM trending words saved for trending analysis section")
     
     # Add heading at the beginning
-    final_output = "📊 NLP Trending Keywords থেকে আজকের শব্দ নির্বাচন করুন\n\n" + '\n'.join(summary)
+    final_output = "🤖 AI Generated Trending Words থেকে আজকের শব্দ নির্বাচন করুন\n\n" + '\n'.join(summary)
     
     print(f"[Summary] Real-time analysis completed with database save for LLM words")
     return final_output
@@ -1744,7 +1813,7 @@ def analyze_trending_content_and_store(db: Session, analyzer, content: List[Dict
         import traceback
         traceback.print_exc()
 
-def save_llm_trending_words_to_db(db: Session, ai_response: str, target_date: date, limit: int = 10):
+def save_llm_trending_words_to_db(db: Session, ai_response: str, target_date: date, limit: int = 15):
     """Parse LLM response and save top trending words to database"""
     try:
         if not ai_response or ai_response.strip() == "":
@@ -1767,6 +1836,14 @@ def save_llm_trending_words_to_db(db: Session, ai_response: str, target_date: da
             # Remove numbering if present (1. , 2. , etc.)
             import re
             cleaned_line = re.sub(r'^\d+\.\s*', '', line)
+            # Remove Bengali numbering (১. , ২. , etc.)
+            cleaned_line = re.sub(r'^[\u09E6-\u09EF]+\.\s*', '', cleaned_line)
+            # Remove markdown formatting
+            cleaned_line = re.sub(r'\*\*([^*]+)\*\*', r'\1', cleaned_line)  # Remove **bold**
+            cleaned_line = re.sub(r'\*([^*]+)\*', r'\1', cleaned_line)      # Remove *italic*
+            cleaned_line = re.sub(r'`([^`]+)`', r'\1', cleaned_line)        # Remove `code`
+            # Remove quotation marks around phrases
+            cleaned_line = re.sub(r'^["\'](.+)["\']$', r'\1', cleaned_line)
             cleaned_line = cleaned_line.strip()
             
             # Skip if too short or contains unwanted patterns
