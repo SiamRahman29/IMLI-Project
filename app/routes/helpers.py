@@ -630,7 +630,7 @@ def scrape_jugantor():
         if not res:
             return articles
         soup = BeautifulSoup(res.text, "html.parser")
-        for link in soup.select(".lead-news a, .lead-news-title a"):
+        for link in soup.select("h2 a, h3 a"):
             url = link.get('href')
             if url and not url.startswith('http'):
                 url = homepage.rstrip('/') + '/' + url.lstrip('/')
@@ -663,7 +663,7 @@ def scrape_kaler_kantho():
         if not res:
             return articles
         soup = BeautifulSoup(res.text, "html.parser")
-        for link in soup.select(".lead-news a, .main-news a, .news-title a"):
+        for link in soup.select("a[href*='/online/']"):
             url = link.get('href')
             if url and not url.startswith('http'):
                 url = homepage.rstrip('/') + '/' + url.lstrip('/')
@@ -762,7 +762,7 @@ def scrape_manab_zamin():
         if not res:
             return articles
         soup = BeautifulSoup(res.text, "html.parser")
-        for link in soup.select(".lead-news a, .main-news a, .title a"):
+        for link in soup.select("h3 a, h2 a"):
             url = link.get('href')
             if url and not url.startswith('http'):
                 url = homepage.rstrip('/') + '/' + url.lstrip('/')
@@ -795,7 +795,7 @@ def scrape_samakal():
         if not res:
             return articles
         soup = BeautifulSoup(res.text, "html.parser")
-        for link in soup.select(".lead-news a, .main-news a, .title a"):
+        for link in soup.select("a[href*='samakal.com/']"):
             url = link.get('href')
             if url and not url.startswith('http'):
                 url = homepage.rstrip('/') + '/' + url.lstrip('/')
@@ -828,7 +828,7 @@ def scrape_amader_shomoy():
         if not res:
             return articles
         soup = BeautifulSoup(res.text, "html.parser")
-        for link in soup.select(".lead-news a, .main-news a, .title a"):
+        for link in soup.select("h2 a, h3 a, a[href*='/news/']"):
             url = link.get('href')
             if url and not url.startswith('http'):
                 url = homepage.rstrip('/') + '/' + url.lstrip('/')
@@ -861,7 +861,7 @@ def scrape_janakantha():
         if not res:
             return articles
         soup = BeautifulSoup(res.text, "html.parser")
-        for link in soup.select(".lead-news a, .main-news a, .title a"):
+        for link in soup.select("a[href*='/news/']"):
             url = link.get('href')
             if url and not url.startswith('http'):
                 url = homepage.rstrip('/') + '/' + url.lstrip('/')
@@ -894,7 +894,7 @@ def scrape_inqilab():
         if not res:
             return articles
         soup = BeautifulSoup(res.text, "html.parser")
-        for link in soup.select(".lead-news a, .main-news a, .title a"):
+        for link in soup.select("h2 a, h3 a, a[href*='/news/']"):
             url = link.get('href')
             if url and not url.startswith('http'):
                 url = homepage.rstrip('/') + '/' + url.lstrip('/')
@@ -927,7 +927,7 @@ def scrape_sangbad():
         if not res:
             return articles
         soup = BeautifulSoup(res.text, "html.parser")
-        for link in soup.select(".lead-news a, .main-news a, .title a"):
+        for link in soup.select("a[href*='/news/']"):
             url = link.get('href')
             if url and not url.startswith('http'):
                 url = homepage.rstrip('/') + '/' + url.lstrip('/')
@@ -960,7 +960,7 @@ def scrape_noya_diganta():
         if not res:
             return articles
         soup = BeautifulSoup(res.text, "html.parser")
-        for link in soup.select(".lead-news a, .main-news a, .title a"):
+        for link in soup.select("h2 a, h3 a, a[href*='/news/']"):
             url = link.get('href')
             if url and not url.startswith('http'):
                 url = homepage.rstrip('/') + '/' + url.lstrip('/')
@@ -993,7 +993,7 @@ def scrape_jai_jai_din():
         if not res:
             return articles
         soup = BeautifulSoup(res.text, "html.parser")
-        for link in soup.select(".lead-news a, .main-news a, .title a"):
+        for link in soup.select("h2 a, h3 a, a[href*='/news/'], a[href*='/details/']"):
             url = link.get('href')
             if url and not url.startswith('http'):
                 url = homepage.rstrip('/') + '/' + url.lstrip('/')
@@ -1029,7 +1029,7 @@ def scrape_manobkantha():
         if not res:
             return articles
         soup = BeautifulSoup(res.text, "html.parser")
-        for link in soup.select(".lead-news a, .main-news a, .title a"):
+        for link in soup.select("h2 a, h3 a, a[href*='/news/'], a[href*='/details/']"):
             url = link.get('href')
             if url and not url.startswith('http'):
                 url = homepage.rstrip('/') + '/' + url.lstrip('/')
@@ -1095,7 +1095,7 @@ def scrape_ajker_patrika():
         if not res:
             return articles
         soup = BeautifulSoup(res.text, "html.parser")
-        for link in soup.select(".lead-news a, .main-news a, .title a"):
+        for link in soup.select("h2 a, h3 a, a[href*='/news/'], a[href*='/details/']"):
             url = link.get('href')
             if url and not url.startswith('http'):
                 url = homepage.rstrip('/') + '/' + url.lstrip('/')
@@ -1161,7 +1161,7 @@ def scrape_bangladesher_khabor():
         if not res:
             return articles
         soup = BeautifulSoup(res.text, "html.parser")
-        for link in soup.select(".lead-news a, .main-news a, .title a"):
+        for link in soup.select("h2 a, h3 a, a[href*='/news/'], a[href*='/details/']"):
             url = link.get('href')
             if url and not url.startswith('http'):
                 url = homepage.rstrip('/') + '/' + url.lstrip('/')
@@ -1194,7 +1194,7 @@ def scrape_bangladesh_journal():
         if not res:
             return articles
         soup = BeautifulSoup(res.text, "html.parser")
-        for link in soup.select(".lead-news a, .main-news a, .title a"):
+        for link in soup.select("h2 a, h3 a, a[href*='/news/'], a[href*='/details/']"):
             url = link.get('href')
             if url and not url.startswith('http'):
                 url = homepage.rstrip('/') + '/' + url.lstrip('/')
@@ -1229,14 +1229,14 @@ def scrape_bengali_news() -> List[Dict]:
         ("kaler_kantho", scrape_kaler_kantho),
         ("jugantor", scrape_jugantor),
         ("ittefaq", scrape_ittefaq),
-        ("bd_pratidin", scrape_bd_pratidin),
+        # ("bd_pratidin", scrape_bd_pratidin),
         ("manab_zamin", scrape_manab_zamin),
-        ("samakal", scrape_samakal),
-        ("amader_shomoy", scrape_amader_shomoy),
+        # ("samakal", scrape_samakal),
+        # ("amader_shomoy", scrape_amader_shomoy),
         ("janakantha", scrape_janakantha),
         ("inqilab", scrape_inqilab),
         # ("sangbad", scrape_sangbad),
-        ("noya_diganta", scrape_noya_diganta),
+        # ("noya_diganta", scrape_noya_diganta),
         ("jai_jai_din", scrape_jai_jai_din),
         ("manobkantha", scrape_manobkantha),
         ("ajkaler_khobor", scrape_ajkaler_khobor),

@@ -37,26 +37,26 @@ def get_google_trends_bangladesh():
         try:
             trending_searches = pytrends.trending_searches(pn='bangladesh')
             trends = trending_searches.iloc[:, 0].tolist()
-            print(f"[pytrends] trending_searches (bangladesh): {trends}")
+            # print(f"[pytrends] trending_searches (bangladesh): {trends}")
             if not trends or (isinstance(trends, float) and pd.isna(trends[0])):
                 raise Exception('No trends found')
         except Exception as e:
-            print(f"[pytrends] trending_searches failed: {e}")
+            # print(f"[pytrends] trending_searches failed: {e}")
             try:
                 realtime = pytrends.realtime_trending_searches(pn='BD')
                 if isinstance(realtime, pd.DataFrame) and 'title' in realtime.columns:
                     trends = realtime['title'].tolist()
-                    print(f"[pytrends] realtime_trending_searches (BD): {trends}")
+                    # print(f"[pytrends] realtime_trending_searches (BD): {trends}")
                 else:
                     print("[pytrends] realtime_trending_searches returned no 'title' column")
                     trends = []
             except Exception as e2:
-                print(f"[pytrends] realtime_trending_searches failed: {e2}")
+                # print(f"[pytrends] realtime_trending_searches failed: {e2}")
                 # Fallback: use related_queries for a generic term
                 try:
                     pytrends.build_payload(["বাংলাদেশ"], cat=0, timeframe='now 7-d', geo='BD', gprop='')
                     related = pytrends.related_queries()
-                    print(f"[pytrends] related_queries: {related}")
+                    # print(f"[pytrends] related_queries: {related}")
                     if related:
                         for v in related.values():
                             if v and v.get('top') is not None:
@@ -64,16 +64,16 @@ def get_google_trends_bangladesh():
                     if not trends:
                         # As a last fallback, use suggestions
                         suggestions = pytrends.suggestions(keyword="বাংলাদেশ")
-                        print(f"[pytrends] suggestions: {suggestions}")
+                        # print(f"[pytrends] suggestions: {suggestions}")
                         trends = [s['title'] for s in suggestions if 'title' in s]
                 except Exception as e3:
-                    print(f"[pytrends] related_queries/suggestions failed: {e3}")
+                    # print(f"[pytrends] related_queries/suggestions failed: {e3}")
                     trends = []
         processed = [preprocess_text(t) for t in trends if t]
-        print(f"[pytrends] Processed Google Trends: {processed}")
+        # print(f"[pytrends] Processed Google Trends: {processed}")
         return processed
     except Exception as e:
-        print(f"Error fetching Google Trends: {e}")
+        # print(f"Error fetching Google Trends: {e}")
         return []
 
 def get_youtube_trending_bangladesh():
