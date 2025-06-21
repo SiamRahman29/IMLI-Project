@@ -1226,7 +1226,7 @@ def scrape_bengali_news() -> List[Dict]:
     source_counts = {}
     all_sources = [
         ("prothom_alo", scrape_prothom_alo),
-        ("kaler_kantho", scrape_kaler_kantho),
+        # ("kaler_kantho", scrape_kaler_kantho),
         ("jugantor", scrape_jugantor),
         ("ittefaq", scrape_ittefaq),
         # ("bd_pratidin", scrape_bd_pratidin),
@@ -1237,13 +1237,13 @@ def scrape_bengali_news() -> List[Dict]:
         ("inqilab", scrape_inqilab),
         # ("sangbad", scrape_sangbad),
         # ("noya_diganta", scrape_noya_diganta),
-        ("jai_jai_din", scrape_jai_jai_din),
+        # ("jai_jai_din", scrape_jai_jai_din),
         ("manobkantha", scrape_manobkantha),
         ("ajkaler_khobor", scrape_ajkaler_khobor),
         ("ajker_patrika", scrape_ajker_patrika),
-        ("protidiner_sangbad", scrape_protidiner_sangbad),
-        ("bangladesher_khabor", scrape_bangladesher_khabor),
-        ("bangladesh_journal", scrape_bangladesh_journal)
+        # ("protidiner_sangbad", scrape_protidiner_sangbad),
+        # ("bangladesher_khabor", scrape_bangladesher_khabor),
+        # ("bangladesh_journal", scrape_bangladesh_journal)
     ]
     print("\n[Scraping: Starting all newspaper scrapers]")
     for source, func in all_sources:
@@ -1307,186 +1307,7 @@ def parse_news(articles: List[Dict]) -> str:
     
     return "\n".join(combined_texts)
 
-def generate_trending_word_candidates_realtime(limit: int = 15) -> str:
-    """Generate trending word candidates using REAL-TIME analysis (NO DATABASE USAGE)"""
-    print("Starting real-time trending analysis...")
-    print("=" * 60)
-    
-    # Fetch news articles (existing)
-    articles = fetch_news() or []
-    # Use heading only
-    texts = [a.get('heading', '') for a in articles if a.get('heading')]
-    
-    # Fetch Google Trends
-    google_trends = get_google_trends_bangladesh()
-    # Fetch YouTube trending
-    youtube_trends = get_youtube_trending_bangladesh()
-    # Fetch SerpApi Google Trends
-    serpapi_trends = get_serpapi_trending_bangladesh()
-    
-    print("[SerpApi] Final trending phrases (Bangladesh):")
-    for idx, trend in enumerate(serpapi_trends, 1):
-        print(f"  {idx}. {' '.join(trend) if isinstance(trend, list) else trend}")
-    
-    # Combine all sources for AI
-    texts.extend([' '.join(words) for words in google_trends if words])
-    texts.extend([' '.join(words) for words in youtube_trends if words])
-    texts.extend([' '.join(trend) for trend in serpapi_trends if trend])
-    
-    if not texts:
-        msg = "No articles or trends available for analysis"
-        print(msg)
-        return msg
-    
-    # --- AI Response (Groq) ---
-    from app.services.advanced_bengali_nlp import TrendingBengaliAnalyzer
-    analyzer = TrendingBengaliAnalyzer()
-    cleaned_texts = [analyzer.processor.normalize_text(t) for t in texts]
-    tokenized = [analyzer.processor.advanced_tokenize(t) for t in cleaned_texts]
-    no_stopwords = [[w for w in words if w not in analyzer.processor.stop_words] for words in tokenized]
-    cleaned_for_groq = []
-    
-    for words in no_stopwords[:15]:
-        if words:
-            cleaned_for_groq.append(' '.join(words)[:500])
-    
-    combined_text = '\n'.join(cleaned_for_groq)
-    ai_response = None
-    
-    try:
-        from groq import Groq
-        import os
-        api_key = os.environ.get("GROQ_API_KEY")
-        if not api_key:
-            raise ValueError("GROQ_API_KEY not set in environment.")
-        client = Groq(api_key=api_key)
-        print(f"Combined Text: {combined_text}")
-        prompt = f"""
-            নিচের বাংলা সংবাদের টেক্সট থেকে আজকের জন্য সবচেয়ে গুরুত্বপূর্ণ এবং trending {limit}টি শব্দ বা বাক্যাংশ খুঁজে বের করো যা বিশেষভাবে noun (বিশেষ্য) এবং adjective (বিশেষণ) প্রকৃতির এবং অর্থবহ।
 
-            **অবশ্যই অনুসরণীয় নিয়মাবলী:**
-            1. **Noun (বিশেষ্য) এবং Adjective (বিশেষণ) ভিত্তিক অর্থবহ শব্দ/বাক্যাংশ দাও**
-            2. **Hot trending topics/phrases খুঁজে বের করো** - যা এখন সবচেয়ে জনপ্রিয় এবং আলোচিত
-            3. **একটি টপিকের জন্য শুধুমাত্র একটি প্রতিনিধিত্বকারী phrase দাও**
-            4. **কোনো ব্যক্তির নাম দিও না** (যেমন: ট্রাম্প, বাইডেন, মোদি, হাসিনা ইত্যাদি)
-            5. **ছোট ও সংক্ষিপ্ত phrase দাও** - সর্বোচ্চ ২-৪ শব্দ। দীর্ঘ বাক্য দিও না
-            6. **সাধারণ stop words এবং verb (ক্রিয়া) এড়িয়ে চলো** (যেমন: এই, সেই, করা, হওয়া, যে, যার, বলা, দেওয়া, নেওয়া)
-            7. **শুধুমাত্র বিষয়বস্তু/থিম ভিত্তিক concrete noun/adjective phrase দাও** - খবরের মূল বিষয় যা trending
-            8. **প্রতিটি শব্দ/বাক্যাংশ আলাদা লাইনে লেখো**
-            9. **শুধুমাত্র বাংলা শব্দ/বাক্যাংশ দাও**
-            10. **একই টপিকের ভিন্ন ভিন্ন রূপ এড়িয়ে চলো** - সবচেয়ে প্রতিনিধিত্বকারী একটি phrase দাও
-
-            উদাহরণ:
-            ✔️ ভালো: "ইসরাইল-ইরানের সংঘাত", "জ্বালানি সংকট", "নির্বাচনী প্রচারণা","অর্থনৈতিক মন্দা", "শিক্ষা সংকট"
-            ❌ খারাপ: "ইরানের", "হামলা", "ট্রাম্প বলছেন যে...", "সরকার নিখোঁজ করে...","বলেছেন", "করেছেন", "আজকবর", "গণতন্ত্রের"
-
-            টেক্সট:
-            {combined_text}
-            trending শব্দ/বাক্যাংশ ({limit}টি):
-            """
-        
-        response = client.chat.completions.create(
-            messages=[{"role": "user", "content": prompt}],
-            model="meta-llama/Llama-4-Maverick-17B-128E-Instruct-FP8",
-            stream=False,
-        )
-        ai_response = response.choices[0].message.content
-        
-        # Clean markdown formatting from AI response
-        def clean_markdown_text(text):
-            if not text:
-                return text
-            import re
-            
-            # Remove markdown bold, italic, code formatting
-            text = re.sub(r'\*\*([^*]+)\*\*', r'\1', text)  # **bold**
-            text = re.sub(r'\*([^*]+)\*', r'\1', text)      # *italic*
-            text = re.sub(r'`([^`]+)`', r'\1', text)        # `code`
-            
-            # Split into lines and filter
-            lines = text.split('\n')
-            cleaned_lines = []
-            
-            for line in lines:
-                line = line.strip()
-                if not line:
-                    continue
-                
-                # Skip introductory and concluding messages
-                if any(phrase in line for phrase in [
-                    'বাংলা সংবাদ থেকে গুগল ট্রেন্ডস',
-                    'গুরুত্বপূর্ণ এবং trending',
-                    'নিচে রয়েছে',
-                    'এই সবগুলোই গুরুত্বপূর্ণ বিষয়',
-                    'এখনকার সময়ে সবচেয়ে আলোচিত',
-                    'trending শব্দ/বাক্যাংশ'
-                ]):
-                    continue
-                
-                # Keep only numbered items
-                if re.match(r'^\d+\.|^[\u09E6-\u09EF]+\.', line):
-                    # Remove quotes around entire phrases
-                    line = re.sub(r'^["\'](.+)["\']$', r'\1', line)
-                    cleaned_lines.append(line)
-            
-            return '\n'.join(cleaned_lines)
-        
-        ai_response = clean_markdown_text(ai_response)
-        print(f"🤖 Groq AI Response (cleaned): {ai_response}")
-        
-    except Exception as e:
-        print(f"Error generating trending words with Groq: {e}")
-        ai_response = f"Error generating trending words: {e}"
-    
-    # --- NLP Analysis Response (WITHOUT DATABASE) ---
-    analyzer_inputs = []
-    for a in articles:
-        analyzer_inputs.append({
-            'title': a.get('title', ''),
-            'heading': a.get('heading', ''),
-            'source': a.get('source', 'news')
-        })
-    
-    for trend in google_trends:
-        analyzer_inputs.append({'title': ' '.join(trend), 'heading': '', 'source': 'google_trends'})
-    
-    for trend in youtube_trends:
-        analyzer_inputs.append({'title': ' '.join(trend), 'heading': '', 'source': 'youtube_trending'})
-    
-    for trend in serpapi_trends:
-        analyzer_inputs.append({'title': ' '.join(trend) if isinstance(trend, list) else trend, 'heading': '', 'source': 'serpapi_trends'})
-    
-    print(f"\n🧠 Running NLP Analysis on {len(analyzer_inputs)} inputs...")
-    analyzer_response = analyzer.analyze_trending_content(analyzer_inputs, source_type='mixed')
-    
-    summary = []
-    trending_keywords = analyzer_response.get('trending_keywords', [])
-    
-    if not isinstance(trending_keywords, list):
-        print(f"[Analyzer] 'trending_keywords' missing or not a list. analyzer_response: {analyzer_response}")
-        trending_keywords = []
-    
-    summary.append("📊 NLP Trending Keywords (Top 10):")
-    for keyword_score in trending_keywords[:10]:
-        if isinstance(keyword_score, (list, tuple)) and len(keyword_score) == 2:
-            keyword, score = keyword_score
-            summary.append(f"  🔸 {keyword}: {score:.4f}")
-        else:
-            summary.append(f"  🔸 {keyword_score}")
-    
-    summary.append("\n🏷️ Named Entities:")
-    for entity_type, entities in analyzer_response.get('named_entities', {}).items():
-        if entities:
-            summary.append(f"  📍 {entity_type}: {entities[:5]}")
-    
-    summary.append(f"\n💭 Sentiment: {analyzer_response.get('sentiment_analysis', '')}")
-    summary.append(f"\n📈 Statistics: {analyzer_response.get('content_statistics', '')}")
-    
-    # Final summary
-    summary.append(f"\n🤖 AI Generated Trending Words:\n{ai_response}")
-    
-    print(f"[Summary] Real-time analysis completed without database usage")
-    return '\n'.join(summary)
 
 def generate_trending_word_candidates_realtime_with_save(db: Session, limit: int = 15) -> str:
     """Generate trending word candidates using REAL-TIME analysis and save top 15 LLM words to database"""
@@ -1498,8 +1319,14 @@ def generate_trending_word_candidates_realtime_with_save(db: Session, limit: int
     
     # Fetch news articles (existing)
     articles = fetch_news() or []
-    # Use heading only
-    texts = [a.get('heading', '') for a in articles if a.get('heading')]
+    # Use only heading for content (as requested)
+    texts = []
+    for a in articles:
+        heading = a.get('heading', '').strip() 
+        if heading:
+            texts.append(heading)
+    
+    print(f"📰 Extracted {len(texts)} text segments from {len(articles)} scraped articles")
     
     # Fetch Google Trends
     google_trends = get_google_trends_bangladesh()
@@ -1508,7 +1335,7 @@ def generate_trending_word_candidates_realtime_with_save(db: Session, limit: int
     # Fetch SerpApi Google Trends
     serpapi_trends = get_serpapi_trending_bangladesh()
     
-    print("[SerpApi] Final trending phrases (Bangladesh):")
+    # print("[SerpApi] Final trending phrases (Bangladesh):")
     for idx, trend in enumerate(serpapi_trends, 1):
         print(f"  {idx}. {' '.join(trend) if isinstance(trend, list) else trend}")
     
@@ -1525,18 +1352,25 @@ def generate_trending_word_candidates_realtime_with_save(db: Session, limit: int
     # --- AI Response (Groq) ---
     from app.services.advanced_bengali_nlp import TrendingBengaliAnalyzer
     analyzer = TrendingBengaliAnalyzer()
-    cleaned_texts = [analyzer.processor.normalize_text(t) for t in texts]
-    tokenized = [analyzer.processor.advanced_tokenize(t) for t in cleaned_texts]
-    no_stopwords = [[w for w in words if w not in analyzer.processor.stop_words] for words in tokenized]
-    cleaned_for_groq = []
-    
-    for words in no_stopwords[:15]:
-        if words:
-            cleaned_for_groq.append(' '.join(words)[:500])
-    
-    combined_text = '\n'.join(cleaned_for_groq)
+    # Use ULTRA optimized text processing for Groq token limits
+    print(f"🔧 Using ULTRA optimization for {len(texts)} total texts...")
+    combined_text = optimize_text_for_ai_analysis(texts, analyzer, max_chars=3500, max_articles=150)  # Much stricter limits
+    print(f"📊 Ultra-Optimized Combined Text Size: {len(combined_text)} characters")
+    print(f"📊 Successfully optimized from {len(texts)} original texts")
     ai_response = None
-    print(f"Combined Text: {combined_text}")
+    print(f"Combined Text Preview (first 100 chars): {combined_text[:100]}...")
+    
+    # Token estimation for Groq limits
+    estimated_tokens = len(combined_text) // 2.5  # More accurate for Bengali
+    print(f"🎯 Estimated tokens: ~{estimated_tokens:.0f} (Groq limit: 12,000)")
+    
+    if estimated_tokens > 11000:  # Safety margin
+        print("⚠️  Text might still be too long, further reducing...")
+        # Emergency truncation
+        safe_chars = int(11000 * 2.5)
+        if len(combined_text) > safe_chars:
+            combined_text = combined_text[:safe_chars-3] + "..."
+            print(f"🔧 Emergency truncated to {len(combined_text)} characters")
 
     try:
         from groq import Groq
@@ -1544,6 +1378,8 @@ def generate_trending_word_candidates_realtime_with_save(db: Session, limit: int
         api_key = os.environ.get("GROQ_API_KEY")
         if not api_key:
             raise ValueError("GROQ_API_KEY not set in environment.")
+        
+        print(f"🔑 Using Groq API Key: {api_key[:15]}...")
         client = Groq(api_key=api_key)
         
         prompt = f"""
@@ -1571,15 +1407,30 @@ def generate_trending_word_candidates_realtime_with_save(db: Session, limit: int
             trending শব্দ/বাক্যাংশ ({limit}টি):
             """
         
+        print(f"📤 Sending request to Groq API...")
+        print(f"📊 Prompt length: {len(prompt)} characters")
+        
+        # Use faster model to avoid timeouts
         response = client.chat.completions.create(
             messages=[{"role": "user", "content": prompt}],
-            # model="llama-3.3-70b-versatile",
-            model="llama-3.1-8b-instant",
+            model="llama-3.3-70b-versatile",
+            # model="llama-3.1-8b-instant",
             # model="meta-llama/llama-guard-4-12b",
             # model="Qwen/Qwen3-32B",
             stream=False,
+            temperature=0.7,
+            max_tokens=1000
         )
+        
+        print(f"📥 Received response from Groq API")
+        print(f"🔍 Response object: {response}")
+        
+        if not response or not response.choices:
+            raise ValueError("Empty response from Groq API")
+            
         ai_response = response.choices[0].message.content
+        print(f"✅ Raw AI Response length: {len(ai_response) if ai_response else 0}")
+        print(f"📝 Raw AI Response preview: {ai_response[:200] if ai_response else 'None'}...")
         
         # Clean markdown formatting from AI response
         def clean_markdown_text(text):
@@ -1620,6 +1471,7 @@ def generate_trending_word_candidates_realtime_with_save(db: Session, limit: int
             
             return '\n'.join(cleaned_lines)
         
+        
         ai_response = clean_markdown_text(ai_response)
         print(f"🤖 Groq AI Response (cleaned): {ai_response}")
         
@@ -1627,8 +1479,24 @@ def generate_trending_word_candidates_realtime_with_save(db: Session, limit: int
         save_llm_trending_words_to_db(db, ai_response, today, limit=15)
         
     except Exception as e:
-        print(f"Error generating trending words with Groq: {e}")
-        ai_response = f"Error generating trending words: {e}"
+        import traceback
+        error_details = traceback.format_exc()
+        print(f"❌ Error generating trending words with Groq:")
+        print(f"   Error Type: {type(e).__name__}")
+        print(f"   Error Message: {str(e)}")
+        print(f"   Full Traceback:\n{error_details}")
+        
+        # Check for common Groq API issues
+        if "rate limit" in str(e).lower():
+            print("🚫 Rate limit exceeded - need to wait before retrying")
+        elif "billing" in str(e).lower():
+            print("💳 Billing issue - check Groq account")
+        elif "api key" in str(e).lower():
+            print("🔑 API key issue - check GROQ_API_KEY")
+        elif "timeout" in str(e).lower():
+            print("⏱️ Request timeout - server might be slow")
+        
+        ai_response = f"❌ Error generating trending words: {str(e)}"
     
     # --- NLP Analysis Response (WITHOUT DATABASE for NLP results) ---
     analyzer_inputs = []
@@ -1712,6 +1580,13 @@ def generate_trending_word_candidates_realtime_with_save(db: Session, limit: int
     # Final summary
     summary.append(f"\n🤖 AI Generated Trending Words:\n{ai_response}")
     summary.append(f"\n💾 Database Status: Top 15 LLM trending words saved for trending analysis section")
+    
+    # Add the combined text for frontend debugging
+    summary.append(f"\n📋 সম্পূর্ণ AI প্রার্থিতালিকা:")
+    summary.append(f"📊 Groq API তে পাঠানো Combined Text ({len(combined_text)} chars):")
+    summary.append(f"{'='*50}")
+    summary.append(combined_text)
+    summary.append(f"{'='*50}")
     
     # Add heading at the beginning
     final_output = "🤖 AI Generated Trending Words থেকে আজকের শব্দ নির্বাচন করুন\n\n" + '\n'.join(summary)
@@ -1885,3 +1760,133 @@ def save_llm_trending_words_to_db(db: Session, ai_response: str, target_date: da
     except Exception as e:
         print(f"❌ Error saving LLM trending words: {e}")
         db.rollback()
+
+def optimize_text_for_ai_analysis(texts, analyzer, max_chars=3500, max_articles=150):
+    """
+    ULTRA optimize large volume of texts for Groq token limits
+    Target: 3500 chars max for 12k token limit
+    
+    Strategy:
+    1. Extract only top keywords from each article  
+    2. Heavy deduplication
+    3. Strict character limits
+    4. Priority-based selection
+    """
+    print(f"🔧 ULTRA optimizing {len(texts)} texts for Groq API limits...")
+    
+    if not texts:
+        return ""
+    
+    # Step 1: Extract ONLY key keywords from each text (super compact)
+    optimized_keywords = []
+    processed_count = 0
+    
+    for text in texts[:max_articles]:  # Strict article limit
+        if not text or len(text.strip()) < 3:
+            continue
+            
+        # Normalize and extract meaningful words
+        normalized = analyzer.processor.normalize_text(text)
+        tokens = analyzer.processor.advanced_tokenize(normalized)
+        
+        # Keep only the BEST meaningful words (very strict filtering)
+        meaningful_words = [
+            w for w in tokens 
+            if w not in analyzer.processor.stop_words 
+            and len(w) >= 3  # Min 3 chars
+            and not w.isdigit()  # No numbers
+            and len(w) <= 15  # Max length check
+        ]
+        
+        if len(meaningful_words) >= 1:  # Need at least 1 word
+            # Take only TOP 2 words per article + 1 bigram max
+            top_keywords = meaningful_words[:2]  # Only 2 words per article
+            
+            # Add 1 bigram if possible
+            if len(meaningful_words) >= 2:
+                bigram = ' '.join(meaningful_words[:2])
+                if len(bigram) <= 20:  # Short bigrams only
+                    top_keywords.append(bigram)
+            
+            # Join with minimal separator, max 40 chars per article
+            article_keywords = ' '.join(top_keywords[:3])  # Max 3 elements
+            if len(article_keywords) > 40:
+                article_keywords = article_keywords[:37] + "..."
+                
+            optimized_keywords.append(article_keywords)
+            processed_count += 1
+    
+    print(f"📊 Processed {processed_count} articles into ultra-compact keywords")
+    
+    # Step 2: HEAVY deduplication (remove similar content aggressively)
+    unique_keywords = []
+    seen_words = set()
+    
+    for keywords in optimized_keywords:
+        # Split into words and check for significant overlap
+        words = set(keywords.lower().replace(' ', '_').split())
+        
+        # Check overlap with existing content
+        has_significant_overlap = False
+        for existing_words in seen_words:
+            if words and existing_words:
+                overlap = len(words.intersection(existing_words))
+                if overlap > 0 and overlap / max(len(words), len(existing_words)) > 0.4:  # 40% overlap = skip
+                    has_significant_overlap = True
+                    break
+        
+        if not has_significant_overlap and words:
+            seen_words.add(frozenset(words))
+            unique_keywords.append(keywords)
+    
+    print(f"🔄 Heavy deduplication: {len(optimized_keywords)} -> {len(unique_keywords)} unique entries")
+    
+    # Step 3: Smart truncation to fit token limits
+    if not unique_keywords:
+        return ""
+    
+    # Score and prioritize keywords
+    keywords_with_score = []
+    for keyword_set in unique_keywords:
+        words = keyword_set.split()
+        # Score: favor diverse, meaningful words
+        unique_word_count = len(set(words))
+        total_length = len(keyword_set)
+        score = unique_word_count * 3 + (total_length * 0.1)  # Favor diversity over length
+        keywords_with_score.append((keyword_set, score))
+    
+    # Sort by score and build final text
+    keywords_with_score.sort(key=lambda x: x[1], reverse=True)
+    
+    final_keywords = []
+    current_chars = 0
+    
+    for keyword_set, score in keywords_with_score:
+        # Add keyword set if it fits
+        addition_length = len(keyword_set) + 1  # +1 for separator
+        if current_chars + addition_length <= max_chars:
+            final_keywords.append(keyword_set)
+            current_chars += addition_length
+        else:
+            # Try to fit a truncated version if significant space remains
+            remaining_space = max_chars - current_chars - 1
+            if remaining_space > 15:  # Only if meaningful space
+                truncated = keyword_set[:remaining_space-3] + "..."
+                final_keywords.append(truncated)
+            break
+    
+    combined_text = ' | '.join(final_keywords)  # Use pipe separator for compactness
+    
+    # Final safety check
+    if len(combined_text) > max_chars:
+        combined_text = combined_text[:max_chars-3] + "..."
+    
+    # Calculate compression stats
+    original_total = sum(len(t) for t in texts if t)
+    compression_ratio = len(combined_text) / max(original_total, 1) * 100
+    
+    print(f"✅ ULTRA-compressed: {len(combined_text)} chars from {len(texts)} texts")
+    print(f"📈 Compression: {compression_ratio:.2f}% of original size")
+    print(f"🎯 Token estimate: ~{len(combined_text)//3} tokens (limit: 12k)")
+    
+    return combined_text

@@ -20,7 +20,7 @@ import random
 
 from app.db.database import SessionLocal
 from app.models.word import Word, TrendingPhrase
-from app.routes.helpers import get_trending_words, generate_trending_word_candidates_realtime
+from app.routes.helpers import get_trending_words
 from app.dto.dtos import TrendingWordsResponse, TrendingPhraseResponse, DailyTrendingResponse, TrendingPhrasesRequest
 # from app.services.social_media_scraper import print_scraped_posts_pretty, scrape_social_media_content
 

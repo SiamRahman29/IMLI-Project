@@ -1,6 +1,6 @@
 import re
 from typing import List
-from pytrends.request import TrendReq
+# from pytrends.request import TrendReq
 from googleapiclient.discovery import build
 import os
 import pandas as pd
@@ -101,7 +101,7 @@ def get_serpapi_trending_bangladesh():
     """Fetch trending topics/phrases for Bangladesh using SerpApi Google Search."""
     api_key = os.environ.get('SERPAPI_API_KEY')
     if not api_key:
-        print('[SerpApi] SERPAPI_API_KEY not set in environment.')
+        # print('[SerpApi] SERPAPI_API_KEY not set in environment.')
         return []
     url = 'https://serpapi.com/search.json'
     params = {
@@ -116,22 +116,22 @@ def get_serpapi_trending_bangladesh():
     try:
         response = requests.get(url, params=params, timeout=15)
         data = response.json()
-        print(f"[SerpApi] Raw response: {data}")
+        # print(f"[SerpApi] Raw response: {data}")
         trends = []
-        if 'organic_results' in data:
-            for item in data['organic_results']:
-                # Try to extract title and snippet
-                if 'title' in item:
-                    trends.append(item['title'])
-                if 'snippet' in item:
-                    trends.append(item['snippet'])
-        else:
-            print('[SerpApi] No organic_results in response.')
+        # if 'organic_results' in data:
+        #     for item in data['organic_results']:
+        #         # Try to extract title and snippet
+        #         if 'title' in item:
+        #             trends.append(item['title'])
+        #         if 'snippet' in item:
+        #             trends.append(item['snippet'])
+        # else:
+        #     print('[SerpApi] No organic_results in response.')
         processed = [preprocess_text(t) for t in trends if t]
-        print(f"[SerpApi] Processed SerpApi Trends: {processed}")
+        # print(f"[SerpApi] Processed SerpApi Trends: {processed}")
         return processed
     except Exception as e:
-        print(f"[SerpApi] Error fetching SerpApi trends: {e}")
+        # print(f"[SerpApi] Error fetching SerpApi trends: {e}")
         return []
 
 # Placeholder for Twitter trending hashtags
