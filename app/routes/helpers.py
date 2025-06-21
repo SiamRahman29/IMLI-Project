@@ -419,10 +419,12 @@ def get_trending_words(db: Session):
     # Aggregate weekly trending data
     print("Aggregating weekly trending data...")
     try:
-        weekly_count = aggregate_weekly_trending(db)
-        print(f"Weekly aggregation completed: {weekly_count} phrases")
+        # weekly_count = aggregate_weekly_trending(db)
+        # print(f"Weekly aggregation completed: {weekly_count} phrases")
+        print("Weekly aggregation skipped (function not implemented)")
     except Exception as e:
         print(f"Error in weekly aggregation: {e}")
+        import traceback
         traceback.print_exc()
 
 def analyze_and_store_trends(db: Session, analyzer: TrendingAnalyzer, 
@@ -1305,7 +1307,7 @@ def parse_news(articles: List[Dict]) -> str:
     
     return "\n".join(combined_texts)
 
-def generate_trending_word_candidates_realtime(limit: int = 10) -> str:
+def generate_trending_word_candidates_realtime(limit: int = 15) -> str:
     """Generate trending word candidates using REAL-TIME analysis (NO DATABASE USAGE)"""
     print("Starting real-time trending analysis...")
     print("=" * 60)
@@ -1358,27 +1360,35 @@ def generate_trending_word_candidates_realtime(limit: int = 10) -> str:
         if not api_key:
             raise ValueError("GROQ_API_KEY not set in environment.")
         client = Groq(api_key=api_key)
-        
+        print(f"Combined Text: {combined_text}")
         prompt = f"""
-            নিচের বাংলা সংবাদের টেক্সট, গুগল ট্রেন্ডস ও ইউটিউব ট্রেন্ডিং থেকে আজকের জন্য সবচেয়ে গুরুত্বপূর্ণ এবং trending {limit}টি শব্দ বা বাক্যাংশ খুঁজে বের করো।
+            নিচের বাংলা সংবাদের টেক্সট থেকে আজকের জন্য সবচেয়ে গুরুত্বপূর্ণ এবং trending {limit}টি শব্দ বা বাক্যাংশ খুঁজে বের করো যা বিশেষভাবে noun (বিশেষ্য) এবং adjective (বিশেষণ) প্রকৃতির এবং অর্থবহ।
 
-            **গুরুত্বপূর্ণ নিয়মাবলী:**
-            1. **একটি টপিকের জন্য শুধুমাত্র একটি প্রতিনিধিত্বকারী phrase দাও**
-            2. **কোনো ব্যক্তির নাম দিও না** (যেমন: ট্রাম্প, বাইডেন, মোদি ইত্যাদি)
-            3. **ছোট ও সংক্ষিপ্ত phrase দাও** - সর্বোচ্চ ২-৪ শব্দ। দীর্ঘ বাক্য দিও না
-            4. **সাধারণ stop words এড়িয়ে চলো** (যেমন: এই, সেই, করা, হওয়া, যে, যার)
-            5. **শুধুমাত্র বিষয়বস্তু/থিম ভিত্তিক phrase দাও** - খবরের মূল বিষয় যা trending
-            6. **প্রতিটি শব্দ/বাক্যাংশ আলাদা লাইনে লেখো**
-            7. **শুধুমাত্র বাংলা শব্দ/বাক্যাংশ দাও**
-            8. **একই টপিকের ভিন্ন ভিন্ন রূপ এড়িয়ে চলো** - সবচেয়ে প্রতিনিধিত্বকারী একটি phrase দাও
+            **অবশ্যই অনুসরণীয় নিয়মাবলী:**
+            1. **Noun (বিশেষ্য) এবং Adjective (বিশেষণ) ভিত্তিক অর্থবহ শব্দ/বাক্যাংশ দাও**
+            2. **Hot trending topics/phrases খুঁজে বের করো** - যা এখন সবচেয়ে জনপ্রিয় এবং আলোচিত
+            3. **একটি টপিকের জন্য শুধুমাত্র একটি প্রতিনিধিত্বকারী phrase দাও**
+            4. **কোনো ব্যক্তির নাম দিও না** (যেমন: ট্রাম্প, বাইডেন, মোদি, হাসিনা ইত্যাদি)
+            5. **ছোট ও সংক্ষিপ্ত phrase দাও** - সর্বোচ্চ ২-৪ শব্দ। দীর্ঘ বাক্য দিও না
+            6. **সাধারণ stop words এবং verb (ক্রিয়া) এড়িয়ে চলো** (যেমন: এই, সেই, করা, হওয়া, যে, যার, বলা, দেওয়া, নেওয়া)
+            7. **শুধুমাত্র বিষয়বস্তু/থিম ভিত্তিক concrete noun/adjective phrase দাও** - খবরের মূল বিষয় যা trending
+            8. **প্রতিটি শব্দ/বাক্যাংশ আলাদা লাইনে লেখো**
+            9. **শুধুমাত্র বাংলা শব্দ/বাক্যাংশ দাও**
+            10. **একই টপিকের ভিন্ন ভিন্ন রূপ এড়িয়ে চলো** - সবচেয়ে প্রতিনিধিত্বকারী একটি phrase দাও
+
+            **পছন্দনীয় শব্দের ধরন:**
+            - রাজনৈতিক ইস্যু (noun): "নির্বাচনী প্রচারণা", "রাজনৈতিক সংকট"
+            - অর্থনৈতিক বিষয় (noun): "জ্বালানি সংকট", "মূল্যবৃদ্ধি", "অর্থনৈতিক মন্দা"
+            - সামাজিক ইস্যু (noun): "শিক্ষা সংস্কার", "স্বাস্থ্যসেবা"
+            - আন্তর্জাতিক বিষয় (noun): "যুদ্ধ-সংঘাত", "কূটনৈতিক সম্পর্ক"
+            - বিশেষণ যুক্ত বাক্যাংশ (adjective + noun): "নতুন নীতি", "গুরুত্বপূর্ণ সিদ্ধান্ত"
 
             উদাহরণ:
-            ✅ ভালো: "ইসরায়েল-ইরানের সংঘাত", "জ্বালানি সংকট", "নির্বাচনী প্রচারণা"
-            ❌ খারাপ: "ইরান", "হামলা", "ট্রাম্প বলেছেন যে...", "সরকার নিশ্চিত করেছে যে..."
+            ✔️ ভালো: "ইসরাইল-ইরানের সংঘাত", "জ্বালানি সংকট", "নির্বাচনী প্রচারণা","অর্থনৈতিক মন্দা", "শিক্ষা সংকট"
+            ❌ খারাপ: "ইরানের", "হামলা", "ট্রাম্প বলছেন যে...", "সরকার নিখোঁজ করে...","বলেছেন", "করেছেন", "আজকবর", "গণতন্ত্রের"
 
             টেক্সট:
             {combined_text}
-
             trending শব্দ/বাক্যাংশ ({limit}টি):
             """
         
@@ -1502,21 +1512,30 @@ def generate_trending_word_candidates_realtime_with_save(db: Session, limit: int
         client = Groq(api_key=api_key)
         
         prompt = f"""
-            নিচের বাংলা সংবাদের টেক্সট, গুগল ট্রেন্ডস ও ইউটিউব ট্রেন্ডিং থেকে আজকের জন্য সবচেয়ে গুরুত্বপূর্ণ এবং trending {limit}টি শব্দ বা বাক্যাংশ খুঁজে বের করো।
+            নিচের বাংলা সংবাদের টেক্সট, গুগল ট্রেন্ডস ও ইউটিউব ট্রেন্ডিং থেকে আজকের জন্য সবচেয়ে গুরুত্বপূর্ণ এবং trending {limit}টি শব্দ বা বাক্যাংশ খুঁজে বের করো যা বিশেষভাবে noun (বিশেষ্য) এবং adjective (বিশেষণ) প্রকৃতির এবং অর্থবহ।
 
-            **গুরুত্বপূর্ণ নিয়মাবলী:**
-            1. **একটি টপিকের জন্য শুধুমাত্র একটি প্রতিনিধিত্বকারী phrase দাও**
-            2. **কোনো ব্যক্তির নাম দিও না** (যেমন: ট্রাম্প, বাইডেন, মোদি ইত্যাদি)
-            3. **ছোট ও সংক্ষিপ্ত phrase দাও** - সর্বোচ্চ ২-৪ শব্দ। দীর্ঘ বাক্য দিও না
-            4. **সাধারণ stop words এড়িয়ে চলো** (যেমন: এই, সেই, করা, হওয়া, যে, যার)
-            5. **শুধুমাত্র বিষয়বস্তু/থিম ভিত্তিক phrase দাও** - খবরের মূল বিষয় যা trending
-            6. **প্রতিটি শব্দ/বাক্যাংশ আলাদা লাইনে লেখো**
-            7. **শুধুমাত্র বাংলা শব্দ/বাক্যাংশ দাও**
-            8. **একই টপিকের ভিন্ন ভিন্ন রূপ এড়িয়ে চলো** - সবচেয়ে প্রতিনিধিত্বকারী একটি phrase দাও
+            **অবশ্যই অনুসরণীয় নিয়মাবলী:**
+            1. **Noun (বিশেষ্য) এবং Adjective (বিশেষণ) ভিত্তিক অর্থবহ শব্দ/বাক্যাংশ দাও**
+            2. **Hot trending topics/phrases খুঁজে বের করো** - যা এখন সবচেয়ে জনপ্রিয় এবং আলোচিত
+            3. **একটি টপিকের জন্য শুধুমাত্র একটি প্রতিনিধিত্বকারী phrase দাও**
+            4. **কোনো ব্যক্তির নাম দিও না** (যেমন: ট্রাম্প, বাইডেন, মোদি, হাসিনা ইত্যাদি)
+            5. **ছোট ও সংক্ষিপ্ত phrase দাও** - সর্বোচ্চ ২-৪ শব্দ। দীর্ঘ বাক্য দিও না
+            6. **সাধারণ stop words এবং verb (ক্রিয়া) এড়িয়ে চলো** (যেমন: এই, সেই, করা, হওয়া, যে, যার, বলা, দেওয়া, নেওয়া)
+            7. **শুধুমাত্র বিষয়বস্তু/থিম ভিত্তিক concrete noun/adjective phrase দাও** - খবরের মূল বিষয় যা trending
+            8. **প্রতিটি শব্দ/বাক্যাংশ আলাদা লাইনে লেখো**
+            9. **শুধুমাত্র বাংলা শব্দ/বাক্যাংশ দাও**
+            10. **একই টপিকের ভিন্ন ভিন্ন রূপ এড়িয়ে চলো** - সবচেয়ে প্রতিনিধিত্বকারী একটি phrase দাও
+
+            **পছন্দনীয় শব্দের ধরন:**
+            - রাজনৈতিক ইস্যু (noun): "নির্বাচনী প্রচারণা", "রাজনৈতিক সংকট"
+            - অর্থনৈতিক বিষয় (noun): "জ্বালানি সংকট", "মূল্যবৃদ্ধি", "অর্থনৈতিক মন্দা"
+            - সামাজিক ইস্যু (noun): "শিক্ষা সংস্কার", "স্বাস্থ্যসেবা"
+            - আন্তর্জাতিক বিষয় (noun): "যুদ্ধ-সংঘাত", "কূটনৈতিক সম্পর্ক"
+            - বিশেষণ যুক্ত বাক্যাংশ (adjective + noun): "নতুন নীতি", "গুরুত্বপূর্ণ সিদ্ধান্ত"
 
             উদাহরণ:
-            ✅ ভালো: "ইসরায়েল-ইরানের সংঘাত", "জ্বালানি সংকট", "নির্বাচনী প্রচারণা"
-            ❌ খারাপ: "ইরান", "হামলা", "ট্রাম্প বলেছেন যে...", "সরকার নিশ্চিত করেছে যে..."
+            ✅ ভালো: "নির্বাচনী প্রচারণা", "জ্বালানি সংকট", "অর্থনৈতিক মন্দা", "শিক্ষা সংস্কার"
+            ❌ খারাপ: "বলেছেন", "করেছেন", "আজকের", "গতকালের"
 
             টেক্সট:
             {combined_text}
@@ -1563,6 +1582,16 @@ def generate_trending_word_candidates_realtime_with_save(db: Session, limit: int
     print(f"\n🧠 Running NLP Analysis on {len(analyzer_inputs)} inputs...")
     analyzer_response = analyzer.analyze_trending_content(analyzer_inputs, source_type='mixed')
     
+    # Count unique newspaper sources from analyzer inputs
+    newspaper_sources = set()
+    for item in analyzer_inputs:
+        item_source = item.get('source', 'unknown')
+        if item_source not in ['google_trends', 'youtube_trending', 'serpapi_trends', 'unknown']:
+            newspaper_sources.add(item_source)
+    
+    newspaper_count = len(newspaper_sources)
+    print(f"📰 Summary includes content from {newspaper_count} newspaper sources")
+    
     # Start with empty summary array and add heading separately at the end
     summary = []
     trending_keywords = analyzer_response.get('trending_keywords', [])
@@ -1571,11 +1600,35 @@ def generate_trending_word_candidates_realtime_with_save(db: Session, limit: int
         print(f"[Analyzer] 'trending_keywords' missing or not a list. analyzer_response: {analyzer_response}")
         trending_keywords = []
     
-    # Add only the trending keywords to summary (not the heading)
+    # Track which newspapers contain each phrase for summary
+    phrase_newspaper_counts = {}
     for keyword_score in trending_keywords[:10]:
         if isinstance(keyword_score, (list, tuple)) and len(keyword_score) == 2:
             keyword, score = keyword_score
-            summary.append(f"  🔸 {keyword}: {score:.4f}")
+            keyword_clean = keyword.strip()
+            
+            # Count how many newspapers contain this phrase
+            newspapers_with_phrase = set()
+            for item in analyzer_inputs:
+                title = item.get('title', '').lower()
+                heading = item.get('heading', '').lower()
+                combined_text = f"{title} {heading}".lower()
+                
+                if keyword_clean.lower() in combined_text:
+                    item_source = item.get('source', 'unknown')
+                    if item_source not in ['google_trends', 'youtube_trending', 'serpapi_trends', 'unknown']:
+                        newspapers_with_phrase.add(item_source)
+            
+            phrase_newspapers = len(newspapers_with_phrase)
+            phrase_newspaper_counts[keyword_clean] = phrase_newspapers
+        
+    # Add trending keywords to summary with newspaper counts
+    for keyword_score in trending_keywords[:10]:
+        if isinstance(keyword_score, (list, tuple)) and len(keyword_score) == 2:
+            keyword, score = keyword_score
+            keyword_clean = keyword.strip()
+            phrase_newspapers = phrase_newspaper_counts.get(keyword_clean, 0)
+            summary.append(f"  🔸 {keyword}: {score:.4f} | Newspapers: {phrase_newspapers}/{newspaper_count}")
         else:
             summary.append(f"  🔸 {keyword_score}")
     
@@ -1602,6 +1655,19 @@ def analyze_trending_content_and_store(db: Session, analyzer, content: List[Dict
     try:
         print(f"🔍 Analyzing {len(content)} items from {source} for {target_date}")
         
+        # Count unique newspaper sources
+        newspaper_sources = set()
+        for item in content:
+            item_source = item.get('source', 'unknown')
+            if item_source != 'unknown':
+                newspaper_sources.add(item_source)
+        
+        newspaper_count = len(newspaper_sources)
+        print(f"📰 Analyzing content from {newspaper_count} newspaper sources:")
+        for i, newspaper in enumerate(sorted(newspaper_sources), 1):
+            articles_from_source = len([item for item in content if item.get('source') == newspaper])
+            print(f"   {i}. {newspaper:<20} - {articles_from_source:2d} articles")
+        
         # Analyze content using advanced Bengali analyzer
         analysis_result = analyzer.analyze_trending_content(content, source_type=source)
         
@@ -1612,11 +1678,36 @@ def analyze_trending_content_and_store(db: Session, analyzer, content: List[Dict
         trending_keywords = analysis_result.get('trending_keywords', [])
         print(f"📊 Found {len(trending_keywords)} trending keywords from {source}")
         
-        # Store trending phrases in database
+        # Track which newspapers contain each phrase
+        phrase_newspaper_counts = {}
+        for keyword, score in trending_keywords[:50]:
+            keyword_clean = keyword.strip()
+            if len(keyword_clean) <= 1:
+                continue
+                
+            # Count how many newspapers contain this phrase
+            newspapers_with_phrase = set()
+            for item in content:
+                title = item.get('title', '').lower()
+                heading = item.get('heading', '').lower()
+                combined_text = f"{title} {heading}".lower()
+                
+                if keyword_clean.lower() in combined_text:
+                    item_source = item.get('source', 'unknown')
+                    if item_source != 'unknown':
+                        newspapers_with_phrase.add(item_source)
+            
+            phrase_newspaper_counts[keyword_clean] = len(newspapers_with_phrase)
+        
+        print(f"\n💾 Storing trending phrases in database:")
+        stored_count = 0
+        
+        # Store trending phrases in database with newspaper counts
         for keyword, score in trending_keywords[:50]:  # Store top 50
-            if len(keyword.strip()) > 1:  # Skip very short words
+            keyword_clean = keyword.strip()
+            if len(keyword_clean) > 1:  # Skip very short words
                 # Determine phrase type based on word count
-                word_count = len(keyword.split())
+                word_count = len(keyword_clean.split())
                 if word_count == 1:
                     phrase_type = 'unigram'
                 elif word_count == 2:
@@ -1624,17 +1715,29 @@ def analyze_trending_content_and_store(db: Session, analyzer, content: List[Dict
                 else:
                     phrase_type = 'trigram'
                 
+                # Get newspaper count for this phrase
+                phrase_newspapers = phrase_newspaper_counts.get(keyword_clean, 0)
+                
+                # Enhanced scoring with newspaper boost
+                newspaper_boost = min(phrase_newspapers / max(newspaper_count, 1), 1.0) * 0.3
+                enhanced_score = float(score) + newspaper_boost
+                
                 trending_phrase = TrendingPhrase(
                     date=target_date,
-                    phrase=keyword.strip(),
-                    score=float(score),
-                    frequency=1,  # Frequency is embedded in the score
+                    phrase=keyword_clean,
+                    score=enhanced_score,
+                    frequency=phrase_newspapers,  # Store newspaper count as frequency
                     phrase_type=phrase_type,
                     source=source
                 )
                 db.add(trending_phrase)
+                stored_count += 1
+                
+                # Print progress for top 15 phrases
+                if stored_count <= 15:
+                    print(f"   {stored_count:2d}. {keyword_clean:<30} | Score: {enhanced_score:.3f} | Newspapers: {phrase_newspapers:2d}/{newspaper_count}")
         
-        print(f"✅ Stored trending phrases for {source}")
+        print(f"✅ Stored {stored_count} trending phrases for {source}")
         
     except Exception as e:
         print(f"❌ Error analyzing content from {source}: {e}")

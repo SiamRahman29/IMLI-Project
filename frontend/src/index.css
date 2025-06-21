@@ -18,21 +18,66 @@ input[type="date"] {
   background-size: 1.25rem 1.25rem;
 }
 
-/* Hide the default browser calendar picker indicator */
-input[type="date"]::-webkit-calendar-picker-indicator {
-  opacity: 0;
-  position: absolute;
-  right: 0;
-  width: 20px;
-  height: 20px;
-  cursor: pointer;
-  z-index: 1;
+/* Resizable section styles */
+.resize-handle {
+  transition: all 0.2s ease-in-out;
+  background: linear-gradient(45deg, #e0e7ff, #c7d2fe);
 }
 
-input[type="date"]::-webkit-inner-spin-button,
-input[type="date"]::-webkit-outer-spin-button {
-  -webkit-appearance: none;
-  margin: 0;
+.resize-handle:hover {
+  background: linear-gradient(45deg, #c7d2fe, #a5b4fc);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(59, 130, 246, 0.3);
+}
+
+.resize-handle:active {
+  background: linear-gradient(45deg, #a5b4fc, #8b5cf6);
+  transform: translateY(0);
+}
+
+/* Smooth scrollbar for candidate content */
+.candidate-content::-webkit-scrollbar {
+  width: 8px;
+}
+
+.candidate-content::-webkit-scrollbar-track {
+  background: #f8fafc;
+  border-radius: 4px;
+  border: 1px solid #e2e8f0;
+}
+
+.candidate-content::-webkit-scrollbar-thumb {
+  background: linear-gradient(180deg, #cbd5e1, #94a3b8);
+  border-radius: 4px;
+  border: 1px solid #94a3b8;
+}
+
+.candidate-content::-webkit-scrollbar-thumb:hover {
+  background: linear-gradient(180deg, #94a3b8, #64748b);
+}
+
+/* Enhanced content area */
+.candidate-content {
+  background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
+}
+
+/* Prevent text selection during resize */
+.no-select {
+  user-select: none;
+  -webkit-user-select: none;
+  -moz-user-select: none;
+  -ms-user-select: none;
+}
+
+/* Animation for resize indicator */
+@keyframes pulse-resize {
+  0% { opacity: 0.8; transform: scale(0.95); }
+  50% { opacity: 1; transform: scale(1.05); }
+  100% { opacity: 0.8; transform: scale(0.95); }
+}
+
+.resize-indicator {
+  animation: pulse-resize 1.5s ease-in-out infinite;
 }
 
 /* Better phrase separation */
