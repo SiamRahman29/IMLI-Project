@@ -1253,21 +1253,25 @@ def generate_trending_word_candidates_realtime_with_save(db: Session, limit: int
     # Combine all sources for AI with better text cleaning
     from app.services.stopwords import STOP_WORDS
     
-    # Clean and filter texts before combining
+    # Clean and filter texts before combining (KEEP COMPLETE HEADINGS)
     cleaned_texts = []
     for text in texts:
         if text and len(text.strip()) > 10:  # Only meaningful texts
-            # Remove common patterns and clean
+            # Light cleaning but KEEP COMPLETE HEADING
             cleaned = text.strip()
-            cleaned = re.sub(r'(পর|হামলার পর|ছুড়ল|দিয়ে|সোপর্দ|বিয়ে)', '', cleaned)  # Remove common patterns
+            # Only remove extreme patterns, keep most content
+            cleaned = re.sub(r'(পর|হামলার পর|ছুড়ল|সোপর্দ|বিয়ে)', '', cleaned)  # Remove common patterns
             cleaned = re.sub(r'\s+', ' ', cleaned).strip()  # Clean extra spaces
             
-            # Split into words and remove stop words
+            # Light stop words filtering but KEEP MOST CONTENT
             words = cleaned.split()
-            filtered_words = [w for w in words if w not in STOP_WORDS and len(w) >= 3]
+            # Only remove very common stop words, keep context
+            filtered_words = [w for w in words if w not in ['এর', 'যে', 'করে', 'হয়', 'দিয়ে', 'থেকে', 'জন্য', 'সাথে', 'এই', 'সেই', 'তার', 'তাদের']]
             
             if len(filtered_words) >= 2:  # Only keep if has meaningful content
-                cleaned_texts.append(' '.join(filtered_words))
+                # Join the complete filtered heading and add comma separator
+                complete_heading = ' '.join(filtered_words)
+                cleaned_texts.append(complete_heading)
     
     texts.extend([' '.join(words) for words in google_trends if words])
     texts.extend([' '.join(words) for words in youtube_trends if words])
@@ -1283,22 +1287,22 @@ def generate_trending_word_candidates_realtime_with_save(db: Session, limit: int
     # --- AI Response (Groq) ---
     from app.services.advanced_bengali_nlp import TrendingBengaliAnalyzer
     analyzer = TrendingBengaliAnalyzer()
-    # Use ULTRA optimized text processing for Groq token limits
-    print(f"🔧 Using ULTRA optimization for {len(all_texts)} total texts...")
-    combined_text = optimize_text_for_ai_analysis(all_texts, analyzer, max_chars=2500, max_articles=100)  # Much stricter limits
-    print(f"📊 Ultra-Optimized Combined Text Size: {len(combined_text)} characters")
+    # Use optimized text processing for Groq token limits (COMPLETE HEADINGS MODE)
+    print(f"🔧 Using COMPLETE HEADINGS optimization for {len(all_texts)} total texts...")
+    combined_text = optimize_text_for_ai_analysis(all_texts, analyzer, max_chars=3500, max_articles=150)  # Increased limits for complete headings
+    print(f"📊 Optimized Combined Text Size: {len(combined_text)} characters")
     print(f"📊 Successfully optimized from {len(all_texts)} original texts")
     ai_response = None
-    print(f"Combined Text Preview (first 100 chars): {combined_text[:100]}...")
+    print(f"Combined Text Preview (first 150 chars): {combined_text[:150]}...")
     
     # Token estimation for Groq limits
-    estimated_tokens = len(combined_text) // 2  # More conservative for Bengali
+    estimated_tokens = len(combined_text) // 2.5  # More realistic for Bengali with comma separation
     print(f"🎯 Estimated tokens: ~{estimated_tokens:.0f} (Groq limit: 12,000)")
     
-    if estimated_tokens > 10000:  # More safety margin
+    if estimated_tokens > 10000:  # Safety margin
         print("⚠️  Text might still be too long, further reducing...")
         # Emergency truncation
-        safe_chars = int(10000 * 2)
+        safe_chars = int(9000 * 2.5)  # Conservative for 9k tokens
         if len(combined_text) > safe_chars:
             combined_text = combined_text[:safe_chars-3] + "..."
             print(f"🔧 Emergency truncated to {len(combined_text)} characters")
@@ -1338,10 +1342,6 @@ def generate_trending_word_candidates_realtime_with_save(db: Session, limit: int
             8. **প্রতিটি শব্দ/বাক্যাংশ সংখ্যা দিয়ে আলাদা লাইনে লেখো** (১., ২., ৩.... ৪. ইত্যাদি)
             9. **শুধুমাত্র বাংলা শব্দ/বাক্যাংশ দাও**
             10. **একই টপিকের ভিন্ন ভিন্ন রূপ এড়িয়ে চলো** - সবচেয়ে প্রতিনিধিত্বকারী একটি phrase দাও
-
-            # উদাহরণ (শুধুমাত্র বোঝার জন্য - এগুলো অবশ্যই ব্যবহার করতে হবে এমন নয়):
-            # ✔️ ভালো ধরনের: "ইসরাইল-ইরানের সংঘাত", "জ্বালানি সংকট", "নির্বাচনী প্রচারণা", "অর্থনৈতিক মন্দা", "শিক্ষা সংকট"
-            # ❌ এড়িয়ে চলো: "ইরানের", "হামলা", "ট্রাম্প বলছেন যে...", "সরকার নিখোঁজ করে...", "বলেছেন", "করেছেন"
 
             টেক্সট:
             {combined_text}
@@ -1730,137 +1730,112 @@ def save_llm_trending_words_to_db(db: Session, ai_response: str, target_date: da
         print(f"❌ Error saving LLM trending words: {e}")
         db.rollback()
 
-def optimize_text_for_ai_analysis(texts, analyzer, max_chars=2500, max_articles=100):
+def optimize_text_for_ai_analysis(texts, analyzer, max_chars=3500, max_articles=100):
     """
-    ULTRA optimize large volume of texts for Groq token limits
-    Target: 2500 chars max for better performance
+    Optimize texts for AI analysis while keeping MORE CONTENT per article
+    Target: 3500 chars max for better coverage
     
     Strategy:
-    1. Extract only top keywords from each article  
-    2. Heavy deduplication
-    3. Strict character limits
+    1. Keep complete cleaned headings (no keyword extraction)
+    2. Light deduplication
+    3. Comma separation for clarity
     4. Priority-based selection
     """
-    print(f"🔧 ULTRA optimizing {len(texts)} texts for Groq API limits...")
+    print(f"🔧 Optimizing {len(texts)} texts for Groq API limits (COMPLETE HEADINGS MODE)...")
     
     if not texts:
         return ""
     
-    # Step 1: Extract ONLY key keywords from each text (super compact)
-    optimized_keywords = []
+    # Step 1: Keep complete cleaned headings (no aggressive keyword extraction)
+    processed_headings = []
     processed_count = 0
     
-    for text in texts[:max_articles]:  # Strict article limit
-        if not text or len(text.strip()) < 3:
+    for text in texts[:max_articles]:  # Limit number of articles
+        if not text or len(text.strip()) < 5:
             continue
             
-        # Normalize and extract meaningful words
+        # Light normalization only
         normalized = analyzer.processor.normalize_text(text)
-        tokens = analyzer.processor.advanced_tokenize(normalized)
         
-        # Import centralized stop words
-        from app.services.stopwords import STOP_WORDS
-        
-        # Keep only the BEST meaningful words (very strict filtering)
-        meaningful_words = [
-            w for w in tokens 
-            if w not in STOP_WORDS  # Use centralized stop words
-            and w.lower() not in STOP_WORDS  # Check lowercase too
-            and len(w) >= 3  # Min 3 chars
-            and not w.isdigit()  # No numbers
-            and len(w) <= 12  # Reduced max length
-            and w not in ['এর', 'যে', 'করে', 'হয়', 'হওয়া', 'আছে', 'থেকে', 'দিয়ে', 'জন্য', 'সাথে', 'এই', 'সেই', 'তার', 'তাদের']  # Extra stop words
+        # Light stop words filtering but keep most content
+        words = normalized.split()
+        filtered_words = [
+            w for w in words 
+            if len(w) >= 2  # Very lenient length requirement
+            and not w.isdigit()  # No pure numbers
+            and w not in ['এর', 'যে', 'করে', 'হয়', 'দিয়ে', 'থেকে', 'এই', 'সেই']  # Only remove very common ones
         ]
         
-        if len(meaningful_words) >= 1:  # Need at least 1 word
-            # Take only TOP 1 word per article + 1 short bigram max
-            top_keywords = meaningful_words[:1]  # Only 1 word per article
+        if len(filtered_words) >= 3:  # Keep if has reasonable content
+            # Keep the complete filtered heading (no truncation)
+            complete_heading = ' '.join(filtered_words)
             
-            # Add 1 very short bigram if possible
-            if len(meaningful_words) >= 2:
-                bigram = ' '.join(meaningful_words[:2])
-                if len(bigram) <= 15:  # Very short bigrams only
-                    top_keywords.append(bigram)
-            
-            # Join with minimal separator, max 25 chars per article
-            article_keywords = ' '.join(top_keywords[:2])  # Max 2 elements
-            if len(article_keywords) > 25:
-                article_keywords = article_keywords[:22] + "..."
+            # Limit individual heading length for readability
+            if len(complete_heading) > 80:
+                complete_heading = complete_heading[:77] + "..."
                 
-            optimized_keywords.append(article_keywords)
+            processed_headings.append(complete_heading)
             processed_count += 1
     
-    print(f"📊 Processed {processed_count} articles into ultra-compact keywords")
+    print(f"📊 Processed {processed_count} complete headings")
     
-    # Step 2: HEAVY deduplication (remove similar content aggressively)
-    unique_keywords = []
+    # Step 2: Light deduplication (less aggressive)
+    unique_headings = []
     seen_words = set()
     
-    for keywords in optimized_keywords:
-        # Split into words and check for significant overlap
-        words = set(keywords.lower().replace(' ', '_').split())
+    for heading in processed_headings:
+        # Check for major overlap only
+        words = set(heading.lower().split())
         
-        # Check overlap with existing content (more aggressive)
-        has_significant_overlap = False
+        # Check overlap with existing content (less aggressive - 60% threshold)
+        has_major_overlap = False
         for existing_words in seen_words:
             if words and existing_words:
                 overlap = len(words.intersection(existing_words))
-                if overlap > 0 and overlap / max(len(words), len(existing_words)) > 0.3:  # 30% overlap = skip (more aggressive)
-                    has_significant_overlap = True
+                if overlap > 0 and overlap / max(len(words), len(existing_words)) > 0.6:  # 60% overlap = skip
+                    has_major_overlap = True
                     break
         
-        if not has_significant_overlap and words:
+        if not has_major_overlap and words:
             seen_words.add(frozenset(words))
-            unique_keywords.append(keywords)
+            unique_headings.append(heading)
     
-    print(f"🔄 Heavy deduplication: {len(optimized_keywords)} -> {len(unique_keywords)} unique entries")
+    print(f"🔄 Light deduplication: {len(processed_headings)} -> {len(unique_headings)} unique headings")
     
-    # Step 3: Smart truncation to fit token limits
-    if not unique_keywords:
+    # Step 3: Combine with comma separators for clarity
+    if not unique_headings:
         return ""
     
-    # Score and prioritize keywords
-    keywords_with_score = []
-    for keyword_set in unique_keywords:
-        words = keyword_set.split()
-        # Score: favor diverse, meaningful words
-        unique_word_count = len(set(words))
-        total_length = len(keyword_set)
-        score = unique_word_count * 3 + (total_length * 0.1)  # Favor diversity over length
-        keywords_with_score.append((keyword_set, score))
+    # Join with comma and space for clear separation
+    combined_text = ', '.join(unique_headings)
     
-    # Sort by score and build final text
-    keywords_with_score.sort(key=lambda x: x[1], reverse=True)
-    
-    final_keywords = []
-    current_chars = 0
-    
-    for keyword_set, score in keywords_with_score:
-        # Add keyword set if it fits
-        addition_length = len(keyword_set) + 1  # +1 for separator
-        if current_chars + addition_length <= max_chars:
-            final_keywords.append(keyword_set)
-            current_chars += addition_length
-        else:
-            # Try to fit a truncated version if significant space remains
-            remaining_space = max_chars - current_chars - 1
-            if remaining_space > 15:  # Only if meaningful space
-                truncated = keyword_set[:remaining_space-3] + "..."
-                final_keywords.append(truncated)
-            break
-    
-    combined_text = ' | '.join(final_keywords)  # Use pipe separator for compactness
-    
-    # Final safety check
+    # Step 4: Smart truncation if needed
     if len(combined_text) > max_chars:
-        combined_text = combined_text[:max_chars-3] + "..."
+        print(f"⚠️  Text too long ({len(combined_text)} chars), truncating to {max_chars}...")
+        
+        # Try to fit as many complete headings as possible
+        final_headings = []
+        current_length = 0
+        
+        for heading in unique_headings:
+            addition_length = len(heading) + 2  # +2 for ", "
+            if current_length + addition_length <= max_chars - 10:  # Leave some margin
+                final_headings.append(heading)
+                current_length += addition_length
+            else:
+                break
+        
+        combined_text = ', '.join(final_headings)
+        if len(combined_text) < len(', '.join(unique_headings)):
+            combined_text += "..."
     
-    # Calculate compression stats
+    # Calculate stats
     original_total = sum(len(t) for t in texts if t)
     compression_ratio = len(combined_text) / max(original_total, 1) * 100
     
-    print(f"✅ ULTRA-compressed: {len(combined_text)} chars from {len(texts)} texts")
-    print(f"📈 Compression: {compression_ratio:.2f}% of original size")
+    print(f"✅ Optimized to {len(combined_text)} chars from {len(texts)} texts")
+    print(f"📈 Compression: {compression_ratio:.1f}% of original size")
     print(f"🎯 Token estimate: ~{len(combined_text)//3} tokens (limit: 12k)")
+    print(f"📄 Included {len(combined_text.split(', '))} complete headings")
     
     return combined_text
