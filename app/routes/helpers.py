@@ -1288,24 +1288,71 @@ def generate_trending_word_candidates_realtime_with_save(db: Session, limit: int
     from app.services.advanced_bengali_nlp import TrendingBengaliAnalyzer
     analyzer = TrendingBengaliAnalyzer()
     # Use optimized text processing for Groq token limits (COMPLETE HEADINGS MODE)
-    print(f"🔧 Using COMPLETE HEADINGS optimization for {len(all_texts)} total texts...")
-    combined_text = optimize_text_for_ai_analysis(all_texts, analyzer, max_chars=3500, max_articles=150)  # Increased limits for complete headings
-    print(f"📊 Optimized Combined Text Size: {len(combined_text)} characters")
-    print(f"📊 Successfully optimized from {len(all_texts)} original texts")
+    print(f"🔧 Using CATEGORY-AWARE optimization for {len(all_texts)} total texts...")
+    
+    # Prepare articles with metadata for category detection
+    articles_with_metadata = []
+    for article in articles:
+        articles_with_metadata.append({
+            'url': article.get('url', ''),
+            'title': article.get('title', ''),
+            'content': article.get('heading', ''),  # Using heading as content
+            'source': article.get('source', 'unknown')
+        })
+    
+    # Add trend data as simple text fallback
+    for trend_text in all_texts[len(articles):]:  # Trends after articles
+        articles_with_metadata.append({
+            'url': '',
+            'title': trend_text,
+            'content': trend_text,
+            'source': 'trends'
+        })
+    
+    # Use category-aware optimization with INCREASED limits for 5000 token capacity  
+    combined_text = optimize_text_for_ai_analysis_with_categories(
+        articles_with_metadata, 
+        analyzer, 
+        max_chars=12000,  # Increased from 2000 to 12000 for 5000 token capacity (12000 chars ≈ 4800 tokens)
+        max_articles=150,  # Increased from 60 to 150 for more articles
+        enable_categories=True
+    )
+    
+    print(f"📊 Category-optimized Combined Text Size: {len(combined_text)} characters")
+    print(f"📊 Successfully optimized from {len(all_texts)} original texts with categories")
     ai_response = None
     print(f"Combined Text Preview (first 150 chars): {combined_text[:150]}...")
     
-    # Token estimation for Groq limits
-    estimated_tokens = len(combined_text) // 2.5  # More realistic for Bengali with comma separation
-    print(f"🎯 Estimated tokens: ~{estimated_tokens:.0f} (Groq limit: 12,000)")
+    # Store the original combined_text for display purposes before any modifications
+    original_combined_text = combined_text
+    print(f"🔍 STORED original_combined_text: {len(original_combined_text)} chars")
+    print(f"🔍 PREVIEW original_combined_text: {original_combined_text[:100]}...")
     
-    if estimated_tokens > 10000:  # Safety margin
-        print("⚠️  Text might still be too long, further reducing...")
-        # Emergency truncation
-        safe_chars = int(9000 * 2.5)  # Conservative for 9k tokens
+    # ===== TERMINAL DEBUG: SHOW FULL COMBINED TEXT =====
+    print(f"\n{'='*80}")
+    print(f"🔍 FULL COMBINED TEXT SENT TO LLM ({len(combined_text)} chars):")
+    print(f"{'='*80}")
+    print(combined_text)
+    print(f"{'='*80}")
+    print(f"🔍 END OF COMBINED TEXT")
+    print(f"{'='*80}\n")
+    
+    # Token estimation for Groq limits (Enhanced for 5000 token capacity)
+    estimated_tokens = len(combined_text) // 2.5  # More realistic for Bengali with bullet separation
+    print(f"🎯 Estimated tokens: ~{estimated_tokens:.0f} (Target: <2500 for 5000 token capacity)")
+    
+    if estimated_tokens > 2500:  # Increased from 800 to 2500 for 5000 token capacity
+        print("⚠️  Text still too long for token limits, emergency reducing...")
+        # Emergency truncation for rate limits
+        safe_chars = int(2500 * 2.5)  # Conservative for 2500 tokens (leaves buffer for 5000 capacity)
         if len(combined_text) > safe_chars:
             combined_text = combined_text[:safe_chars-3] + "..."
             print(f"🔧 Emergency truncated to {len(combined_text)} characters")
+            print(f"🔍 AFTER TRUNCATION combined_text: {combined_text[:100]}...")
+    
+    # Final debug check before API call
+    print(f"🔍 FINAL combined_text before API: {len(combined_text)} chars")
+    print(f"🔍 FINAL preview: {combined_text[:100]}...")
 
     try:
         from groq import Groq
@@ -1322,39 +1369,48 @@ def generate_trending_word_candidates_realtime_with_save(db: Session, limit: int
         try:
             client = Groq(
                 api_key=api_key,
-                timeout=60.0  # 60 second timeout for client
+                timeout=120.0  # 120 second timeout for client
             )
         except Exception as client_error:
             print(f"❌ Failed to initialize Groq client: {client_error}")
             raise client_error
         
         prompt = f"""
-            নিচের বাংলা সংবাদের টেক্সট থেকে আজকের জন্য সবচেয়ে গুরুত্বপূর্ণ এবং trending {limit}টি শব্দ বা বাক্যাংশ খুঁজে বের করো যা বিশেষভাবে noun (বিশেষ্য) এবং adjective (বিশেষণ) প্রকৃতির এবং অর্থবহ।
+                    নিচের বাংলা টেক্সট থেকে আজকের জন্য সবচেয়ে গুরুত্বপূর্ণ এবং ট্রেন্ডিং {limit}টি শব্দ বা বাক্যাংশ খুঁজে বের করো। শব্দ/বাক্যাংশগুলো অবশ্যই বিশেষ্য (noun) এবং/অথবা বিশেষণ (adjective) প্রকৃতির হতে হবে এবং অর্থবহ, জনপ্রিয় ও আলোচিত বিষয়ের প্রতিনিধিত্ব করবে।
+                    📋 টেক্সট ফরম্যাট বোঝার নির্দেশনা:
+                    - টেক্সটটি category-wise সাজানো (রাজনীতি: content | অর্থনীতি: content)
+                    - প্রতিটি category তে একাধিক article bullet point (•) দিয়ে আলাদা করা
+                    - সব category থেকে সমানভাবে গুরুত্বপূর্ণ শব্দ নির্বাচন করো
+                    - রাজনীতি ও অর্থনীতি category কে বেশি প্রাধান্য দাও
+                    অবশ্যই অনুসরণীয় নিয়মাবলী:
+                    1.শুধুমাত্র বিশেষ্য (noun) এবং বিশেষণ (adjective) ভিত্তিক শব্দ/বাক্যাংশ দাও
+                    2.ট্রেন্ডিং বিষয়/থিম খুঁজে বের করো - যা বর্তমানে সংবাদ, সোশ্যাল মিডিয়া বা জনমানসে সবচেয়ে আলোচিত এবং প্রাসঙ্গিক।
+                    3.প্রতিটি টপিকের জন্য শুধুমাত্র একটি প্রতিনিধিত্বকারী শব্দ/বাক্যাংশ দাও - একই বিষয়ের একাধিক রূপ এড়িয়ে চলো।
+                    4.কোনো ব্যক্তির নাম বা ব্যক্তি-নির্দিষ্ট উল্লেখ বাদ দাও (যেমন: ট্রাম্প, হাসিনা, মোদি)।
+                    5.সংক্ষিপ্ত ও স্পষ্ট বাক্যাংশ দাও - সর্বোচ্চ ২-৪ শব্দ, দীর্ঘ বাক্য এড়িয়ে চলো।
+                    6.সাধারণ stop words এবং ক্রিয়া (verb) বাদ দাও (যেমন: এই, সেই, করা, হওয়া, বলা, দেওয়া)।
+                    7.শুধুমাত্র বিষয়বস্তু/থিম-ভিত্তিক concrete noun বা adjective দাও - যা কোনো অর্থ বহন করে
+                    8.প্রতিটি শব্দ/বাক্যাংশ সংখ্যা দিয়ে আলাদা লাইনে লেখো (১., ২., ৩. ... {limit}. ইত্যাদি)।
+                    9.শুধুমাত্র বাংলা শব্দ/বাক্যাংশ ব্যবহার করো - ইংরেজি বা অন্য ভাষার শব্দ এড়িয়ে চলো।
+                    10.ট্রেন্ডিং বিষয় নির্ধারণে সাম্প্রতিকতা ও জনপ্রিয়তা বিবেচনা করো - সাম্প্রতিক ঘটনা, সোশ্যাল মিডিয়া buzz, বা জনমানসের আগ্রহের ওপর ভিত্তি করে শব্দ/বাক্যাংশ নির্বাচন করো।
+                    11.অপ্রাসঙ্গিক বা সাধারণ শব্দ এড়িয়ে চলো - যেমন, সময়, জিনিস, বিষয়, যা নির্দিষ্ট কোনো ট্রেন্ড বা থিম প্রকাশ করে না।
+                    টেক্সট:
+                    {combined_text}
 
-            **অবশ্যই অনুসরণীয় নিয়মাবলী:**
-            1. **Noun (বিশেষ্য) এবং Adjective (বিশেষণ) ভিত্তিক অর্থবহ শব্দ/বাক্যাংশ দাও**
-            2. **Hot trending topics/phrases খুঁজে বের করো** - যা এখন সবচেয়ে জনপ্রিয় এবং আলোচিত
-            3. **একটি টপিকের জন্য শুধুমাত্র একটি প্রতিনিধিত্বকারী phrase দাও**
-            4. **কোনো ব্যক্তির নাম দিও না** (যেমন: ট্রাম্প, বাইডেন, মোদি, হাসিনা ইত্যাদি)
-            5. **ছোট ও সংক্ষিপ্ত phrase দাও** - সর্বোচ্চ ২-৪ শব্দ। দীর্ঘ বাক্য দিও না
-            6. **সাধারণ stop words এবং verb (ক্রিয়া) এড়িয়ে চলো** (যেমন: এই, সেই, করা, হওয়া, যে, যার, বলা, দেওয়া, নেওয়া)
-            7. **শুধুমাত্র বিষয়বস্তু/থিম ভিত্তিক concrete noun/adjective phrase দাও** - খবরের মূল বিষয় যা trending
-            8. **প্রতিটি শব্দ/বাক্যাংশ সংখ্যা দিয়ে আলাদা লাইনে লেখো** (১., ২., ৩.... ৪. ইত্যাদি)
-            9. **শুধুমাত্র বাংলা শব্দ/বাক্যাংশ দাও**
-            10. **একই টপিকের ভিন্ন ভিন্ন রূপ এড়িয়ে চলো** - সবচেয়ে প্রতিনিধিত্বকারী একটি phrase দাও
-
-            টেক্সট:
-            {combined_text}
-
-            trending শব্দ/বাক্যাংশ ({limit}টি):
-            """
-        
+                    আউটপুট ফরম্যাট:
+                    ট্রেন্ডিং শব্দ/বাক্যাংশ ({limit}টি):
+                    ১. [শব্দ/বাক্যাংশ]
+                    ২. [শব্দ/বাক্যাংশ]
+                    ৩. [শব্দ/বাক্যাংশ]
+                    ...
+                    {limit}. [শব্দ/বাক্যাংশ]
+                    """
         print(f"📤 Sending request to Groq API...")
         print(f"📊 Prompt length: {len(prompt)} characters")
         
-        # Retry logic for Groq API connection issues
+        # Retry logic for Groq API connection issues with LONGER delays for rate limiting
         max_retries = 3
-        retry_delay = 2
+        retry_delay = 3  # Reduced from 5 to 3 seconds 
         response = None
         
         for attempt in range(max_retries):
@@ -1367,22 +1423,35 @@ def generate_trending_word_candidates_realtime_with_save(db: Session, limit: int
                     model="llama-3.3-70b-versatile",  # Using model with larger context window
                     stream=False,
                     temperature=0.7,
-                    max_tokens=1000,
-                    timeout=30.0  # 30 second timeout
+                    max_tokens=1000,  # Increased from 800 to 1000 for more detailed output
+                    timeout=45.0  # Increased from 30 to 45 second timeout
                 )
                 print(f"✅ API call successful on attempt {attempt + 1}")
                 break
                 
             except Exception as api_error:
                 print(f"❌ API attempt {attempt + 1} failed: {str(api_error)}")
-                if attempt < max_retries - 1:
-                    print(f"⏳ Waiting {retry_delay} seconds before retry...")
-                    import time
-                    time.sleep(retry_delay)
-                    retry_delay *= 2  # Exponential backoff
+                
+                # Check for rate limit specifically
+                error_str = str(api_error).lower()
+                if "rate limit" in error_str:
+                    wait_time = retry_delay * (attempt + 1) * 2  # Longer wait for rate limits
+                    print(f"🚫 Rate limit detected - waiting {wait_time} seconds...")
+                    if attempt < max_retries - 1:
+                        import time
+                        time.sleep(wait_time)
+                    else:
+                        print(f"🚫 Rate limit exceeded after all retries")
+                        raise api_error
                 else:
-                    print(f"🚫 All {max_retries} attempts failed")
-                    raise api_error
+                    if attempt < max_retries - 1:
+                        print(f"⏳ Waiting {retry_delay} seconds before retry...")
+                        import time
+                        time.sleep(retry_delay)
+                        retry_delay *= 2  # Exponential backoff
+                    else:
+                        print(f"🚫 All {max_retries} attempts failed")
+                        raise api_error
         
         print(f"📥 Received response from Groq API")
         print(f"🔍 Response object: {response}")
@@ -1552,10 +1621,47 @@ def generate_trending_word_candidates_realtime_with_save(db: Session, limit: int
     
     # Add the combined text for frontend debugging
     summary.append(f"\n📋 সম্পূর্ণ AI প্রার্থিতালিকা:")
-    summary.append(f"📊 Groq API তে পাঠানো Combined Text ({len(combined_text)} chars):")
+    summary.append(f"📊 Groq API তে পাঠানো Combined Text ({len(original_combined_text)} chars):")
     summary.append(f"{'='*50}")
-    summary.append(combined_text)
+    summary.append(original_combined_text)
     summary.append(f"{'='*50}")
+    
+    # Add the COMPLETE LLM PROMPT for frontend viewing
+    summary.append(f"\n🤖 সম্পূর্ণ LLM Prompt:")
+    summary.append(f"{'='*80}")
+    complete_prompt = f"""
+                    নিচের বাংলা টেক্সট থেকে আজকের জন্য সবচেয়ে গুরুত্বপূর্ণ এবং ট্রেন্ডিং {limit}টি শব্দ বা বাক্যাংশ খুঁজে বের করো। শব্দ/বাক্যাংশগুলো অবশ্যই বিশেষ্য (noun) এবং/অথবা বিশেষণ (adjective) ভিত্তিক হতে হবে।
+
+                    📋 টেক্সট ফরম্যাট বোঝার নির্দেশনা:
+                    - টেক্সটটি category-wise সাজানো (রাজনীতি: content | অর্থনীতি: content)
+                    - প্রতিটি category তে একাধিক article bullet point (•) দিয়ে আলাদা করা
+                    - সব category থেকে সমানভাবে গুরুত্বপূর্ণ শব্দ নির্বাচন করো
+                    - রাজনীতি ও অর্থনীতি category কে বেশি প্রাধান্য দাও
+                    অবশ্যই অনুসরণীয় নিয়মাবলী:
+                    1.শুধুমাত্র বিশেষ্য (noun) এবং বিশেষণ (adjective) ভিত্তিক শব্দ/বাক্যাংশ দাও
+                    2.ট্রেন্ডিং বিষয়/থিম খুঁজে বের করো - যা বর্তমানে সংবাদ, সোশ্যাল মিডিয়া বা জনমানসে সবচেয়ে আলোচিত এবং প্রাসঙ্গিক।
+                    3.প্রতিটি টপিকের জন্য শুধুমাত্র একটি প্রতিনিধিত্বকারী শব্দ/বাক্যাংশ দাও - একই বিষয়ের একাধিক রূপ এড়িয়ে চলো।
+                    4.কোনো ব্যক্তির নাম বা ব্যক্তি-নির্দিষ্ট উল্লেখ বাদ দাও (যেমন: ট্রাম্প, হাসিনা, মোদি)।
+                    5.সংক্ষিপ্ত ও স্পষ্ট বাক্যাংশ দাও - সর্বোচ্চ ২-৪ শব্দ, দীর্ঘ বাক্য এড়িয়ে চলো।
+                    6.সাধারণ stop words এবং ক্রিয়া (verb) বাদ দাও (যেমন: এই, সেই, করা, হওয়া, বলা, দেওয়া)।
+                    7.শুধুমাত্র বিষয়বস্তু/থিম-ভিত্তিক concrete noun বা adjective দাও - যা কোনো অর্থ বহন করে
+                    8.প্রতিটি শব্দ/বাক্যাংশ সংখ্যা দিয়ে আলাদা লাইনে লেখো (১., ২., ৩. ... {limit}. ইত্যাদি)।
+                    9.শুধুমাত্র বাংলা শব্দ/বাক্যাংশ ব্যবহার করো - ইংরেজি বা অন্য ভাষার শব্দ এড়িয়ে চলো।
+                    10.ট্রেন্ডিং বিষয় নির্ধারণে সাম্প্রতিকতা ও জনপ্রিয়তা বিবেচনা করো - সাম্প্রতিক ঘটনা, সোশ্যাল মিডিয়া buzz, বা জনমানসের আগ্রহের ওপর ভিত্তি করে শব্দ/বাক্যাংশ নির্বাচন করো।
+                    11.অপ্রাসঙ্গিক বা সাধারণ শব্দ এড়িয়ে চলো - যেমন, সময়, জিনিস, বিষয়, যা নির্দিষ্ট কোনো ট্রেন্ড বা থিম প্রকাশ করে না।
+                    টেক্সট:
+                    {original_combined_text}
+
+                    আউটপুট ফরম্যাট:
+                    ট্রেন্ডিং শব্দ/বাক্যাংশ ({limit}টি):
+                    ১. [শব্দ/বাক্যাংশ]
+                    ২. [শব্দ/বাক্যাংশ]
+                    ৩. [শব্দ/বাক্যাংশ]
+                    ...
+                    {limit}. [শব্দ/বাক্যাংশ]
+                    """
+    summary.append(complete_prompt)
+    summary.append(f"{'='*80}")
     
     # Add heading at the beginning
     final_output = "🤖 AI Generated Trending Words থেকে আজকের শব্দ নির্বাচন করুন\n\n" + '\n'.join(summary)
@@ -1730,10 +1836,10 @@ def save_llm_trending_words_to_db(db: Session, ai_response: str, target_date: da
         print(f"❌ Error saving LLM trending words: {e}")
         db.rollback()
 
-def optimize_text_for_ai_analysis(texts, analyzer, max_chars=3500, max_articles=100):
+def optimize_text_for_ai_analysis(texts, analyzer, max_chars=12000, max_articles=150):
     """
     Optimize texts for AI analysis while keeping MORE CONTENT per article
-    Target: 3500 chars max for better coverage
+    Target: 12000 chars max for 5000 token capacity (12000 chars ≈ 4800 tokens)
     
     Strategy:
     1. Keep complete cleaned headings (no keyword extraction)
@@ -1806,8 +1912,8 @@ def optimize_text_for_ai_analysis(texts, analyzer, max_chars=3500, max_articles=
     if not unique_headings:
         return ""
     
-    # Join with comma and space for clear separation
-    combined_text = ', '.join(unique_headings)
+    # Join with comma and space for clear separation between articles
+    combined_text = ' • '.join(unique_headings)  # Using bullet for better separation
     
     # Step 4: Smart truncation if needed
     if len(combined_text) > max_chars:
@@ -1818,15 +1924,15 @@ def optimize_text_for_ai_analysis(texts, analyzer, max_chars=3500, max_articles=
         current_length = 0
         
         for heading in unique_headings:
-            addition_length = len(heading) + 2  # +2 for ", "
+            addition_length = len(heading) + 3  # +3 for " • "
             if current_length + addition_length <= max_chars - 10:  # Leave some margin
                 final_headings.append(heading)
                 current_length += addition_length
             else:
                 break
         
-        combined_text = ', '.join(final_headings)
-        if len(combined_text) < len(', '.join(unique_headings)):
+        combined_text = ' • '.join(final_headings)
+        if len(combined_text) < len(' • '.join(unique_headings)):
             combined_text += "..."
     
     # Calculate stats
@@ -1835,7 +1941,249 @@ def optimize_text_for_ai_analysis(texts, analyzer, max_chars=3500, max_articles=
     
     print(f"✅ Optimized to {len(combined_text)} chars from {len(texts)} texts")
     print(f"📈 Compression: {compression_ratio:.1f}% of original size")
-    print(f"🎯 Token estimate: ~{len(combined_text)//3} tokens (limit: 12k)")
-    print(f"📄 Included {len(combined_text.split(', '))} complete headings")
+    print(f"🎯 Token estimate: ~{len(combined_text)//3} tokens (limit: 5000 capacity)")
+    print(f"📄 Included {len(combined_text.split(' • '))} complete headings")
     
     return combined_text
+
+# Category Detection System for Bengali Newspapers
+def detect_category_from_url(url, title="", content=""):
+    """
+    Enhanced category detection prioritizing content analysis for Bengali newspapers
+    Based on analysis showing most Bengali newspapers don't use English URL paths
+    
+    Returns Bengali category name or 'সাধারণ' for general news
+    """
+    
+    # Content-based detection (PRIMARY method for Bengali newspapers)
+    text_to_check = f"{title} {content}".lower()
+    
+    # Comprehensive Bengali keywords with higher coverage
+    content_keywords = {
+        'রাজনীতি': [
+            'রাজনীতি', 'সরকার', 'মন্ত্রী', 'প্রধানমন্ত্রী', 'নির্বাচন', 'ভোট', 'পার্টি', 'নেতা', 'মন্ত্রণালয়',
+            'সংসদ', 'মেয়র', 'কাউন্সিলর', 'চেয়ারম্যান', 'আওয়ামী', 'বিএনপি', 'জাতীয়', 'দল', 'কমিটি',
+            'সভাপতি', 'সাধারণ সম্পাদক', 'নেতৃত্ব', 'রাজনৈতিক', 'প্রশাসন', 'কমিশনার', 'ডিসি'
+        ],
+        'আন্তর্জাতিক': [
+            'আন্তর্জাতিক', 'বিশ্ব', 'দেশ', 'যুক্তরাষ্ট্র', 'ভারত', 'চীন', 'ইউরোপ', 'ইরান', 'ইসরায়েল',
+            'পাকিস্তান', 'মিয়ানমার', 'নেপাল', 'শ্রীলঙ্কা', 'তুরস্ক', 'সৌদি', 'রাশিয়া', 'জাপান',
+            'ট্রাম্প', 'বাইডেন', 'পুতিন', 'মোদী', 'ইউক্রেন', 'গাজা', 'ফিলিস্তিন', 'আমেরিকা',
+            'ইউরোপীয়', 'জাতিসংঘ', 'বিদেশী', 'দূতাবাস', 'রাষ্ট্রদূত', 'প্রেসিডেন্ট'
+        ],
+        'খেলাধুলা': [
+            'খেলা', 'ক্রিকেট', 'ফুটবল', 'টেস্ট', 'ম্যাচ', 'দল', 'খেলোয়াড়', 'টুর্নামেন্ট',
+            'বাংলাদেশ ক্রিকেট', 'টাইগার', 'সাকিব', 'মুশফিক', 'তামিম', 'মাহমুদউল্লাহ', 'নাজমুল',
+            'বিসিবি', 'আইপিএল', 'বিপিএল', 'ওয়ানডে', 'টি-টোয়েন্টি', 'বিশ্বকাপ', 'কোচ', 'অধিনায়ক',
+            'গোল', 'পেনাল্টি', 'রেফারি', 'স্টেডিয়াম', 'মাঠ', 'সিরিজ', 'ইনিংস', 'রান', 'উইকেট'
+        ],
+        'অর্থনীতি': [
+            'অর্থনীতি', 'টাকা', 'ব্যাংক', 'ব্যবসা', 'বাজার', 'দাম', 'বাণিজ্য', 'বিনিয়োগ',
+            'মুদ্রাস্ফীতি', 'রপ্তানি', 'আমদানি', 'জিডিপি', 'ডলার', 'শেয়ার', 'স্টক', 'বন্ড',
+            'কৃষি', 'শিল্প', 'গার্মেন্টস', 'টেক্সটাইল', 'চাল', 'ইলিশ', 'পোশাক', 'কার্যালয়',
+            'উৎপাদন', 'কারখানা', 'মালিক', 'শ্রমিক', 'মজুরি', 'বেতন', 'আয়', 'ব্যয়', 'লাভ', 'ক্ষতি'
+        ],
+        'প্রযুক্তি': [
+            'প্রযুক্তি', 'কম্পিউটার', 'ইন্টারনেট', 'মোবাইল', 'অ্যাপ', 'সফটওয়্যার', 'ডিজিটাল',
+            'আর্টিফিশিয়াল', 'এআই', 'রোবট', 'সাইবার', 'হ্যাকার', 'ডেটা', 'ক্লাউড', 'ব্লকচেইন',
+            'স্মার্টফোন', 'গুগল', 'ফেসবুক', 'হোয়াটসঅ্যাপ', 'টিকটক', 'ইউটিউব', 'টুইটার',
+            'জেমিনি', 'চ্যাটজিপিটি', 'অ্যান্ড্রয়েড', 'আইফোন', 'স্যামসাং', 'গেমিং', 'ভার্চুয়াল'
+        ],
+        'বিনোদন': [
+            'বিনোদন', 'সিনেমা', 'নাটক', 'গান', 'শিল্পী', 'অভিনেতা', 'অভিনেত্রী', 'চলচ্চিত্র',
+            'হলিউড', 'বলিউড', 'ঢালিউড', 'পরিচালক', 'প্রযোজক', 'সঙ্গীত', 'শাকিব খান', 'অপু বিশ্বাস',
+            'রানা', 'পূর্ণিমা', 'মাহিয়া মাহি', 'কনসার্ট', 'অনুষ্ঠান', 'টেলিভিশন', 'চ্যানেল',
+            'সিরিয়াল', 'রিয়েলিটি শো', 'তারকা', 'সেলিব্রিটি', 'ফ্যান', 'প্রেমিয়ার', 'রিলিজ'
+        ],
+        'স্বাস্থ্য': [
+            'স্বাস্থ্য', 'চিকিৎসা', 'ডাক্তার', 'হাসপাতাল', 'ওষুধ', 'রোগ', 'চিকিৎসক',
+            'করোনা', 'কোভিড', 'ভ্যাকসিন', 'টিকা', 'ডেঙ্গু', 'চিকুনগুনিয়া', 'ম্যালেরিয়া', 'ডায়াবেটিস',
+            'হৃদরোগ', 'ক্যান্সার', 'চিকিৎসালয়', 'নার্স', 'সার্জন', 'অপারেশন', 'সুস্থতা',
+            'মানসিক স্বাস্থ্য', 'পুষ্টি', 'ডায়েট', 'ব্যায়াম', 'যোগব্যায়াম', 'মেডিকেল', 'ক্লিনিক'
+        ],
+        'শিক্ষা': [
+            'শিক্ষা', 'বিশ্ববিদ্যালয়', 'কলেজ', 'স্কুল', 'পরীক্ষা', 'ছাত্র', 'শিক্ষার্থী',
+            'এইচএসসি', 'এসএসসি', 'জেএসসি', 'পিএসসি', 'ভর্তি', 'ফলাফল', 'বৃত্তি', 'শিক্ষক',
+            'অধ্যক্ষ', 'উপাচার্য', 'ঢাকা বিশ্ববিদ্যালয়', 'বুয়েট', 'মেডিকেল', 'ইঞ্জিনিয়ারিং',
+            'ক্লাস', 'পাঠ্যবই', 'সিলেবাস', 'শিক্ষাবোর্ড', 'মাদ্রাসা', 'বিষয়', 'গ্রেড', 'পাস'
+        ],
+        'লাইফস্টাইল': [
+            'জীবনযাত্রা', 'ফ্যাশন', 'রান্না', 'ভ্রমণ', 'স্টাইল', 'জীবন',
+            'খাবার', 'রেসিপি', 'বিউটি', 'সৌন্দর্য', 'মেকআপ', 'চুল', 'ত্বক', 'পোশাক',
+            'ট্রেন্ড', 'ডিজাইনার', 'মডেল', 'ফটোশুট', 'সিক্স প্যাক', 'ফিটনেস', 'ওজন',
+            'টুরিজম', 'পর্যটন', 'রিসোর্ট', 'হোটেল', 'বাজেট', 'শপিং', 'গিফট', 'উপহার'
+        ],
+        'মতামত': [
+            'মতামত', 'বিশ্লেষণ', 'কলাম', 'সম্পাদকীয়', 'দৃষ্টিভঙ্গি',
+            'মন্তব্য', 'পর্যালোচনা', 'সমালোচনা', 'প্রবন্ধ', 'আলোচনা', 'তুলনা', 'গবেষণা',
+            'সাম্প্রতিক', 'প্রসঙ্গ', 'ইস্যু', 'সমস্যা', 'সমাধান', 'পরামর্শ', 'সুপারিশ'
+        ],
+        'ধর্ম': [
+            'ইসলাম', 'ধর্ম', 'নামাজ', 'হজ', 'রমজান', 'ঈদ', 'মুসলিম', 'ইসলামী',
+            'কোরআন', 'হাদিস', 'মসজিদ', 'ইমাম', 'খুতবা', 'জুমা', 'তারাবি', 'সাহরি', 'ইফতার',
+            'যাকাত', 'সদকা', 'হিন্দু', 'পূজা', 'দুর্গা', 'কালী', 'মন্দির', 'বৌদ্ধ', 'খ্রিস্টান',
+            'গির্জা', 'ওয়াজ', 'মাহফিল', 'দোয়া', 'আল্লাহ', 'রসুল', 'নবী', 'সাহাবা'
+        ]
+    }
+    
+    # Score categories based on comprehensive keyword matches
+    category_scores = {}
+    for category, keywords in content_keywords.items():
+        score = sum(1 for keyword in keywords if keyword in text_to_check)
+        if score > 0:
+            category_scores[category] = score
+    
+    # Return highest scoring category if any matches found
+    if category_scores:
+        return max(category_scores, key=category_scores.get)
+    
+    # URL Pattern Detection (SECONDARY method - only for Prothom Alo type sites)
+    url_patterns = {
+        'রাজনীতি': [r'/politics?/?', r'/political?/?', r'/govt/?', r'/government/?', r'/election/?'],
+        'আন্তর্জাতিক': [r'/world/?', r'/international/?', r'/foreign/?', r'/global/?'],
+        'খেলাধুলা': [r'/sports?/?', r'/cricket/?', r'/football/?', r'/games?/?'],
+        'অর্থনীতি': [r'/economy/?', r'/business/?', r'/finance/?', r'/trade/?'],
+        'প্রযুক্তি': [r'/technology/?', r'/tech/?', r'/digital/?', r'/science/?'],
+        'বিনোদন': [r'/entertainment/?', r'/show-biz/?', r'/celebrity/?', r'/cinema/?'],
+        'স্বাস্থ্য': [r'/health/?', r'/medical/?', r'/medicine/?', r'/hospital/?'],
+        'শিক্ষা': [r'/education/?', r'/university/?', r'/college/?', r'/school/?'],
+        'লাইফস্টাইল': [r'/lifestyle/?', r'/life/?', r'/fashion/?', r'/travel/?'],
+        'মতামত': [r'/opinion/?', r'/editorial/?', r'/column/?', r'/analysis/?'],
+        'ধর্ম': [r'/islam/?', r'/religion/?', r'/islamic?/?', r'/faith/?']
+    }
+    
+    url_lower = url.lower()
+    for category, patterns in url_patterns.items():
+        for pattern in patterns:
+            if re.search(pattern, url_lower):
+                return category
+    
+    return 'সাধারণ'
+
+def categorize_articles(articles):
+    """
+    Add category detection to a list of articles
+    
+    Args:
+        articles: List of article dictionaries with 'url', 'title', 'content' etc.
+    
+    Returns:
+        List of articles with 'category' field added
+    """
+    categorized_articles = []
+    
+    for article in articles:
+        # Create a copy to avoid modifying original
+        categorized_article = article.copy()
+        
+        # Detect category
+        category = detect_category_from_url(
+            article.get('url', ''),
+            article.get('title', ''),
+            article.get('content', '') or article.get('text', '')
+        )
+        
+        categorized_article['category'] = category
+        categorized_articles.append(categorized_article)
+    
+    return categorized_articles
+
+# Enhanced optimize function with category support
+def optimize_text_for_ai_analysis_with_categories(texts, analyzer, max_chars=12000, max_articles=150, enable_categories=True):
+    """
+    Enhanced text optimization with category-wise formatting for better LLM analysis
+    Updated for 5000 token capacity (12000 chars ≈ 4800 tokens)
+    
+    Args:
+        texts: List of text articles (can include url, title, content fields)
+        analyzer: TrendingBengaliAnalyzer instance
+        max_chars: Maximum characters in output (default 12000 for 5000 token capacity)
+        max_articles: Maximum number of articles to process (default 150)
+        enable_categories: Whether to group by categories
+    
+    Returns:
+        Formatted text optimized for LLM analysis with category grouping
+    """
+    print(f"🔧 Optimizing {len(texts)} texts with category support...")
+    
+    if not texts:
+        return ""
+    
+    # If texts are dictionaries with metadata, extract and categorize
+    if enable_categories and texts and isinstance(texts[0], dict):
+        categorized_texts = categorize_articles(texts[:max_articles])
+        
+        # Group by category
+        category_groups = defaultdict(list)
+        for article in categorized_texts:
+            category = article.get('category', 'সাধারণ')
+            # Use title or content for text processing
+            text_content = article.get('title', '') or article.get('content', '') or article.get('text', '')
+            if text_content:
+                category_groups[category].append(text_content)
+        
+        # Category weights for prioritization
+        category_weights = {
+            'রাজনীতি': 1.5,      # Politics - highest priority
+            'অর্থনীতি': 1.3,      # Economics - high priority
+            'আন্তর্জাতিক': 1.2,   # International - medium-high
+            'খেলাধুলা': 1.0,      # Sports - normal
+            'প্রযুক্তি': 1.1,      # Technology - slightly higher
+            'বিনোদন': 0.9,       # Entertainment - lower
+            'লাইফস্টাইল': 0.8,    # Lifestyle - lower
+            'সাধারণ': 1.0         # General - normal
+        }
+        
+        # Sort categories by weight
+        sorted_categories = sorted(category_groups.keys(), 
+                                 key=lambda x: category_weights.get(x, 1.0), 
+                                 reverse=True)
+        
+        formatted_sections = []
+        total_chars = 0
+        
+        # Process each category
+        for category in sorted_categories:
+            if total_chars >= max_chars * 0.9:  # Leave some buffer
+                break
+                
+            category_texts = category_groups[category]
+            if not category_texts:
+                continue
+            
+            # Process this category's texts using original function
+            category_optimized = optimize_text_for_ai_analysis(
+                category_texts, 
+                analyzer, 
+                max_chars=max_chars // len(sorted_categories), 
+                max_articles=len(category_texts)
+            )
+            
+            if category_optimized.strip():
+                section = f"{category}: {category_optimized}"
+                if total_chars + len(section) < max_chars:
+                    formatted_sections.append(section)
+                    total_chars += len(section)
+        
+        result = " | ".join(formatted_sections)
+        
+        print(f"✅ Category-optimized to {len(result)} chars from {len(texts)} texts")
+        print(f"🏷️ Categories processed: {len(formatted_sections)}")
+        
+        return result
+    
+    else:
+        # Fallback to original function for simple text lists
+        # Convert dict articles to text strings
+        text_list = []
+        for item in texts:
+            if isinstance(item, dict):
+                # Extract text from dict
+                text_content = item.get('title', '') or item.get('content', '') or item.get('text', '')
+                if text_content:
+                    text_list.append(text_content)
+            else:
+                # Already a string
+                text_list.append(str(item))
+        
+        return optimize_text_for_ai_analysis(text_list, analyzer, max_chars, max_articles)
