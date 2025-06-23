@@ -1250,12 +1250,32 @@ def generate_trending_word_candidates_realtime_with_save(db: Session, limit: int
     for idx, trend in enumerate(serpapi_trends, 1):
         print(f"  {idx}. {' '.join(trend) if isinstance(trend, list) else trend}")
     
-    # Combine all sources for AI
+    # Combine all sources for AI with better text cleaning
+    from app.services.stopwords import STOP_WORDS
+    
+    # Clean and filter texts before combining
+    cleaned_texts = []
+    for text in texts:
+        if text and len(text.strip()) > 10:  # Only meaningful texts
+            # Remove common patterns and clean
+            cleaned = text.strip()
+            cleaned = re.sub(r'(পর|হামলার পর|ছুড়ল|দিয়ে|সোপর্দ|বিয়ে)', '', cleaned)  # Remove common patterns
+            cleaned = re.sub(r'\s+', ' ', cleaned).strip()  # Clean extra spaces
+            
+            # Split into words and remove stop words
+            words = cleaned.split()
+            filtered_words = [w for w in words if w not in STOP_WORDS and len(w) >= 3]
+            
+            if len(filtered_words) >= 2:  # Only keep if has meaningful content
+                cleaned_texts.append(' '.join(filtered_words))
+    
     texts.extend([' '.join(words) for words in google_trends if words])
     texts.extend([' '.join(words) for words in youtube_trends if words])
     texts.extend([' '.join(trend) for trend in serpapi_trends if trend])
+    # Use cleaned texts for further processing
+    all_texts = cleaned_texts + [' '.join(words) for words in google_trends if words] + [' '.join(words) for words in youtube_trends if words] + [' '.join(trend) for trend in serpapi_trends if trend]
     
-    if not texts:
+    if not all_texts:
         msg = "No articles or trends available for analysis"
         print(msg)
         return msg
@@ -1264,10 +1284,10 @@ def generate_trending_word_candidates_realtime_with_save(db: Session, limit: int
     from app.services.advanced_bengali_nlp import TrendingBengaliAnalyzer
     analyzer = TrendingBengaliAnalyzer()
     # Use ULTRA optimized text processing for Groq token limits
-    print(f"🔧 Using ULTRA optimization for {len(texts)} total texts...")
-    combined_text = optimize_text_for_ai_analysis(texts, analyzer, max_chars=2500, max_articles=100)  # Much stricter limits
+    print(f"🔧 Using ULTRA optimization for {len(all_texts)} total texts...")
+    combined_text = optimize_text_for_ai_analysis(all_texts, analyzer, max_chars=2500, max_articles=100)  # Much stricter limits
     print(f"📊 Ultra-Optimized Combined Text Size: {len(combined_text)} characters")
-    print(f"📊 Successfully optimized from {len(texts)} original texts")
+    print(f"📊 Successfully optimized from {len(all_texts)} original texts")
     ai_response = None
     print(f"Combined Text Preview (first 100 chars): {combined_text[:100]}...")
     
@@ -1738,13 +1758,18 @@ def optimize_text_for_ai_analysis(texts, analyzer, max_chars=2500, max_articles=
         normalized = analyzer.processor.normalize_text(text)
         tokens = analyzer.processor.advanced_tokenize(normalized)
         
+        # Import centralized stop words
+        from app.services.stopwords import STOP_WORDS
+        
         # Keep only the BEST meaningful words (very strict filtering)
         meaningful_words = [
             w for w in tokens 
-            if w not in analyzer.processor.stop_words 
+            if w not in STOP_WORDS  # Use centralized stop words
+            and w.lower() not in STOP_WORDS  # Check lowercase too
             and len(w) >= 3  # Min 3 chars
             and not w.isdigit()  # No numbers
             and len(w) <= 12  # Reduced max length
+            and w not in ['এর', 'যে', 'করে', 'হয়', 'হওয়া', 'আছে', 'থেকে', 'দিয়ে', 'জন্য', 'সাথে', 'এই', 'সেই', 'তার', 'তাদের']  # Extra stop words
         ]
         
         if len(meaningful_words) >= 1:  # Need at least 1 word
