@@ -11,7 +11,7 @@ const apiClient = axios.create({
 
 const apiV2Client = axios.create({
   baseURL: API_V2_BASE_URL,
-  timeout: 10 * 60 * 1000, // 10 minutes
+  timeout: 2 * 60 * 60 * 1000, // 2 hours
 });
 
 // API functions for legacy endpoints

@@ -78,36 +78,50 @@ class AdvancedBengaliProcessor:
     
     def advanced_tokenize(self, text: str) -> List[str]:
         """Advanced tokenization for Bengali text"""
-        text = self.normalize_text(text)
-        
-        sentences = []
-        current_sentence = ""
-        
-        for char in text:
-            if char in self.sentence_enders:
-                if current_sentence.strip():
-                    sentences.append(current_sentence.strip())
-                current_sentence = ""
-            else:
-                current_sentence += char
-        
-        if current_sentence.strip():
-            sentences.append(current_sentence.strip())
-        
-        # Tokenize words from sentences
-        words = []
-        for sentence in sentences:
-            # Remove punctuation except for compound words
-            sentence = re.sub(r'[^\u0980-\u09FF\s-]', ' ', sentence)
+        try:
+            if not isinstance(text, str):
+                text = str(text) if text is not None else ""
             
-            # Split by whitespace and filter
-            sentence_words = sentence.split()
-            for word in sentence_words:
-                word = word.strip('-')
-                if len(word) > 1 and word not in self.stop_words:
-                    words.append(word)
-        
-        return words
+            text = self.normalize_text(text)
+            
+            sentences = []
+            current_sentence = ""
+            
+            for char in text:
+                if char in self.sentence_enders:
+                    if current_sentence.strip():
+                        sentences.append(current_sentence.strip())
+                    current_sentence = ""
+                else:
+                    current_sentence += char
+            
+            if current_sentence.strip():
+                sentences.append(current_sentence.strip())
+            
+            # Tokenize words from sentences
+            words = []
+            for sentence in sentences:
+                # Remove punctuation except for compound words
+                sentence = re.sub(r'[^\u0980-\u09FF\s-]', ' ', sentence)
+                
+                # Split by whitespace and filter
+                sentence_words = sentence.split()
+                for word in sentence_words:
+                    word = word.strip('-')
+                    if len(word) > 1 and word not in self.stop_words:
+                        # Ensure the word is a string
+                        words.append(str(word))
+            
+            return words
+            
+        except Exception as e:
+            print(f"Error in advanced_tokenize: {e}")
+            # Fallback tokenization
+            if isinstance(text, str):
+                simple_words = text.split()
+                return [str(w) for w in simple_words if w and len(w) > 1]
+            else:
+                return []
     # Named Entity Recognition
     def extract_named_entities(self, text: str) -> Dict[str, List[str]]:
         entities = {
@@ -236,32 +250,54 @@ class AdvancedBengaliProcessor:
     
     def cluster_similar_phrases(self, phrases: List[str], n_clusters: int = 5) -> Dict[int, List[str]]:
         """Cluster similar phrases using TF-IDF and K-means"""
-        # Filter to only non-empty strings
-        phrases = [p for p in phrases if isinstance(p, str) and p.strip()]
-        # Extra debug and fallback: print any non-string
-        for p in phrases:
-            if not isinstance(p, str):
-                print(f"Non-string phrase detected: {p} ({type(p)})")
-        # Convert all to string as last fallback
-        phrases = [str(p) for p in phrases if p is not None and str(p).strip()]
-        if len(phrases) < n_clusters:
-            # If we have fewer phrases than clusters, put each in its own cluster
-            return {i: [phrase] for i, phrase in enumerate(phrases)}
-        
-        def bengali_preprocessor(text):
-            words = self.advanced_tokenize(text)
-            return ' '.join(words)
-        
-        vectorizer = TfidfVectorizer(
-            preprocessor=bengali_preprocessor,
-            ngram_range=(1, 2),
-            max_features=500,
-            min_df=1,
-            lowercase=False,
-            token_pattern=None  # Suppress warning when using custom preprocessor
-        )
-        
         try:
+            # Filter to only non-empty strings and ensure all are strings
+            filtered_phrases = []
+            for p in phrases:
+                if p is not None and isinstance(p, str) and p.strip():
+                    filtered_phrases.append(p.strip())
+                elif p is not None:
+                    # Convert non-string to string as fallback
+                    str_p = str(p).strip()
+                    if str_p:
+                        filtered_phrases.append(str_p)
+            
+            phrases = filtered_phrases
+            
+            if len(phrases) == 0:
+                print("No valid phrases for clustering")
+                return {}
+                
+            if len(phrases) < n_clusters:
+                # If we have fewer phrases than clusters, put each in its own cluster
+                return {i: [phrase] for i, phrase in enumerate(phrases)}
+            
+            def safe_bengali_preprocessor(text):
+                """Safe preprocessor that handles errors gracefully"""
+                try:
+                    if not isinstance(text, str):
+                        text = str(text)
+                    words = self.advanced_tokenize(text)
+                    # Ensure all words are strings
+                    safe_words = [str(w) for w in words if w is not None]
+                    return ' '.join(safe_words)
+                except Exception as e:
+                    print(f"Error in preprocessor for text '{text}': {e}")
+                    # Fallback: just return cleaned text
+                    if isinstance(text, str):
+                        return re.sub(r'[^\u0980-\u09FF\s]', ' ', text)
+                    else:
+                        return str(text)
+            
+            vectorizer = TfidfVectorizer(
+                preprocessor=safe_bengali_preprocessor,
+                ngram_range=(1, 2),
+                max_features=500,
+                min_df=1,
+                lowercase=False,
+                token_pattern=r'(?u)\b\w\w+\b'  # Use explicit pattern instead of None
+            )
+            
             tfidf_matrix = vectorizer.fit_transform(phrases)
             
             # Perform K-means clustering
@@ -277,8 +313,13 @@ class AdvancedBengaliProcessor:
             
         except Exception as e:
             print(f"Error in phrase clustering: {e}")
+            import traceback
+            print(f"Clustering error traceback: {traceback.format_exc()}")
             # Fallback: return all phrases in one cluster
-            return {0: phrases}
+            if phrases:
+                return {0: phrases}
+            else:
+                return {}
     
     def calculate_phrase_importance(self, phrase: str, context_texts: List[str]) -> float:
         """Calculate importance score for a phrase within given context"""
@@ -320,78 +361,100 @@ class AdvancedBengaliProcessor:
             'সাহেব', 'সাহেবা', 'বেগম', 'খান', 'চৌধুরী', 'আহমেদ', 'হোসেন', 'উদ্দিন', 'রহমান'
         ]
         
-        # Low-quality phrase patterns to exclude
-        exclude_patterns = [
-            r'বলেছেন যে',
-            r'নিশ্চিত করেছে যে',
-            r'জানিয়েছেন যে',
-            r'সরকার.*যে',
-            r'প্রধানমন্ত্রী.*যে',
-            r'মন্ত্রী.*যে',
-            r'.{30,}',  # Very long phrases (30+ characters)
-        ]
+        # Low-quality phrase patterns to exclude (compiled for safety)
+        exclude_patterns = []
+        try:
+            pattern_strings = [
+                r'বলেছেন যে',
+                r'নিশ্চিত করেছে যে',
+                r'জানিয়েছেন যে',
+                r'সরকার.*যে',
+                r'প্রধানমন্ত্রী.*যে',
+                r'মন্ত্রী.*যে',
+                r'.{30,}',  # Very long phrases (30+ characters)
+            ]
+            for pattern_str in pattern_strings:
+                exclude_patterns.append(re.compile(pattern_str))
+        except Exception as e:
+            print(f"Error compiling regex patterns: {e}")
+            exclude_patterns = []
         
         filtered_keywords = []
         seen_topics = set()
         
         for keyword, score in trending_keywords:
-            keyword_text = keyword.strip()
-            
-            # Skip if empty or too short
-            if len(keyword_text) < 2:
-                continue
-            
-            # Skip if contains person indicators
-            if any(indicator in keyword_text for indicator in person_indicators):
-                continue
-            
-            # Skip if matches exclude patterns
-            if any(re.search(pattern, keyword_text) for pattern in exclude_patterns):
-                continue
-            
-            # Skip common stop words that might slip through
-            if keyword_text in ['করা', 'হওয়া', 'দেওয়া', 'নেওয়া', 'বলা', 'আসা', 'যাওয়া']:
-                continue
-            
-            # Deduplicate similar topics
-            # Check if this keyword is too similar to already selected ones
-            is_duplicate = False
-            normalized_keyword = keyword_text.lower().strip()
-            
-            for seen_topic in seen_topics:
-                # Check for substring relationship
-                if (normalized_keyword in seen_topic or seen_topic in normalized_keyword):
-                    # If current has higher score and is more comprehensive, replace
-                    if len(normalized_keyword) > len(seen_topic):
-                        seen_topics.remove(seen_topic)
-                        # Remove the old entry from filtered_keywords
-                        filtered_keywords = [(k, s) for k, s in filtered_keywords if k.lower().strip() != seen_topic]
-                        break
-                    else:
-                        is_duplicate = True
-                        break
+            try:
+                keyword_text = str(keyword).strip() if keyword else ""
                 
-                # Check for word overlap (if 70% words are common, consider duplicate)
-                words1 = set(normalized_keyword.split())
-                words2 = set(seen_topic.split())
-                if words1 and words2:
-                    overlap = len(words1.intersection(words2)) / min(len(words1), len(words2))
-                    if overlap > 0.7:
-                        if score > dict(filtered_keywords).get(seen_topic, 0):
+                # Skip if empty or too short
+                if len(keyword_text) < 2:
+                    continue
+                
+                # Skip if contains person indicators
+                if any(indicator in keyword_text for indicator in person_indicators):
+                    continue
+                
+                # Skip if matches exclude patterns (safely)
+                skip_pattern = False
+                for pattern in exclude_patterns:
+                    try:
+                        if pattern.search(keyword_text):
+                            skip_pattern = True
+                            break
+                    except Exception as pattern_error:
+                        print(f"Pattern search error: {pattern_error}")
+                        continue
+                
+                if skip_pattern:
+                    continue
+                
+                # Skip common stop words that might slip through
+                if keyword_text in ['করা', 'হওয়া', 'দেওয়া', 'নেওয়া', 'বলা', 'আসা', 'যাওয়া']:
+                    continue
+                
+                # Deduplicate similar topics
+                # Check if this keyword is too similar to already selected ones
+                is_duplicate = False
+                normalized_keyword = keyword_text.lower().strip()
+                
+                for seen_topic in seen_topics:
+                    # Check for substring relationship
+                    if (normalized_keyword in seen_topic or seen_topic in normalized_keyword):
+                        # If current has higher score and is more comprehensive, replace
+                        if len(normalized_keyword) > len(seen_topic):
                             seen_topics.remove(seen_topic)
+                            # Remove the old entry from filtered_keywords
                             filtered_keywords = [(k, s) for k, s in filtered_keywords if k.lower().strip() != seen_topic]
                             break
                         else:
                             is_duplicate = True
                             break
-            
-            if not is_duplicate:
-                filtered_keywords.append((keyword_text, score))
-                seen_topics.add(normalized_keyword)
-            
-            # Stop when we have enough results
-            if len(filtered_keywords) >= max_results:
-                break
+                    
+                    # Check for word overlap (if 70% words are common, consider duplicate)
+                    words1 = set(normalized_keyword.split())
+                    words2 = set(seen_topic.split())
+                    if words1 and words2:
+                        overlap = len(words1.intersection(words2)) / min(len(words1), len(words2))
+                        if overlap > 0.7:
+                            if score > dict(filtered_keywords).get(seen_topic, 0):
+                                seen_topics.remove(seen_topic)
+                                filtered_keywords = [(k, s) for k, s in filtered_keywords if k.lower().strip() != seen_topic]
+                                break
+                            else:
+                                is_duplicate = True
+                                break
+                
+                if not is_duplicate:
+                    filtered_keywords.append((keyword_text, score))
+                    seen_topics.add(normalized_keyword)
+                
+                # Stop when we have enough results
+                if len(filtered_keywords) >= max_results:
+                    break
+                    
+            except Exception as keyword_error:
+                print(f"Error processing keyword '{keyword}': {keyword_error}")
+                continue
         
         # Sort by score in descending order
         filtered_keywords.sort(key=lambda x: x[1], reverse=True)

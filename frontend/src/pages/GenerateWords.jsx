@@ -111,22 +111,33 @@ function GenerateWords() {
   const parseCandidates = (candidatesText) => {
     if (!candidatesText) return [];
     
-    // Extract AI Generated Trending Words section
     const keywords = [];
     const lines = candidatesText.split('\n');
     let inAISection = false;
     
-    for (const line of lines) {
+    // Debug log
+    console.log("=== Parsing Candidates Debug ===");
+    console.log("Total lines:", lines.length);
+    
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
       const trimmed = line.trim();
       
       // Look for AI Generated Trending Words section
       if (trimmed.includes('🤖 AI Generated Trending Words:')) {
+        console.log("Found AI section start at line", i);
         inAISection = true;
         continue;
       }
       
-      // Stop when we reach another section
-      if (inAISection && (trimmed.includes('💾 Database Status:') || trimmed.includes('📊 NLP'))) {
+      // Stop when we reach another section (look for various section markers)
+      if (inAISection && (
+        trimmed.includes('💾 Database Status:') || 
+        trimmed.includes('📊 NLP') ||
+        trimmed.includes('📋 সম্পূর্ণ AI প্রার্থিতালিকা:') ||
+        trimmed.includes('📊 Groq API তে পাঠানো Combined Text') ||
+        trimmed.includes('='))) {
+        console.log("Found section end at line", i, ":", trimmed.substring(0, 50));
         break;
       }
       
@@ -144,13 +155,51 @@ function GenerateWords() {
         cleanedLine = cleanedLine.replace(/^["'](.+)["']$/, '$1');
         cleanedLine = cleanedLine.trim();
         
+        console.log("Processing line:", trimmed, "-> cleaned:", cleanedLine);
+        
         // Skip empty lines and section headers
-        if (cleanedLine && !cleanedLine.includes('trending শব্দ/বাক্যাংশ') && !cleanedLine.includes('টি)')) {
+        if (cleanedLine && 
+            !cleanedLine.includes('trending শব্দ/বাক্যাংশ') && 
+            !cleanedLine.includes('টি)') &&
+            !cleanedLine.includes('❌') &&
+            !cleanedLine.includes('Error') &&
+            cleanedLine.length > 1) {
           keywords.push(cleanedLine);
+          console.log("Added keyword:", cleanedLine);
         }
       }
     }
     
+    // Fallback: If no AI section found, try to extract numbered items directly
+    if (keywords.length === 0) {
+      console.log("No AI section found, trying fallback parsing...");
+      
+      // Look for lines that match pattern: number. Bengali text
+      for (let i = 0; i < lines.length; i++) {
+        const line = lines[i];
+        const trimmed = line.trim();
+        
+        // Look for numbered items (1. 2. etc.) that contain Bengali words
+        if (/^\d+\.\s*/.test(trimmed) && /[\u0980-\u09FF]/.test(trimmed)) {
+          let cleanedLine = trimmed.replace(/^\d+\.\s*/, '').trim();
+          cleanedLine = cleanedLine.replace(/^["'](.+)["']$/, '$1');
+          cleanedLine = cleanedLine.trim();
+          
+          console.log("Fallback found:", trimmed, "-> cleaned:", cleanedLine);
+          
+          if (cleanedLine.length > 1 && 
+              !cleanedLine.includes('❌') && 
+              !cleanedLine.includes('Error') &&
+              !cleanedLine.includes('Saved LLM trending word')) {
+            keywords.push(cleanedLine);
+            console.log("Added fallback keyword:", cleanedLine);
+          }
+        }
+      }
+    }
+    
+    console.log("Final parsed candidates:", keywords);
+    console.log("=== End Debug ===");
     return keywords.slice(0, 15); // Show 15 AI generated words
   };
 
@@ -252,7 +301,7 @@ function GenerateWords() {
           
           {parseCandidates(aiCandidates).length > 0 ? (
             <div className="mb-6">
-              <p className="text-gray-700 mb-3 font-medium">দ্রুত নির্বাচনের জন্য প্রস্তাবিত শব্দসমূহ:</p>
+              <p className="text-gray-700 mb-3 font-medium">দ্রুত নির্বাচনের জন্য প্রস্তাবিত শব্দসমূহ ({parseCandidates(aiCandidates).length}টি):</p>
               <div className="flex flex-wrap gap-2 mb-6">
                 {parseCandidates(aiCandidates).map((candidate, idx) => (
                   <button
@@ -274,8 +323,8 @@ function GenerateWords() {
           ) : (
             <div className="mb-6">
               <div className="bg-yellow-50 border-l-4 border-yellow-400 p-4 mb-4">
-                <p className="text-yellow-800 font-medium text-sm">📋 সম্পূর্ণ AI প্রার্থিতালিকা</p>
-                {/* <p className="text-yellow-600 text-xs mt-1">💡 নিচের নীল resize bar টি টেনে area বড় করে সব content দেখুন</p> */}
+                <p className="text-yellow-800 font-medium text-sm">⚠️ কোনো নির্বাচনযোগ্য শব্দ পাওয়া যায়নি</p>
+                <p className="text-yellow-600 text-xs mt-1">💡 সম্পূর্ণ AI প্রার্থিতালিকা নিচে দেখুন</p>
               </div>
             </div>
           )}

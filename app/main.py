@@ -4,8 +4,10 @@ from app.routes import routes
 from app.routes import routes_new
 from fastapi.middleware.cors import CORSMiddleware
 import os
+from dotenv import load_dotenv
 
-
+# Load environment variables from .env file
+load_dotenv()
 
 app = FastAPI(
     title="BARTA-IMLI trending words API",
