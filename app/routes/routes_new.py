@@ -1197,3 +1197,332 @@ def get_category_analysis_summary(
 # ==========================================
 # END OF CATEGORY-BASED ANALYSIS ENDPOINTS
 # ==========================================
+
+@router.post("/api/generate-candidates", summary="Hybrid analysis with newspaper and Reddit support")
+async def hybrid_generate_candidates(
+    sources: List[str] = Query(default=["newspaper", "reddit"], description="Sources to analyze: newspaper, reddit"),
+    mode: str = Query(default="sequential", description="Processing mode: sequential or parallel"),
+    db: Session = Depends(get_db)
+):
+    """
+    Hybrid approach: Analyze newspapers and Reddit separately or together
+    - Uses separate API keys for each source
+    - Supports parallel and sequential processing
+    - Merges results and generates final top 15 trending words
+    """
+    import asyncio
+    import os
+    from app.routes.helpers import fetch_news, generate_trending_word_candidates_realtime_with_save
+    
+    results = {
+        "timestamp": datetime.now().isoformat(),
+        "mode": mode,
+        "sources_requested": sources,
+        "results": {},
+        "errors": {},
+        "final_trending_words": []
+    }
+    
+    try:
+        async def process_newspaper_data():
+            """Process newspaper data with dedicated API key"""
+            try:
+                print("📰 Processing newspaper data...")
+                
+                # Temporarily set newspaper API key
+                original_key = os.environ.get("GROQ_API_KEY")
+                newspaper_key = os.environ.get("GROQ_API_KEY_NEWSPAPER")
+                if newspaper_key:
+                    os.environ["GROQ_API_KEY"] = newspaper_key
+                
+                # Generate newspaper trending analysis
+                newspaper_result = generate_trending_word_candidates_realtime_with_save(db, limit=8)
+                
+                # Restore original key
+                if original_key:
+                    os.environ["GROQ_API_KEY"] = original_key
+                
+                return {
+                    "status": "success",
+                    "source": "newspaper",
+                    "trending_words": parse_trending_words_from_response(newspaper_result),
+                    "raw_response": newspaper_result
+                }
+            except Exception as e:
+                return {
+                    "status": "failed", 
+                    "source": "newspaper",
+                    "error": str(e),
+                    "trending_words": []
+                }
+
+        async def process_reddit_data():
+            """Process Reddit data with dedicated API key"""
+            try:
+                print("📡 Processing Reddit data...")
+                
+                # Use the existing Reddit scraper file from project root
+                import sys
+                import os
+                
+                # Add the project root to Python path
+                project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
+                if project_root not in sys.path:
+                    sys.path.insert(0, project_root)
+                
+                # Import from your existing reddit_data_scrapping.py file from app/services
+                from app.services.reddit_data_scrapping import RedditDataScrapper
+                
+                # Temporarily set Reddit API key
+                original_key = os.environ.get("GROQ_API_KEY")
+                reddit_key = os.environ.get("GROQ_API_KEY_REDDIT")
+                if reddit_key:
+                    os.environ["GROQ_API_KEY"] = reddit_key
+                
+                # Create a modified version that doesn't depend on the problematic import
+                scraper = RedditDataScrapper()
+                
+                # Use a simpler approach - call the main analysis function directly
+                reddit_results = scraper.run_comprehensive_analysis(posts_per_subreddit=20)
+                
+                # Restore original key
+                if original_key:
+                    os.environ["GROQ_API_KEY"] = original_key
+                
+                # Extract emerging words from Reddit results
+                emerging_words = reddit_results.get('emerging_words', [])
+                reddit_trending = [item['emerging_word'] for item in emerging_words if item.get('emerging_word')]
+                
+                return {
+                    "status": "success",
+                    "source": "reddit",
+                    "trending_words": reddit_trending,
+                    "subreddit_results": reddit_results.get('subreddit_responses', []),
+                    "summary": reddit_results.get('summary', {})
+                }
+            except Exception as e:
+                print(f"❌ Reddit processing error: {e}")
+                import traceback
+                traceback.print_exc()
+                return {
+                    "status": "failed",
+                    "source": "reddit", 
+                    "error": str(e),
+                    "trending_words": []
+                }
+        
+        # Process based on mode
+        if mode == "parallel" and len(sources) > 1:
+            print("🔄 Running parallel processing...")
+            
+            # Parallel processing
+            tasks = []
+            if "newspaper" in sources:
+                tasks.append(process_newspaper_data())
+            if "reddit" in sources:
+                tasks.append(process_reddit_data())
+            
+            # Execute tasks in parallel
+            parallel_results = await asyncio.gather(*tasks, return_exceptions=True)
+            
+            for result in parallel_results:
+                if isinstance(result, Exception):
+                    print(f"❌ Parallel task failed: {result}")
+                    continue
+                
+                source = result.get("source", "unknown")
+                if result.get("status") == "success":
+                    results["results"][source] = result
+                else:
+                    results["errors"][source] = result
+                    
+        else:
+            print("⏭️ Running sequential processing...")
+            
+            # Sequential processing
+            if "newspaper" in sources:
+                newspaper_result = await process_newspaper_data()
+                source = newspaper_result.get("source", "newspaper")
+                if newspaper_result.get("status") == "success":
+                    results["results"][source] = newspaper_result
+                else:
+                    results["errors"][source] = newspaper_result
+            
+            if "reddit" in sources:
+                reddit_result = await process_reddit_data()
+                source = reddit_result.get("source", "reddit")
+                if reddit_result.get("status") == "success":
+                    results["results"][source] = reddit_result
+                else:
+                    results["errors"][source] = reddit_result
+        
+        # Merge results if both sources were successful
+        if len(results["results"]) > 1:
+            print("🔀 Merging results from multiple sources...")
+            merged_results = await merge_and_generate_final_trending(results["results"], db)
+            results["final_trending_words"] = merged_results["final_trending_words"]
+            results["merge_status"] = merged_results["status"]
+            results["final_llm_response"] = merged_results.get("llm_response", "")
+            results["merge_prompt"] = merged_results.get("merge_prompt", "")  # Add merge prompt to results
+            results["merge_statistics"] = merged_results.get("merge_statistics", {})
+        elif len(results["results"]) == 1:
+            # Single source result
+            single_result = list(results["results"].values())[0]
+            results["final_trending_words"] = single_result.get("trending_words", [])
+            results["merge_status"] = "single_source"
+        else:
+            results["final_trending_words"] = []
+            results["merge_status"] = "no_successful_sources"
+        
+        # Summary
+        results["summary"] = {
+            "successful_sources": len(results["results"]),
+            "failed_sources": len(results["errors"]),
+            "total_trending_words": len(results["final_trending_words"]),
+            "processing_mode": mode
+        }
+        
+        return results
+        
+    except Exception as e:
+        import traceback
+        error_detail = f"Hybrid analysis failed: {str(e)}\n{traceback.format_exc()}"
+        print(f"❌ {error_detail}")
+        raise HTTPException(status_code=500, detail=error_detail)
+
+
+def parse_trending_words_from_response(response_text: str) -> List[str]:
+    """Parse trending words from LLM response text"""
+    if not response_text:
+        return []
+    
+    words = []
+    lines = response_text.split('\n')
+    
+    for line in lines:
+        line = line.strip()
+        # Look for numbered items (Bengali or English numbers)
+        if any(char in line for char in ['১', '২', '৩', '৪', '৫', '৬', '৭', '৮']) or \
+           line.startswith(('1.', '2.', '3.', '4.', '5.', '6.', '7.', '8.')):
+            # Remove numbering
+            clean_line = line
+            for num in ['১.', '২.', '৩.', '৪.', '৫.', '৬.', '৭.', '৮.', 
+                       '1.', '2.', '3.', '4.', '5.', '6.', '7.', '8.']:
+                clean_line = clean_line.replace(num, '').strip()
+            
+            if clean_line and len(clean_line) > 1:
+                words.append(clean_line)
+    
+    return words[:8]  # Return top 8 from each source
+
+
+async def merge_and_generate_final_trending(source_results: dict, db: Session) -> dict:
+    """Merge results from multiple sources and generate final top 15 trending words"""
+    try:
+        import os
+        from groq import Groq
+        
+        # Collect all trending words from sources
+        all_words = []
+        source_summary = []
+        
+        for source, result in source_results.items():
+            words = result.get("trending_words", [])
+            all_words.extend(words)
+            source_summary.append(f"{source}: {len(words)} words")
+            print(f"📊 {source}: {words}")
+        
+        if not all_words:
+            return {
+                "status": "no_words_to_merge",
+                "final_trending_words": [],
+                "llm_response": "No trending words found from any source"
+            }
+        
+        # Create merge prompt
+        combined_words = '\n'.join([f"{i+1}. {word}" for i, word in enumerate(all_words)])
+        
+        merge_prompt = f"""তুমি একজন বাংলাদেশি সোশ্যাল মিডিয়া ট্রেন্ড বিশ্লেষক। নিচে বিভিন্ন সোর্স (সংবাদ ও Reddit) থেকে পাওয়া বর্তমানে সবচেয়ে জনপ্রিয় ও ট্রেন্ডিং একটি বাক্য/বাক্যাংশ চিহ্নিত করো।Jeta niye manus ekhn beshi kotha bolche bole mone koro,shetai trending topic.
+
+এই সব শব্দ/বাক্যাংশ থেকে সবচেয়ে গুরুত্বপূর্ণ ও ট্রেন্ডিং ১৫টি শব্দ/বাক্যাংশ নির্বাচন করো। response banglay dibe. extra kono message lekhbe nah
+
+নিয়মাবলী:
+1. সবচেয়ে জনপ্রিয় ও প্রাসঙ্গিক শব্দগুলো প্রাধান্য দাও
+2. Duplicate বা similar meaning ke e indicate kore emon শব্দ thakle ekta consider kore nibe and jodi sheta trending howyar moto hoy tokhn sheta add korbe  
+3. ২-৪ শব্দের মধ্যে সংক্ষিপ্ত বাক্যাংশ রাখো
+
+সোর্স সামারি: {', '.join(source_summary)}
+
+সংগৃহীত ট্রেন্ডিং শব্দ/বাক্যাংশ:
+{combined_words}
+
+আউটপুট ফরম্যাট:
+চূড়ান্ত ট্রেন্ডিং শব্দ/বাক্যাংশ (১৫টি):
+১. [শব্দ/বাক্যাংশ]
+২. [শব্দ/বাক্যাংশ]
+...
+১৫. [শব্দ/বাক্যাংশ]"""
+
+        # Use dedicated combine API key for merging
+        api_key = os.environ.get("GROQ_API_KEY_COMBINE") or os.environ.get("GROQ_API_KEY_NEWSPAPER") or os.environ.get("GROQ_API_KEY")
+        if not api_key:
+            return {
+                "status": "no_api_key",
+                "final_trending_words": all_words[:15],  # Fallback
+                "llm_response": "API key not found for merging"
+            }
+        
+        print("🤖 Calling LLM for final merge...")
+        client = Groq(api_key=api_key)
+        
+        response = client.chat.completions.create(
+            model="llama-3.3-70b-versatile",
+            messages=[
+                {
+                    "role": "system", 
+                    "content": "তুমি বাংলা ভাষা বিশ্লেষক। response বাংলায় দাও।"
+                },
+                {
+                    "role": "user", 
+                    "content": merge_prompt
+                }
+            ],
+            temperature=0.7,
+            max_tokens=800,
+            top_p=0.9
+        )
+        
+        merge_response = response.choices[0].message.content.strip()
+        final_words = parse_trending_words_from_response(merge_response)
+        
+        print(f"✅ Final merged trending words: {len(final_words)}")
+        for i, word in enumerate(final_words, 1):
+            print(f"   {i}. {word}")
+        
+        return {
+            "status": "success",
+            "final_trending_words": final_words[:15],
+            "llm_response": merge_response,
+            "source_summary": source_summary,
+            "merge_prompt": merge_prompt,  # Show merge prompt in frontend
+            "api_key_used": "GROQ_API_KEY_COMBINE",
+            "merge_statistics": {
+                "total_input_words": len(all_words),
+                "final_output_words": len(final_words[:15]),
+                "sources_merged": len(source_results)
+            }
+        }
+        
+    except Exception as e:
+        print(f"❌ Error in merge process: {e}")
+        # Fallback: just combine and truncate
+        fallback_words = []
+        for source, result in source_results.items():
+            fallback_words.extend(result.get("trending_words", []))
+        
+        return {
+            "status": "merge_failed_fallback",
+            "final_trending_words": fallback_words[:15],
+            "llm_response": f"Merge failed: {str(e)}. Using fallback combination.",
+            "error": str(e)
+        }

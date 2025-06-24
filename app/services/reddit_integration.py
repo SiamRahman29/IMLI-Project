@@ -138,41 +138,78 @@ class RedditIntegration:
         return categorized_data
     
     def scrape_reddit_data(self) -> List[Dict[str, Any]]:
-        """Scrape Reddit data using existing reddit_scraper"""
+        """Scrape Reddit data using RedditDataScrapper (preferred)"""
         try:
-            # Import reddit scraper from current services directory
-            from .reddit_scraper import RedditScraper
+            # Import the preferred reddit data scrapper
+            from .reddit_data_scrapping import RedditDataScrapper
             
-            scraper = RedditScraper()
-            posts = scraper.scrape_all_bangladesh_subreddits_praw()  # Correct method name
+            scraper = RedditDataScrapper()
+            # Run comprehensive analysis and get the posts
+            result = scraper.run_comprehensive_analysis(posts_per_subreddit=20)
+            
+            # Extract posts from the subreddit results
+            posts = []
+            for subreddit_data in result.get('subreddit_responses', []):
+                for post in subreddit_data.get('posts', []):
+                    # Convert to the expected format
+                    formatted_post = {
+                        'source': f'reddit_r_{post.get("subreddit", "unknown")}',
+                        'title': post.get('title', ''),
+                        'content': post.get('content', ''),
+                        'url': post.get('url', ''),
+                        'score': post.get('score', 0),
+                        'comments_count': post.get('num_comments', 0),
+                        'created_utc': post.get('created_utc', 0),
+                        'author': post.get('author', ''),
+                        'flair': post.get('flair', ''),
+                        'comments': post.get('comments', []),
+                        'scraped_date': datetime.now().date()
+                    }
+                    posts.append(formatted_post)
             
             if posts:
-                self.logger.info(f"✅ Scraped {len(posts)} Reddit posts")
+                self.logger.info(f"✅ Scraped {len(posts)} Reddit posts using RedditDataScrapper")
                 return posts
             else:
-                self.logger.warning("⚠️ No Reddit posts scraped")
+                self.logger.warning("⚠️ No Reddit posts scraped from RedditDataScrapper")
                 return []
                 
-        except ImportError:
-            # Fallback: try to load from existing test data
-            self.logger.info("📂 Loading Reddit data from existing test file...")
+        except ImportError as ie:
+            self.logger.warning(f"⚠️ RedditDataScrapper not available: {ie}")
+            # Fallback to original reddit_scraper
             try:
-                import glob
-                reddit_files = glob.glob('reddit_all_posts_*.json')
-                if reddit_files:
-                    latest_file = sorted(reddit_files)[-1]
-                    with open(latest_file, 'r', encoding='utf-8') as f:
-                        data = json.load(f)
-                    posts = data.get('all_posts', [])
-                    self.logger.info(f"✅ Loaded {len(posts)} posts from {latest_file}")
+                from .reddit_scraper import RedditScraper
+                
+                scraper = RedditScraper()
+                posts = scraper.scrape_all_bangladesh_subreddits_praw()  # Correct method name
+                
+                if posts:
+                    self.logger.info(f"✅ Scraped {len(posts)} Reddit posts using fallback RedditScraper")
                     return posts
                 else:
-                    self.logger.warning("⚠️ No Reddit test data files found")
+                    self.logger.warning("⚠️ No Reddit posts scraped from fallback")
                     return []
-            except Exception as fallback_error:
-                self.logger.error(f"❌ Fallback loading failed: {fallback_error}")
-                return []
-                
+                    
+            except ImportError:
+                # Fallback: try to load from existing test data
+                self.logger.info("📂 Loading Reddit data from existing test file...")
+                try:
+                    import glob
+                    reddit_files = glob.glob('reddit_all_posts_*.json')
+                    if reddit_files:
+                        latest_file = sorted(reddit_files)[-1]
+                        with open(latest_file, 'r', encoding='utf-8') as f:
+                            data = json.load(f)
+                        posts = data.get('all_posts', [])
+                        self.logger.info(f"✅ Loaded {len(posts)} posts from {latest_file}")
+                        return posts
+                    else:
+                        self.logger.warning("⚠️ No Reddit test data files found")
+                        return []
+                except Exception as fallback_error:
+                    self.logger.error(f"❌ Fallback loading failed: {fallback_error}")
+                    return []
+                    
         except Exception as e:
             self.logger.error(f"❌ Error scraping Reddit data: {e}")
             return []

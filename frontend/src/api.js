@@ -34,6 +34,18 @@ export const apiV2 = {
   // Generate candidates and run analysis
   generateCandidates: () => apiV2Client.post('/generate_candidates'),
   
+  // Hybrid generate candidates with separate API keys
+  hybridGenerateCandidates: (params = {}) => {
+    const queryParams = new URLSearchParams();
+    
+    if (params.sources) {
+      params.sources.forEach(source => queryParams.append('sources', source));
+    }
+    if (params.mode) queryParams.append('mode', params.mode);
+    
+    return apiV2Client.post(`/api/generate-candidates?${queryParams.toString()}`);
+  },
+  
   // Get trending phrases with filtering
   getTrendingPhrases: (params = {}) => {
     const queryParams = new URLSearchParams();

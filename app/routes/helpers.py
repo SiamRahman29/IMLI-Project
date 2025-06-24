@@ -1639,109 +1639,17 @@ def generate_trending_word_candidates_realtime_with_save(db: Session, limit: int
         
         ai_response = f"❌ Error generating trending words: Network connection issue. Please try again later."
     
-    # --- NLP Analysis Response (WITHOUT DATABASE for NLP results) ---
-    analyzer_inputs = []
-    for a in articles:
-        analyzer_inputs.append({
-            'title': a.get('title', ''),
-            'heading': a.get('heading', ''),
-            'source': a.get('source', 'news')
-        })
+    # Skip NLP analysis - only use LLM response for trending words
+    print(f"\n🤖 Using LLM-only approach for trending words generation")
     
-    for trend in google_trends:
-        analyzer_inputs.append({'title': ' '.join(trend), 'heading': '', 'source': 'google_trends'})
-    
-    for trend in youtube_trends:
-        analyzer_inputs.append({'title': ' '.join(trend), 'heading': '', 'source': 'youtube_trending'})
-    
-    for trend in serpapi_trends:
-        analyzer_inputs.append({'title': ' '.join(trend) if isinstance(trend, list) else trend, 'heading': '', 'source': 'serpapi_trends'})
-    
-    print(f"\n🧠 Running NLP Analysis on {len(analyzer_inputs)} inputs...")
-    analyzer_response = analyzer.analyze_trending_content(analyzer_inputs, source_type='mixed')
-    
-    # Count unique newspaper sources from analyzer inputs
-    newspaper_sources = set()
-    for item in analyzer_inputs:
-        item_source = item.get('source', 'unknown')
-        if item_source not in ['google_trends', 'youtube_trending', 'serpapi_trends', 'unknown']:
-            newspaper_sources.add(item_source)
-    
-    newspaper_count = len(newspaper_sources)
-    print(f"📰 Summary includes content from {newspaper_count} newspaper sources")
-    
-    # Start with empty summary array and add heading separately at the end
+    # Clean summary without NLP analysis - just show the AI response
     summary = []
-    trending_keywords = analyzer_response.get('trending_keywords', [])
     
-    if not isinstance(trending_keywords, list):
-        print(f"[Analyzer] 'trending_keywords' missing or not a list. analyzer_response: {analyzer_response}")
-        trending_keywords = []
-    
-    # Track which newspapers contain each phrase for summary
-    phrase_newspaper_counts = {}
-    for keyword_score in trending_keywords[:10]:
-        if isinstance(keyword_score, (list, tuple)) and len(keyword_score) == 2:
-            keyword, score = keyword_score
-            keyword_clean = keyword.strip()
-            
-            # Count how many newspapers contain this phrase
-            newspapers_with_phrase = set()
-            for item in analyzer_inputs:
-                title = item.get('title', '').lower()
-                heading = item.get('heading', '').lower()
-                combined_text = f"{title} {heading}".lower()
-                
-                if keyword_clean.lower() in combined_text:
-                    item_source = item.get('source', 'unknown')
-                    if item_source not in ['google_trends', 'youtube_trending', 'serpapi_trends', 'unknown']:
-                        newspapers_with_phrase.add(item_source)
-            
-            phrase_newspapers = len(newspapers_with_phrase)
-            phrase_newspaper_counts[keyword_clean] = phrase_newspapers
-        
-    # Add trending keywords to summary with newspaper counts
-    for keyword_score in trending_keywords[:10]:
-        if isinstance(keyword_score, (list, tuple)) and len(keyword_score) == 2:
-            keyword, score = keyword_score
-            keyword_clean = keyword.strip()
-            phrase_newspapers = phrase_newspaper_counts.get(keyword_clean, 0)
-            summary.append(f"  🔸 {keyword}: {score:.4f} | Newspapers: {phrase_newspapers}/{newspaper_count}")
-        else:
-            summary.append(f"  🔸 {keyword_score}")
-    
-    summary.append("\n🏷️ Named Entities:")
-    for entity_type, entities in analyzer_response.get('named_entities', {}).items():
-        if entities:
-            summary.append(f"  📍 {entity_type}: {entities[:5]}")
-    
-    summary.append(f"\n💭 Sentiment: {analyzer_response.get('sentiment_analysis', '')}")
-    summary.append(f"\n📈 Statistics: {analyzer_response.get('content_statistics', '')}")
-    
-    # Final summary
-    summary.append(f"\n🤖 AI Generated Trending Words:\n{ai_response}")
+    # Main AI response section
+    summary.append(f"🤖 AI Generated Trending Words:\n{ai_response}")
     summary.append(f"\n💾 Database Status: Top 15 LLM trending words saved for trending analysis section")
     
-    # Add the combined text for frontend debugging
-    summary.append(f"\n📋 সম্পূর্ণ AI প্রার্থিতালিকা:")
-    summary.append(f"📊 Groq API তে পাঠানো Combined Text ({len(original_combined_text)} chars):")
-    summary.append(f"{'='*50}")
-    summary.append(original_combined_text)
-    summary.append(f"{'='*50}")
-    
-    # Add the ACTUAL LLM PROMPT that was used for frontend viewing
-    summary.append(f"\n🤖 ব্যবহৃত LLM Prompt:")
-    if has_newspapers and has_social_media:
-        summary.append(f"📊 Content Type: Mixed (Newspaper + Social Media)")
-    elif has_newspapers:
-        summary.append(f"📰 Content Type: Newspaper Only")
-    else:
-        summary.append(f"🔧 Content Type: Fallback")
-    summary.append(f"{'='*80}")
-    summary.append(prompt)
-    summary.append(f"{'='*80}")
-    
-    # Add heading at the beginning
+    # Create clean output for frontend
     final_output = "🤖 AI Generated Trending Words থেকে আজকের শব্দ নির্বাচন করুন\n\n" + '\n'.join(summary)
     
     print(f"[Summary] Real-time analysis completed with database save for LLM words")

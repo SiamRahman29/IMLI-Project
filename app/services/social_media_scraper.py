@@ -17,8 +17,13 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import TimeoutException, NoSuchElementException
 
-# Import Reddit scraper
-from .reddit_scraper import RedditScraper
+# Import Reddit scraper - use preferred data scrapper
+try:
+    from .reddit_data_scrapping import RedditDataScrapper
+    REDDIT_SCRAPER_TYPE = "data_scrapper"
+except ImportError:
+    from .reddit_scraper import RedditScraper
+    REDDIT_SCRAPER_TYPE = "fallback"
 
 
 class SocialMediaScraper:
@@ -34,8 +39,17 @@ class SocialMediaScraper:
             'Connection': 'keep-alive',
         }
         
-        # Initialize Reddit scraper
-        self.reddit_scraper = RedditScraper() if self.ENABLE_REDDIT_SCRAPING else None
+        # Initialize Reddit scraper - use preferred implementation
+        if self.ENABLE_REDDIT_SCRAPING:
+            if REDDIT_SCRAPER_TYPE == "data_scrapper":
+                self.reddit_scraper = RedditDataScrapper()
+                self.reddit_scraper_type = "data_scrapper"
+            else:
+                self.reddit_scraper = RedditScraper()
+                self.reddit_scraper_type = "fallback"
+        else:
+            self.reddit_scraper = None
+            self.reddit_scraper_type = None
         
     def setup_selenium_driver(self) -> webdriver.Chrome:
         """Setup Selenium WebDriver for JavaScript-heavy pages"""
@@ -118,11 +132,35 @@ class SocialMediaScraper:
         try:
             print(f"[INFO] Scraping Reddit content from last {hours_back} hours...")
             
-            # Get Bangladesh-related content
-            reddit_content = self.reddit_scraper.scrape_bangladesh_content(
-                hours_back=hours_back,
-                posts_per_subreddit=20
-            )
+            # Get Bangladesh-related content based on scraper type
+            if self.reddit_scraper_type == "data_scrapper":
+                # Use RedditDataScrapper
+                result = self.reddit_scraper.run_comprehensive_analysis(posts_per_subreddit=20)
+                reddit_content = []
+                
+                # Convert from analysis result to content format
+                for subreddit_data in result.get('subreddit_responses', []):
+                    for post in subreddit_data.get('posts', []):
+                        content_item = {
+                            'id': post.get('id'),
+                            'title': post.get('title', ''),
+                            'content': post.get('content', ''),
+                            'subreddit': post.get('subreddit'),
+                            'score': post.get('score', 0),
+                            'num_comments': post.get('num_comments', 0),
+                            'engagement_score': post.get('score', 0) + (post.get('num_comments', 0) * 2),
+                            'permalink': post.get('url', ''),
+                            'timestamp': post.get('created_utc'),
+                            'author': post.get('author'),
+                            'comments': post.get('comments', [])
+                        }
+                        reddit_content.append(content_item)
+            else:
+                # Use fallback RedditScraper
+                reddit_content = self.reddit_scraper.scrape_bangladesh_content(
+                    hours_back=hours_back,
+                    posts_per_subreddit=20
+                )
             
             # Format for social media analysis
             formatted_content = []

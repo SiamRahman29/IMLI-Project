@@ -15,6 +15,10 @@ from datetime import datetime
 from typing import List, Dict, Optional, Any
 from dotenv import load_dotenv
 import logging
+import warnings
+
+# Suppress PRAW async warnings
+warnings.filterwarnings("ignore", message=".*PRAW.*asynchronous.*")
 
 # Load environment variables
 load_dotenv()
@@ -25,19 +29,27 @@ class RedditDataScrapper:
     def __init__(self):
         self.logger = self._setup_logging()
         
-        # Import the existing Reddit scraper
+        # Initialize Reddit API directly with praw (no external dependency)
         try:
-            from app.services.reddit_scraper import RedditScraper
-            self.reddit_scraper = RedditScraper()
-            self.logger.info("✅ Reddit scraper initialized successfully")
+            import praw
+            # Suppress PRAW async environment warnings
+            import warnings
+            warnings.filterwarnings("ignore", message=".*using PRAW in an asynchronous environment.*")
+            
+            self.reddit = praw.Reddit(
+                client_id=os.getenv('REDDIT_CLIENT_ID'),
+                client_secret=os.getenv('REDDIT_CLIENT_SECRET'),
+                user_agent=os.getenv('REDDIT_USER_AGENT', 'BangladeshTrendingAnalyzer/1.0')
+            )
+            self.logger.info("✅ Reddit API initialized successfully")
         except Exception as e:
-            self.logger.error(f"❌ Failed to initialize Reddit scraper: {e}")
+            self.logger.error(f"❌ Failed to initialize Reddit API: {e}")
             raise
         
         # All subreddits to scrape (comprehensive list)
         self.all_subreddits = [
-            'bangladesh', 'dhaka',   
-            'worldnews', 'AlJazeera','geopolitics',
+            'bangladesh', 'dhaka',
+            'worldnews', 'AlJazeera', 'geopolitics',
             'technology', 
         ]
 
@@ -111,7 +123,7 @@ class RedditDataScrapper:
         for subreddit in self.all_subreddits:
             try:
                 self.logger.info(f"   📡 Scraping r/{subreddit}...")
-                posts = self.reddit_scraper.scrape_posts_with_praw(
+                posts = self._scrape_posts_directly(
                     subreddit_name=subreddit, 
                     limit=posts_per_subreddit,
                     sort='top'  # Use top posts instead of new posts
@@ -415,11 +427,13 @@ Reddit ট্রেন্ডিং শব্দ/বাক্যাংশ (৮ট
         try:
             from groq import Groq
             
-            # Get API key
-            api_key = os.getenv('GROQ_API_KEY')
+            # Get Reddit API key (priority: REDDIT -> fallback to main key)
+            api_key = os.getenv('GROQ_API_KEY_REDDIT') or os.getenv('GROQ_API_KEY')
             if not api_key:
-                self.logger.error("❌ GROQ_API_KEY not found in environment variables!")
+                self.logger.error("❌ No GROQ API key found (tried GROQ_API_KEY_REDDIT and GROQ_API_KEY)!")
                 return {'status': 'failed', 'error': 'No API key', 'subreddit': subreddit_name}
+            
+            self.logger.info(f"🔑 Using API key: {api_key[:15]}... (Reddit dedicated key: {'Yes' if os.getenv('GROQ_API_KEY_REDDIT') else 'No'})")
             
             # Initialize Groq client
             client = Groq(api_key=api_key)
@@ -944,6 +958,87 @@ Reddit ট্রেন্ডিং শব্দ/বাক্যাংশ (৮ট
         print(f"   Emerging Words: {summary.get('total_emerging_words', 0)}")
         print(f"{'='*80}")
 
+
+    def _scrape_posts_directly(self, subreddit_name: str, limit: int = 20, sort: str = 'top') -> List:
+        """
+        Scrape posts directly using praw without external dependencies
+        
+        Args:
+            subreddit_name: Name of subreddit to scrape
+            limit: Number of posts to retrieve
+            sort: Sort method ('top', 'hot', 'new')
+        
+        Returns:
+            List of post objects with attributes similar to RedditPost
+        """
+        posts = []
+        
+        try:
+            # Suppress PRAW async warnings for this operation
+            import warnings
+            warnings.filterwarnings("ignore", message=".*using PRAW in an asynchronous environment.*")
+            
+            subreddit = self.reddit.subreddit(subreddit_name)
+            
+            # Get submissions based on sort method
+            if sort == 'top':
+                submissions = subreddit.top(limit=limit, time_filter='day')
+            elif sort == 'hot':
+                submissions = subreddit.hot(limit=limit)
+            elif sort == 'new':
+                submissions = subreddit.new(limit=limit)
+            else:
+                submissions = subreddit.hot(limit=limit)
+            
+            for submission in submissions:
+                # Get top comments for the post
+                submission.comments.replace_more(limit=0)
+                top_comments = []
+                
+                for comment in submission.comments[:10]:  # Get top 10 comments
+                    if hasattr(comment, 'body') and len(comment.body) > 10:
+                        top_comments.append(comment.body)
+                
+                # Create a simple object with the needed attributes
+                class SimplePost:
+                    def __init__(self, submission):
+                        self.id = submission.id
+                        self.title = submission.title
+                        self.content = submission.selftext if submission.is_self else ''
+                        self.subreddit = submission.subreddit.display_name
+                        self.author = str(submission.author) if submission.author else '[deleted]'
+                        self.score = submission.score
+                        self.num_comments = submission.num_comments
+                        self.created_utc = submission.created_utc
+                        self.url = submission.url
+                        self.permalink = f"https://www.reddit.com{submission.permalink}"
+                        self.flair = submission.link_flair_text
+                        self.is_self = submission.is_self
+                        self.comments = top_comments
+                
+                post = SimplePost(submission)
+                posts.append(post)
+            
+            self.logger.info(f"✅ Successfully retrieved {len(posts)} posts from r/{subreddit_name} using {sort} sort")
+            
+        except Exception as e:
+            error_msg = str(e).lower()
+            
+            # Handle specific Reddit API errors
+            if '403' in error_msg or 'forbidden' in error_msg:
+                self.logger.error(f"❌ r/{subreddit_name}: 403 Forbidden - Subreddit may be private or restricted")
+            elif '404' in error_msg or 'not found' in error_msg:
+                self.logger.error(f"❌ r/{subreddit_name}: 404 Not Found - Subreddit may not exist")
+            elif 'redirect' in error_msg or 'search' in error_msg:
+                self.logger.error(f"❌ r/{subreddit_name}: Redirect detected - Subreddit may have been moved or deleted")
+            elif 'rate limit' in error_msg:
+                self.logger.error(f"❌ r/{subreddit_name}: Rate limited - Too many requests")
+                import time
+                time.sleep(5)  # Wait longer for rate limit
+            else:
+                self.logger.error(f"❌ r/{subreddit_name}: {e}")
+        
+        return posts
 
 def main():
     """Main function to run subreddit-wise Reddit analysis"""

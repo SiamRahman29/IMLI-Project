@@ -11,8 +11,24 @@ function GenerateWords() {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState(null);
   const [success, setSuccess] = useState(false);
-  const [candidateHeight, setCandidateHeight] = useState(500); // Increased default height
+  const [candidateHeight, setCandidateHeight] = useState(500);
   const [isResizing, setIsResizing] = useState(false);
+  
+  // Hybrid approach states
+  const [sources, setSources] = useState(['newspaper', 'reddit']);
+  const [mode, setMode] = useState('sequential'); // Default to sequential
+  const [hybridResults, setHybridResults] = useState(null);
+  const [showMergePrompt, setShowMergePrompt] = useState(false);
+  
+  // Source selection handlers
+  const handleSourceChange = (source) => {
+    setSources(prev => 
+      prev.includes(source) 
+        ? prev.filter(s => s !== source)
+        : [...prev, source]
+    );
+  };
+  
   const navigate = useNavigate();
   const resizeRef = useRef(null);
 
@@ -20,19 +36,114 @@ function GenerateWords() {
     try {
       setLoading(true);
       setError(null);
-      // Run the comprehensive analysis
-      const response = await apiV2.generateCandidates();
+      
+      // Use hybrid approach but maintain original response format
+      const response = await apiV2.hybridGenerateCandidates({
+        sources: sources,
+        mode: mode
+      });
+      
       setAnalysisComplete(true);
-      setAiCandidates(response.data.ai_candidates || 'কোনো AI প্রার্থী পাওয়া যায়নি');
+      setHybridResults(response.data);
+      
+      // Debug log to check response structure
+      console.log("=== Backend Response Debug ===");
+      console.log("Full response.data:", response.data);
+      console.log("merge_prompt:", response.data.merge_prompt);
+      console.log("final_llm_response:", response.data.final_llm_response);
+      console.log("merge_statistics:", response.data.merge_statistics);
+      console.log("=== End Debug ===");
+      
+      // Create comprehensive response including individual source responses
+      let candidatesText = '';
+      
+      // Add individual source responses
+      if (response.data.results) {
+        candidatesText += "🔍 উৎস-ভিত্তিক LLM বিশ্লেষণ:\n";
+        candidatesText += "=" + "=".repeat(50) + "\n\n";
+        
+        for (const [source, result] of Object.entries(response.data.results)) {
+          if (source === 'newspaper') {
+            candidatesText += "📰 সংবাদপত্র থেকে LLM বিশ্লেষণ:\n";
+            candidatesText += "-".repeat(30) + "\n";
+            candidatesText += result.raw_response || 'কোনো প্রতিক্রিয়া পাওয়া যায়নি';
+          } else if (source === 'reddit') {
+            candidatesText += "📡 Reddit থেকে LLM বিশ্লেষণ:\n";
+            candidatesText += "-".repeat(30) + "\n";
+            
+            // Show subreddit-wise responses
+            if (result.subreddit_results && result.subreddit_results.length > 0) {
+              candidatesText += "🔥 সাবরেডিট-ভিত্তিক ইমার্জিং শব্দ:\n";
+              result.subreddit_results.forEach((subResult, idx) => {
+                if (subResult.status === 'success' && subResult.emerging_word) {
+                  candidatesText += `  ${idx + 1}. r/${subResult.subreddit}: ${subResult.emerging_word}\n`;
+                }
+              });
+              candidatesText += "\n";
+              
+              // Show individual subreddit responses
+              candidatesText += "📋 সাবরেডিট LLM প্রতিক্রিয়া:\n";
+              result.subreddit_results.forEach((subResult, idx) => {
+                if (subResult.status === 'success' && subResult.raw_response) {
+                  candidatesText += `\n🔸 r/${subResult.subreddit}:\n`;
+                  candidatesText += subResult.raw_response + "\n";
+                }
+              });
+            }
+          }
+          candidatesText += "\n" + "=".repeat(60) + "\n\n";
+        }
+      }
+      
+      // Add merge analysis
+      if (response.data.final_llm_response) {
+        console.log("=== Adding Merge Analysis ===");
+        console.log("Has merge_prompt:", !!response.data.merge_prompt);
+        console.log("merge_prompt content:", response.data.merge_prompt);
+        
+        candidatesText += "🔀 চূড়ান্ত সমন্বিত বিশ্লেষণ:\n";
+        candidatesText += "=" + "=".repeat(50) + "\n\n";
+        
+        // Show merge statistics if available  
+        if (response.data.merge_statistics) {
+          candidatesText += "📊 মার্জ পরিসংখ্যান:\n";
+          candidatesText += `-  মোট ইনপুট শব্দ: ${response.data.merge_statistics.total_input_words}\n`;
+          candidatesText += `-  চূড়ান্ত আউটপুট শব্দ: ${response.data.merge_statistics.final_output_words}\n`;
+          candidatesText += `-  সোর্স সংখ্যা: ${response.data.merge_statistics.sources_merged}\n\n`;
+        }
+        
+        candidatesText += "🤖 মার্জ প্রম্পট:\n";
+        candidatesText += "-".repeat(20) + "\n";
+        if (response.data.merge_prompt) {
+          candidatesText += response.data.merge_prompt + "\n\n";
+          console.log("✅ Added merge prompt to display");
+        } else {
+          candidatesText += "❌ কোনো মার্জ প্রম্পট পাওয়া যায়নি\n\n";
+          console.log("❌ No merge prompt found in response");
+        }
+        candidatesText += "🎯 চূড়ান্ত LLM প্রতিক্রিয়া:\n";
+        candidatesText += "-".repeat(25) + "\n";
+        candidatesText += response.data.final_llm_response;
+      } else if (response.data.final_trending_words && response.data.final_trending_words.length > 0) {
+        candidatesText += "🎯 চূড়ান্ত ট্রেন্ডিং শব্দ:\n";
+        candidatesText += "=" + "=".repeat(30) + "\n\n";
+        candidatesText += response.data.final_trending_words.map((word, index) => `${index + 1}. ${word}`).join('\n');
+      } else {
+        candidatesText = 'কোনো ট্রেন্ডিং শব্দ পাওয়া যায়নি';
+      }
+      
+      setAiCandidates(candidatesText);
+      
     } catch (err) {
-      let msg = 'বিশ্লেষণ চালাতে ব্যর্থ';
+      let msg = 'হাইব্রিড বিশ্লেষণ চালাতে ব্যর্থ';
       if (err.response && err.response.data && err.response.data.detail) {
         msg += `: ${err.response.data.detail}`;
       }
       setError(msg);
       setAnalysisComplete(false);
       setAiCandidates('');
-      console.error('Analysis error:', err);
+      setHybridResults(null);
+      console.error('Hybrid analysis error:', err);
     } finally {
       setLoading(false);
     }
@@ -111,70 +222,83 @@ function GenerateWords() {
   const parseCandidates = (candidatesText) => {
     if (!candidatesText) return [];
     
-    const keywords = [];
+    let keywords = [];
     const lines = candidatesText.split('\n');
-    let inAISection = false;
+    let inFinalSection = false;
+    let inTrendingSection = false;
     
     // Debug log
-    console.log("=== Parsing Candidates Debug ===");
+    console.log("=== Parsing Candidates for Quick Selection ===");
     console.log("Total lines:", lines.length);
     
+    // First, try to find the final merged trending words section
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i];
       const trimmed = line.trim();
       
-      // Look for AI Generated Trending Words section
-      if (trimmed.includes('🤖 AI Generated Trending Words:')) {
-        console.log("Found AI section start at line", i);
-        inAISection = true;
+      // Look for final trending words section
+      if (trimmed.includes('চূড়ান্ত ট্রেন্ডিং শব্দ') || trimmed.includes('চূড়ান্ত LLM প্রতিক্রিয়া') || trimmed.includes('🎯')) {
+        inFinalSection = true;
+        console.log("Found final section at line:", i, "->", trimmed);
         continue;
       }
       
-      // Stop when we reach another section (look for various section markers)
-      if (inAISection && (
-        trimmed.includes('💾 Database Status:') || 
-        trimmed.includes('📊 NLP') ||
-        trimmed.includes('📋 সম্পূর্ণ AI প্রার্থিতালিকা:') ||
-        trimmed.includes('📊 Groq API তে পাঠানো Combined Text') ||
-        trimmed.includes('='))) {
-        console.log("Found section end at line", i, ":", trimmed.substring(0, 50));
-        break;
+      // Look for numbered trending words pattern in final section
+      if (inFinalSection && (trimmed.includes('ট্রেন্ডিং শব্দ') || trimmed.includes('(১৫টি)') || /^\d+\.\s/.test(trimmed) || /^[১-৯০]/.test(trimmed))) {
+        inTrendingSection = true;
+        console.log("Found trending words section at line:", i, "->", trimmed);
+        
+        // If this line itself has a numbered item, process it
+        if (/^\d+\.\s/.test(trimmed) || /^[১-৯০]/.test(trimmed)) {
+          let cleanedLine = trimmed
+            .replace(/^\d+\.\s*/, '') // Remove English numbers
+            .replace(/^[১-৯০]+\.\s*/, '') // Remove Bengali numbers  
+            .replace(/^\[/, '').replace(/\]$/, '') // Remove brackets
+            .trim();
+          
+          if (cleanedLine.length > 1 && /[\u0980-\u09FF]/.test(cleanedLine)) {
+            keywords.push(cleanedLine);
+            console.log("Added from final section:", cleanedLine);
+          }
+        }
+        continue;
       }
       
-      // Extract keywords from AI section
-      if (inAISection && trimmed.length > 0) {
-        // Remove numbering if present (1. , 2. , etc.)
-        let cleanedLine = trimmed.replace(/^\d+\.\s*/, '').trim();
-        // Remove Bengali numbering (১. , ২. , etc.)
-        cleanedLine = cleanedLine.replace(/^[\u09E6-\u09EF]+\.\s*/, '').trim();
-        // Remove markdown formatting
-        cleanedLine = cleanedLine.replace(/\*\*([^*]+)\*\*/g, '$1'); // Remove **bold**
-        cleanedLine = cleanedLine.replace(/\*([^*]+)\*/g, '$1');     // Remove *italic*
-        cleanedLine = cleanedLine.replace(/`([^`]+)`/g, '$1');       // Remove `code`
-        // Remove quotation marks around phrases
-        cleanedLine = cleanedLine.replace(/^["'](.+)["']$/, '$1');
-        cleanedLine = cleanedLine.trim();
+      // If we're in trending section, look for numbered items (IMPROVED BENGALI PARSING)
+      if (inTrendingSection && (
+        /^\d+\.\s/.test(trimmed) || // English numbers: 1. 2. etc.
+        /^[১-৯০]+\.\s/.test(trimmed) || // Bengali numbers
+        /^\d+\s*[\.\:]/.test(trimmed) // Numbers with dots or colons
+      )) {
+        let cleanedLine = trimmed
+          .replace(/^\d+\s*[\.\:]\s*/, '') // Remove English numbers
+          .replace(/^[১-৯০]+\s*[\.\:]\s*/, '') // Remove Bengali numbers (FIXED)
+          .replace(/^\[/, '').replace(/\]$/, '') // Remove brackets
+          .replace(/^["'](.+)["']$/, '$1') // Remove quotes
+          .replace(/^r\/[a-zA-Z0-9_]+:\s*/, '') // Remove subreddit prefixes like "r/bangladesh: "
+          .trim();
         
-        console.log("Processing line:", trimmed, "-> cleaned:", cleanedLine);
-        
-        // Skip empty lines and section headers
-        if (cleanedLine && 
-            !cleanedLine.includes('trending শব্দ/বাক্যাংশ') && 
-            !cleanedLine.includes('টি)') &&
-            !cleanedLine.includes('❌') &&
+        if (cleanedLine.length > 1 && 
+            /[\u0980-\u09FF]/.test(cleanedLine) &&
+            !cleanedLine.includes('❌') && 
             !cleanedLine.includes('Error') &&
-            cleanedLine.length > 1) {
+            !cleanedLine.includes('emerging word') &&
+            !cleanedLine.includes('সাবরেডিট')) {
           keywords.push(cleanedLine);
-          console.log("Added keyword:", cleanedLine);
+          console.log("Added trending word:", cleanedLine);
         }
+      }
+      
+      // Stop if we hit another major section  
+      if (inFinalSection && (trimmed.includes('='*10) || trimmed.includes('---'))) {
+        break;
       }
     }
     
-    // Fallback: If no AI section found, try to extract numbered items directly
+    // Fallback 1: If no final section found, look for any numbered Bengali words
     if (keywords.length === 0) {
-      console.log("No AI section found, trying fallback parsing...");
+      console.log("No final section found, trying fallback parsing...");
       
-      // Look for lines that match pattern: number. Bengali text
       for (let i = 0; i < lines.length; i++) {
         const line = lines[i];
         const trimmed = line.trim();
@@ -198,9 +322,15 @@ function GenerateWords() {
       }
     }
     
+    // Fallback 2: Try to get from hybridResults final_trending_words if parsing failed
+    if (keywords.length === 0 && hybridResults && hybridResults.final_trending_words) {
+      console.log("Using fallback from hybridResults.final_trending_words");
+      keywords = hybridResults.final_trending_words.slice(0, 15);
+    }
+    
     console.log("Final parsed candidates:", keywords);
     console.log("=== End Debug ===");
-    return keywords.slice(0, 15); // Show 15 AI generated words
+    return keywords.slice(0, 15); // Show max 15 words for quick selection
   };
 
   if (success) {
@@ -220,9 +350,73 @@ function GenerateWords() {
     <div className={`container mx-auto px-4 py-12 bg-white min-h-[calc(100vh-4rem)] flex flex-col justify-center ${isResizing ? 'no-select' : ''}`}>
       <div className="text-center mb-10">
         <h1 className="text-3xl md:text-4xl font-extrabold tracking-tight text-gray-900 mb-2 flex items-center justify-center gap-2">
-          <Sparkles className="w-8 h-8 text-pink-500" /> ট্রেন্ডিং শব্দ উৎপাদন
+          <Sparkles className="w-8 h-8 text-pink-500" /> হাইব্রিড ট্রেন্ডিং শব্দ উৎপাদন
         </h1>
-        <p className="text-lg text-gray-600">AI এবং NLP বিশ্লেষণ ব্যবহার করে বর্তমান ট্রেন্ডিং শব্দ খুঁজে বের করুন</p>
+        <p className="text-lg text-gray-600">সংবাদ ও Reddit থেকে AI ও NLP বিশ্লেষণ ব্যবহার করে বর্তমান ট্রেন্ডিং শব্দ খুঁজে বের করুন</p>
+      </div>
+
+      {/* Source and Mode Selection */}
+      <div className="max-w-4xl mx-auto mb-8">
+        <div className="bg-white shadow-md rounded-lg p-6">
+          <h2 className="text-xl font-semibold mb-4 text-center">বিশ্লেষণ কনফিগারেশন</h2>
+          
+          {/* Source Selection */}
+          <div className="mb-6">
+            <label className="block text-sm font-medium text-gray-700 mb-3">ডেটা সোর্স নির্বাচন করুন:</label>
+            <div className="flex flex-wrap gap-4 justify-center">
+              <label className="flex items-center">
+                <input
+                  type="checkbox"
+                  checked={sources.includes('newspaper')}
+                  onChange={() => handleSourceChange('newspaper')}
+                  className="mr-2 h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                />
+                <span className="text-sm font-medium text-gray-700">📰 সংবাদপত্র</span>
+              </label>
+              <label className="flex items-center">
+                <input
+                  type="checkbox"
+                  checked={sources.includes('reddit')}
+                  onChange={() => handleSourceChange('reddit')}
+                  className="mr-2 h-4 w-4 text-red-600 focus:ring-red-500 border-gray-300 rounded"
+                />
+                <span className="text-sm font-medium text-gray-700">📡 Reddit</span>
+              </label>
+            </div>
+          </div>
+
+          {/* Mode Selection */}
+          <div className="mb-4">
+            <label className="block text-sm font-medium text-gray-700 mb-3">প্রক্রিয়াকরণ মোড:</label>
+            <div className="flex gap-4 justify-center">
+              <label className="flex items-center">
+                <input
+                  type="radio"
+                  name="mode"
+                  value="sequential"
+                  checked={mode === 'sequential'}
+                  onChange={(e) => setMode(e.target.value)}
+                  className="mr-2 h-4 w-4 text-green-600 focus:ring-green-500"
+                />
+                <span className="text-sm font-medium text-gray-700">⏭️ ক্রমানুসারে (Sequential)</span>
+              </label>
+              <label className="flex items-center">
+                <input
+                  type="radio"
+                  name="mode"
+                  value="parallel"
+                  checked={mode === 'parallel'}
+                  onChange={(e) => setMode(e.target.value)}
+                  className="mr-2 h-4 w-4 text-purple-600 focus:ring-purple-500"
+                />
+                <span className="text-sm font-medium text-gray-700">🔄 সমান্তরাল (Parallel)</span>
+              </label>
+            </div>
+            <p className="text-xs text-gray-500 text-center mt-2">
+              ক্রমানুসারে: একে একে প্রক্রিয়া (ডিফল্ট) | সমান্তরাল: একসাথে প্রক্রিয়া (দ্রুততর)
+            </p>
+          </div>
+        </div>
       </div>
 
       {error && (
@@ -233,23 +427,30 @@ function GenerateWords() {
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-8 max-w-3xl mx-auto">
         <div className="bg-white shadow-md rounded-lg p-8 flex flex-col justify-between items-center text-center">
-          <h2 className="text-xl font-semibold mb-2">১. বিশ্লেষণ চালান</h2>
-          <p className="text-gray-600 mb-4">সংবাদ ও সোশ্যাল মিডিয়া ডেটা থেকে ট্রেন্ডিং শব্দ বিশ্লেষণ করুন</p>
+          <h2 className="text-xl font-semibold mb-2">১. হাইব্রিড বিশ্লেষণ চালান</h2>
+          <p className="text-gray-600 mb-4">
+            নির্বাচিত সোর্স ({sources.join(', ')}) থেকে {mode === 'sequential' ? 'ক্রমানুসারে' : 'সমান্তরালে'} ট্রেন্ডিং শব্দ বিশ্লেষণ করুন
+          </p>
           <button
-            className={`w-full flex items-center justify-center gap-2 px-6 py-2 rounded font-semibold text-white transition ${loading ? 'bg-gray-400' : 'bg-blue-600 hover:bg-blue-700'} shadow`}
+            className={`w-full flex items-center justify-center gap-2 px-6 py-2 rounded font-semibold text-white transition ${loading || sources.length === 0 ? 'bg-gray-400' : 'bg-blue-600 hover:bg-blue-700'} shadow`}
             onClick={runAnalysis}
-            disabled={loading}
+            disabled={loading || sources.length === 0}
           >
             {loading ? (
               <svg className="animate-spin h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"></path></svg>
             ) : (
               <RefreshCw className="w-5 h-5" />
             )}
-            {loading ? 'বিশ্লেষণ চলছে...' : 'বিশ্লেষণ শুরু করুন'}
+            {loading ? 'বিশ্লেষণ চলছে...' : 'হাইব্রিড বিশ্লেষণ শুরু করুন'}
           </button>
+          {sources.length === 0 && (
+            <div className="bg-yellow-100 border border-yellow-300 text-yellow-800 px-4 py-2 rounded mt-4 text-center w-full">
+              ⚠️ অন্তত একটি সোর্স নির্বাচন করুন
+            </div>
+          )}
           {analysisComplete && (
             <div className="bg-green-100 border border-green-300 text-green-800 px-4 py-2 rounded mt-4 text-center w-full">
-              <span className="mr-2">✅</span> বিশ্লেষণ সম্পূর্ণ! AI প্রার্থী তৈরি হয়েছে।
+              <span className="mr-2">✅</span> হাইব্রিড বিশ্লেষণ সম্পূর্ণ! ফাইনাল ট্রেন্ডিং শব্দ তৈরি হয়েছে।
             </div>
           )}
         </div>

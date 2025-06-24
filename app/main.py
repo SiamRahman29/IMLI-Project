@@ -5,6 +5,11 @@ from app.routes import routes_new
 from fastapi.middleware.cors import CORSMiddleware
 import os
 from dotenv import load_dotenv
+import warnings
+
+# Suppress PRAW async warnings globally
+warnings.filterwarnings("ignore", message=".*PRAW.*asynchronous.*")
+warnings.filterwarnings("ignore", message=".*using PRAW in an asynchronous environment.*")
 
 # Load environment variables from .env file
 load_dotenv()
@@ -23,8 +28,11 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Print the GROQ_API_KEY value at startup for debugging when running the server
-print('GROQ_API_KEY:', os.environ.get('GROQ_API_KEY'))
+# Print API keys at startup for debugging
+print('GROQ_API_KEY (Default):', os.environ.get('GROQ_API_KEY'))
+print('GROQ_API_KEY_NEWSPAPER:', os.environ.get('GROQ_API_KEY_NEWSPAPER'))
+print('GROQ_API_KEY_REDDIT:', os.environ.get('GROQ_API_KEY_REDDIT'))
+print('GROQ_API_KEY_COMBINE:', os.environ.get('GROQ_API_KEY_COMBINE'))
 print('FACEBOOK_GRAPH_API_KEY:', os.environ.get('FACEBOOK_GRAPH_API_KEY'))
 print('SERPAPI_API_KEY:', os.environ.get('SERPAPI_API_KEY'))
 
