@@ -6,4 +6,5 @@ words.db
 settings.json
 *.pyc
 fb_*.html
-server.log
+*.log
+**/*.log

@@ -1,6 +1,6 @@
 """
 Social Media Scraping Service for Bengali Content
-Implements scraping from Facebook public pages and Twitter-like platforms
+Implements scraping from Reddit, Facebook public pages and Twitter-like platforms
 """
 
 import requests
@@ -17,9 +17,13 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import TimeoutException, NoSuchElementException
 
+# Import Reddit scraper
+from .reddit_scraper import RedditScraper
+
 
 class SocialMediaScraper:
-    ENABLE_SOCIAL_MEDIA_SCRAPING = False  # Disabled as per user request
+    ENABLE_SOCIAL_MEDIA_SCRAPING = True  # Enable for Reddit integration
+    ENABLE_REDDIT_SCRAPING = True  # Reddit is enabled
 
     def __init__(self):
         self.headers = {
@@ -29,6 +33,9 @@ class SocialMediaScraper:
             'Accept-Encoding': 'gzip, deflate',
             'Connection': 'keep-alive',
         }
+        
+        # Initialize Reddit scraper
+        self.reddit_scraper = RedditScraper() if self.ENABLE_REDDIT_SCRAPING else None
         
     def setup_selenium_driver(self) -> webdriver.Chrome:
         """Setup Selenium WebDriver for JavaScript-heavy pages"""
@@ -94,11 +101,70 @@ class SocialMediaScraper:
         #     return []
         return []
 
+    def scrape_reddit_content(self, hours_back: int = 24) -> List[Dict]:
+        """
+        Scrape Reddit content from Bangladesh-related subreddits
+        
+        Args:
+            hours_back: Hours to look back for recent content
+            
+        Returns:
+            List of Reddit content items formatted for social media analysis
+        """
+        if not self.ENABLE_REDDIT_SCRAPING or not self.reddit_scraper:
+            print("[INFO] Reddit scraping is disabled")
+            return []
+        
+        try:
+            print(f"[INFO] Scraping Reddit content from last {hours_back} hours...")
+            
+            # Get Bangladesh-related content
+            reddit_content = self.reddit_scraper.scrape_bangladesh_content(
+                hours_back=hours_back,
+                posts_per_subreddit=20
+            )
+            
+            # Format for social media analysis
+            formatted_content = []
+            for item in reddit_content:
+                # Combine title, content, and top comments for analysis
+                combined_text = f"{item['title']} {item['content']}"
+                if item.get('comments'):
+                    # Add top 3 comments
+                    top_comments = " ".join(item['comments'][:3])
+                    combined_text += f" {top_comments}"
+                
+                formatted_item = {
+                    'content': combined_text,
+                    'source': 'reddit',
+                    'platform': 'social_media',
+                    'subreddit': item['subreddit'],
+                    'score': item['score'],
+                    'comments_count': item['num_comments'],
+                    'engagement_score': item['engagement_score'],
+                    'url': item['permalink'],
+                    'scraped_date': item['timestamp'],
+                    'post_id': item['id'],
+                    'author': item['author'],
+                    'flair': item.get('flair'),
+                    'original_data': item  # Keep original for reference
+                }
+                
+                formatted_content.append(formatted_item)
+            
+            print(f"[SUCCESS] Retrieved {len(formatted_content)} Reddit items")
+            return formatted_content
+            
+        except Exception as e:
+            print(f"[ERROR] Reddit scraping failed: {e}")
+            return []
+
     def scrape_facebook_public_pages(self) -> List[Dict]:
         """
         Scrape Bengali Facebook public pages using the Graph API
         """
         # Disabled: Facebook scraping
+        print("[INFO] Facebook scraping is disabled")
         return []
 
     def scrape_youtube_comments(self) -> List[Dict]:
@@ -106,6 +172,7 @@ class SocialMediaScraper:
         Scrape comments from popular Bengali YouTube channels
         """
         # Disabled: YouTube scraping
+        print("[INFO] YouTube scraping is disabled")
         return []
 
     def scrape_twitter_alternatives(self) -> List[Dict]:
@@ -113,6 +180,7 @@ class SocialMediaScraper:
         Scrape Twitter alternatives for Bengali content
         """
         # Disabled: Twitter-alternative scraping
+        print("[INFO] Twitter alternatives scraping is disabled")
         return []
 
     def _contains_bengali_text(self, text: str) -> bool:
@@ -122,10 +190,26 @@ class SocialMediaScraper:
 
     def get_all_social_media_content(self) -> List[Dict]:
         """
-        Get content from all social media sources
+        Get content from all social media sources (currently Reddit only)
         """
-        print("[INFO] Social media scraping is disabled by user request.")
-        return []
+        if not self.ENABLE_SOCIAL_MEDIA_SCRAPING:
+            print("[INFO] Social media scraping is disabled")
+            return []
+        
+        all_content = []
+        
+        # Reddit content
+        if self.ENABLE_REDDIT_SCRAPING:
+            reddit_content = self.scrape_reddit_content()
+            all_content.extend(reddit_content)
+            print(f"[INFO] Added {len(reddit_content)} Reddit items")
+        
+        # Future: Add other platforms here
+        # facebook_content = self.scrape_facebook_public_pages()
+        # all_content.extend(facebook_content)
+        
+        print(f"[INFO] Total social media content: {len(all_content)} items")
+        return all_content
 
 
 class BengaliSocialMediaTrends:
@@ -151,16 +235,28 @@ class BengaliSocialMediaTrends:
 # Example usage functions
 def scrape_social_media_content() -> List[Dict]:
     """
-    Main function to scrape social media content
+    Main function to scrape social media content (Reddit)
     """
-    # Disabled: Social media scraping
-    return []
+    scraper = SocialMediaScraper()
+    return scraper.get_all_social_media_content()
 
 def get_social_media_trends() -> List[Dict]:
     """
     Get trending analysis from social media
     """
-    # Disabled: Social media scraping
+    trends_analyzer = BengaliSocialMediaTrends()
+    return trends_analyzer.get_trending_topics()
+
+def get_reddit_trending_topics() -> List[Dict]:
+    """
+    Get trending topics specifically from Reddit
+    """
+    scraper = SocialMediaScraper()
+    if scraper.reddit_scraper:
+        content = scraper.scrape_reddit_content()
+        return scraper.reddit_scraper.get_trending_topics(
+            [item['original_data'] for item in content if 'original_data' in item]
+        )
     return []
 
 def print_scraped_posts_pretty(posts: List[Dict]):

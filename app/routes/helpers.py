@@ -1221,8 +1221,8 @@ def parse_news(articles: List[Dict]) -> str:
 
 
 def generate_trending_word_candidates_realtime_with_save(db: Session, limit: int = 15) -> str:
-    """Generate trending word candidates using REAL-TIME analysis and save top 15 LLM words to database"""
-    print("Starting real-time trending analysis with database save...")
+    """Generate trending word candidates using REAL-TIME analysis with newspaper + social media integration and save top 15 LLM words to database"""
+    print("Starting real-time trending analysis with newspaper + social media integration...")
     print("=" * 60)
     
     from datetime import date
@@ -1238,6 +1238,17 @@ def generate_trending_word_candidates_realtime_with_save(db: Session, limit: int
             texts.append(heading)
     
     print(f"📰 Extracted {len(texts)} text segments from {len(articles)} scraped articles")
+    
+    # Fetch social media content (NEW: Reddit integration)
+    social_media_content = []
+    try:
+        print("📱 Fetching social media content (Reddit)...")
+        from app.services.social_media_scraper import scrape_social_media_content
+        social_media_content = scrape_social_media_content()
+        print(f"📱 Retrieved {len(social_media_content)} social media items")
+    except Exception as e:
+        print(f"⚠️ Social media scraping failed: {e}")
+        social_media_content = []
     
     # Fetch Google Trends
     google_trends = get_google_trends_bangladesh()
@@ -1276,19 +1287,37 @@ def generate_trending_word_candidates_realtime_with_save(db: Session, limit: int
     texts.extend([' '.join(words) for words in google_trends if words])
     texts.extend([' '.join(words) for words in youtube_trends if words])
     texts.extend([' '.join(trend) for trend in serpapi_trends if trend])
+    
+    # Add social media content to texts
+    social_media_texts = []
+    if social_media_content:
+        print(f"🔄 Processing {len(social_media_content)} social media items...")
+        for item in social_media_content:
+            content_text = item.get('content', '').strip()
+            if content_text and len(content_text) > 10:
+                # Clean social media text similar to news
+                cleaned_social = re.sub(r'http\S+|www\S+|https\S+', '', content_text)  # Remove URLs
+                cleaned_social = re.sub(r'@\w+|#\w+', '', cleaned_social)  # Remove mentions/hashtags
+                cleaned_social = re.sub(r'\s+', ' ', cleaned_social).strip()
+                
+                if len(cleaned_social) > 5:
+                    social_media_texts.append(cleaned_social)
+        
+        print(f"📱 Processed {len(social_media_texts)} social media texts")
+    
     # Use cleaned texts for further processing
-    all_texts = cleaned_texts + [' '.join(words) for words in google_trends if words] + [' '.join(words) for words in youtube_trends if words] + [' '.join(trend) for trend in serpapi_trends if trend]
+    all_texts = cleaned_texts + social_media_texts + [' '.join(words) for words in google_trends if words] + [' '.join(words) for words in youtube_trends if words] + [' '.join(trend) for trend in serpapi_trends if trend]
     
     if not all_texts:
-        msg = "No articles or trends available for analysis"
+        msg = "No articles, social media, or trends available for analysis"
         print(msg)
         return msg
     
-    # --- AI Response (Groq) ---
+    # --- Mixed Content Processing for LLM ---
     from app.services.advanced_bengali_nlp import TrendingBengaliAnalyzer
     analyzer = TrendingBengaliAnalyzer()
-    # Use optimized text processing for Groq token limits (COMPLETE HEADINGS MODE)
-    print(f"🔧 Using CATEGORY-AWARE optimization for {len(all_texts)} total texts...")
+    
+    print(f"🔧 Processing mixed content: {len(articles)} newspaper articles + {len(social_media_content)} social media items...")
     
     # Prepare articles with metadata for category detection
     articles_with_metadata = []
@@ -1299,6 +1328,43 @@ def generate_trending_word_candidates_realtime_with_save(db: Session, limit: int
             'content': article.get('heading', ''),  # Using heading as content
             'source': article.get('source', 'unknown')
         })
+    
+    # Use mixed content processing if we have both types
+    if articles_with_metadata and social_media_content:
+        print("🔀 Using mixed content processing for newspaper + social media...")
+        processed_content = process_mixed_content_for_llm(
+            articles_with_metadata, 
+            social_media_content, 
+            analyzer, 
+            max_chars=12000
+        )
+        combined_text = processed_content['combined_text']
+        
+        print(f"📊 Mixed Content Statistics:")
+        print(f"   📰 Newspaper: {processed_content['source_stats']['newspaper_count']} articles")
+        print(f"   📱 Social Media: {processed_content['source_stats']['social_media_count']} items")
+        print(f"   🔗 Combined Text: {len(combined_text)} chars")
+    
+    elif articles_with_metadata:
+        print("📰 Using newspaper-only processing...")
+        # Fallback to newspaper-only category processing
+        combined_text = optimize_text_for_ai_analysis_with_categories(
+            articles_with_metadata, 
+            analyzer, 
+            max_chars=12000,
+            max_articles=150,
+            enable_categories=True
+        )
+    
+    else:
+        print("⚠️ No newspaper articles available, using basic text optimization...")
+        # Fallback to basic processing
+        combined_text = optimize_text_for_ai_analysis(
+            all_texts,
+            analyzer,
+            max_chars=12000,
+            max_articles=150
+        )
     
     # Add trend data as simple text fallback
     for trend_text in all_texts[len(articles):]:  # Trends after articles
@@ -1375,16 +1441,26 @@ def generate_trending_word_candidates_realtime_with_save(db: Session, limit: int
             print(f"❌ Failed to initialize Groq client: {client_error}")
             raise client_error
         
-        prompt = f"""
-                    নিচের বাংলা টেক্সট থেকে আজকের জন্য সবচেয়ে গুরুত্বপূর্ণ এবং ট্রেন্ডিং {limit}টি শব্দ বা বাক্যাংশ খুঁজে বের করো। শব্দ/বাক্যাংশগুলো অবশ্যই বিশেষ্য (noun) এবং/অথবা বিশেষণ (adjective) প্রকৃতির হতে হবে এবং অর্থবহ, জনপ্রিয় ও আলোচিত বিষয়ের প্রতিনিধিত্ব করবে।
-                    📋 টেক্সট ফরম্যাট বোঝার নির্দেশনা:
+        # Create conditional prompt based on content type
+        has_social_media = social_media_content and len(social_media_content) > 0
+        has_newspapers = articles and len(articles) > 0
+        
+        if has_newspapers and has_social_media:
+            # Mixed content prompt
+            prompt = create_mixed_content_llm_prompt(combined_text, limit)
+            print("🔀 Using mixed content prompt for newspaper + social media analysis")
+        elif has_newspapers:
+            # Newspaper-only prompt  
+            prompt = f"""
+                    নিচের বাংলা সংবাদ টেক্সট থেকে আজকের জন্য সবচেয়ে গুরুত্বপূর্ণ এবং ট্রেন্ডিং {limit}টি শব্দ বা বাক্যাংশ খুঁজে বের করো। শব্দ/বাক্যাংশগুলো অবশ্যই বিশেষ্য (noun) এবং/অথবা বিশেষণ (adjective) প্রকৃতির হতে হবে এবং অর্থবহ, জনপ্রিয় ও আলোচিত বিষয়ের প্রতিনিধিত্ব করবে।
+                    📋 সংবাদ টেক্সট ফরম্যাট বোঝার নির্দেশনা:
                     - টেক্সটটি category-wise সাজানো (রাজনীতি: content | অর্থনীতি: content)
                     - প্রতিটি category তে একাধিক article bullet point (•) দিয়ে আলাদা করা
                     - সব category থেকে সমানভাবে গুরুত্বপূর্ণ শব্দ নির্বাচন করো
                     - রাজনীতি ও অর্থনীতি category কে বেশি প্রাধান্য দাও
                     অবশ্যই অনুসরণীয় নিয়মাবলী:
                     1.শুধুমাত্র বিশেষ্য (noun) এবং বিশেষণ (adjective) ভিত্তিক শব্দ/বাক্যাংশ দাও
-                    2.ট্রেন্ডিং বিষয়/থিম খুঁজে বের করো - যা বর্তমানে সংবাদ, সোশ্যাল মিডিয়া বা জনমানসে সবচেয়ে আলোচিত এবং প্রাসঙ্গিক।
+                    2.ট্রেন্ডিং বিষয়/থিম খুঁজে বের করো - যা বর্তমানে সংবাদে সবচেয়ে আলোচিত এবং প্রাসঙ্গিক।
                     3.প্রতিটি টপিকের জন্য শুধুমাত্র একটি প্রতিনিধিত্বকারী শব্দ/বাক্যাংশ দাও - একই বিষয়ের একাধিক রূপ এড়িয়ে চলো।
                     4.কোনো ব্যক্তির নাম বা ব্যক্তি-নির্দিষ্ট উল্লেখ বাদ দাও (যেমন: ট্রাম্প, হাসিনা, মোদি)।
                     5.সংক্ষিপ্ত ও স্পষ্ট বাক্যাংশ দাও - সর্বোচ্চ ২-৪ শব্দ, দীর্ঘ বাক্য এড়িয়ে চলো।
@@ -1392,8 +1468,34 @@ def generate_trending_word_candidates_realtime_with_save(db: Session, limit: int
                     7.শুধুমাত্র বিষয়বস্তু/থিম-ভিত্তিক concrete noun বা adjective দাও - যা কোনো অর্থ বহন করে
                     8.প্রতিটি শব্দ/বাক্যাংশ সংখ্যা দিয়ে আলাদা লাইনে লেখো (১., ২., ৩. ... {limit}. ইত্যাদি)।
                     9.শুধুমাত্র বাংলা শব্দ/বাক্যাংশ ব্যবহার করো - ইংরেজি বা অন্য ভাষার শব্দ এড়িয়ে চলো।
-                    10.ট্রেন্ডিং বিষয় নির্ধারণে সাম্প্রতিকতা ও জনপ্রিয়তা বিবেচনা করো - সাম্প্রতিক ঘটনা, সোশ্যাল মিডিয়া buzz, বা জনমানসের আগ্রহের ওপর ভিত্তি করে শব্দ/বাক্যাংশ নির্বাচন করো।
+                    10.সংবাদের গুরুত্ব ও প্রাসঙ্গিকতা বিবেচনা করো - সাম্প্রতিক ঘটনা ও জাতীয় গুরুত্বের বিষয়গুলোকে প্রাধান্য দাও।
                     11.অপ্রাসঙ্গিক বা সাধারণ শব্দ এড়িয়ে চলো - যেমন, সময়, জিনিস, বিষয়, যা নির্দিষ্ট কোনো ট্রেন্ড বা থিম প্রকাশ করে না।
+                    সংবাদ টেক্সট:
+                    {combined_text}
+
+                    আউটপুট ফরম্যাট:
+                    ট্রেন্ডিং শব্দ/বাক্যাংশ ({limit}টি):
+                    ১. [শব্দ/বাক্যাংশ]
+                    ২. [শব্দ/বাক্যাংশ]
+                    ৩. [শব্দ/বাক্যাংশ]
+                    ...
+                    {limit}. [শব্দ/বাক্যাংশ]
+                    """
+            print("📰 Using newspaper-only prompt")
+        else:
+            # Fallback prompt for other content
+            prompt = f"""
+                    নিচের বাংলা টেক্সট থেকে আজকের জন্য সবচেয়ে গুরুত্বপূর্ণ এবং ট্রেন্ডিং {limit}টি শব্দ বা বাক্যাংশ খুঁজে বের করো। শব্দ/বাক্যাংশগুলো অবশ্যই বিশেষ্য (noun) এবং/অথবা বিশেষণ (adjective) প্রকৃতির হতে হবে এবং অর্থবহ, জনপ্রিয় ও আলোচিত বিষয়ের প্রতিনিধিত্ব করবে।
+                    অবশ্যই অনুসরণীয় নিয়মাবলী:
+                    1.শুধুমাত্র বিশেষ্য (noun) এবং বিশেষণ (adjective) ভিত্তিক শব্দ/বাক্যাংশ দাও
+                    2.ট্রেন্ডিং বিষয়/থিম খুঁজে বের করো - যা বর্তমানে আলোচিত এবং প্রাসঙ্গিক।
+                    3.প্রতিটি টপিকের জন্য শুধুমাত্র একটি প্রতিনিধিত্বকারী শব্দ/বাক্যাংশ দাও - একই বিষয়ের একাধিক রূপ এড়িয়ে চলো।
+                    4.কোনো ব্যক্তির নাম বা ব্যক্তি-নির্দিষ্ট উল্লেখ বাদ দাও।
+                    5.সংক্ষিপ্ত ও স্পষ্ট বাক্যাংশ দাও - সর্বোচ্চ ২-৪ শব্দ।
+                    6.সাধারণ stop words এবং ক্রিয়া (verb) বাদ দাও।
+                    7.শুধুমাত্র বিষয়বস্তু/থিম-ভিত্তিক concrete noun বা adjective দাও।
+                    8.প্রতিটি শব্দ/বাক্যাংশ সংখ্যা দিয়ে আলাদা লাইনে লেখো (১., ২., ৩. ... {limit}. ইত্যাদি)।
+                    9.শুধুমাত্র বাংলা শব্দ/বাক্যাংশ ব্যবহার করো।
                     টেক্সট:
                     {combined_text}
 
@@ -1405,6 +1507,7 @@ def generate_trending_word_candidates_realtime_with_save(db: Session, limit: int
                     ...
                     {limit}. [শব্দ/বাক্যাংশ]
                     """
+            print("🔧 Using fallback prompt")
         print(f"📤 Sending request to Groq API...")
         print(f"📊 Prompt length: {len(prompt)} characters")
         
@@ -1626,41 +1729,16 @@ def generate_trending_word_candidates_realtime_with_save(db: Session, limit: int
     summary.append(original_combined_text)
     summary.append(f"{'='*50}")
     
-    # Add the COMPLETE LLM PROMPT for frontend viewing
-    summary.append(f"\n🤖 সম্পূর্ণ LLM Prompt:")
+    # Add the ACTUAL LLM PROMPT that was used for frontend viewing
+    summary.append(f"\n🤖 ব্যবহৃত LLM Prompt:")
+    if has_newspapers and has_social_media:
+        summary.append(f"📊 Content Type: Mixed (Newspaper + Social Media)")
+    elif has_newspapers:
+        summary.append(f"📰 Content Type: Newspaper Only")
+    else:
+        summary.append(f"🔧 Content Type: Fallback")
     summary.append(f"{'='*80}")
-    complete_prompt = f"""
-                    নিচের বাংলা টেক্সট থেকে আজকের জন্য সবচেয়ে গুরুত্বপূর্ণ এবং ট্রেন্ডিং {limit}টি শব্দ বা বাক্যাংশ খুঁজে বের করো। শব্দ/বাক্যাংশগুলো অবশ্যই বিশেষ্য (noun) এবং/অথবা বিশেষণ (adjective) ভিত্তিক হতে হবে।
-
-                    📋 টেক্সট ফরম্যাট বোঝার নির্দেশনা:
-                    - টেক্সটটি category-wise সাজানো (রাজনীতি: content | অর্থনীতি: content)
-                    - প্রতিটি category তে একাধিক article bullet point (•) দিয়ে আলাদা করা
-                    - সব category থেকে সমানভাবে গুরুত্বপূর্ণ শব্দ নির্বাচন করো
-                    - রাজনীতি ও অর্থনীতি category কে বেশি প্রাধান্য দাও
-                    অবশ্যই অনুসরণীয় নিয়মাবলী:
-                    1.শুধুমাত্র বিশেষ্য (noun) এবং বিশেষণ (adjective) ভিত্তিক শব্দ/বাক্যাংশ দাও
-                    2.ট্রেন্ডিং বিষয়/থিম খুঁজে বের করো - যা বর্তমানে সংবাদ, সোশ্যাল মিডিয়া বা জনমানসে সবচেয়ে আলোচিত এবং প্রাসঙ্গিক।
-                    3.প্রতিটি টপিকের জন্য শুধুমাত্র একটি প্রতিনিধিত্বকারী শব্দ/বাক্যাংশ দাও - একই বিষয়ের একাধিক রূপ এড়িয়ে চলো।
-                    4.কোনো ব্যক্তির নাম বা ব্যক্তি-নির্দিষ্ট উল্লেখ বাদ দাও (যেমন: ট্রাম্প, হাসিনা, মোদি)।
-                    5.সংক্ষিপ্ত ও স্পষ্ট বাক্যাংশ দাও - সর্বোচ্চ ২-৪ শব্দ, দীর্ঘ বাক্য এড়িয়ে চলো।
-                    6.সাধারণ stop words এবং ক্রিয়া (verb) বাদ দাও (যেমন: এই, সেই, করা, হওয়া, বলা, দেওয়া)।
-                    7.শুধুমাত্র বিষয়বস্তু/থিম-ভিত্তিক concrete noun বা adjective দাও - যা কোনো অর্থ বহন করে
-                    8.প্রতিটি শব্দ/বাক্যাংশ সংখ্যা দিয়ে আলাদা লাইনে লেখো (১., ২., ৩. ... {limit}. ইত্যাদি)।
-                    9.শুধুমাত্র বাংলা শব্দ/বাক্যাংশ ব্যবহার করো - ইংরেজি বা অন্য ভাষার শব্দ এড়িয়ে চলো।
-                    10.ট্রেন্ডিং বিষয় নির্ধারণে সাম্প্রতিকতা ও জনপ্রিয়তা বিবেচনা করো - সাম্প্রতিক ঘটনা, সোশ্যাল মিডিয়া buzz, বা জনমানসের আগ্রহের ওপর ভিত্তি করে শব্দ/বাক্যাংশ নির্বাচন করো।
-                    11.অপ্রাসঙ্গিক বা সাধারণ শব্দ এড়িয়ে চলো - যেমন, সময়, জিনিস, বিষয়, যা নির্দিষ্ট কোনো ট্রেন্ড বা থিম প্রকাশ করে না।
-                    টেক্সট:
-                    {original_combined_text}
-
-                    আউটপুট ফরম্যাট:
-                    ট্রেন্ডিং শব্দ/বাক্যাংশ ({limit}টি):
-                    ১. [শব্দ/বাক্যাংশ]
-                    ২. [শব্দ/বাক্যাংশ]
-                    ৩. [শব্দ/বাক্যাংশ]
-                    ...
-                    {limit}. [শব্দ/বাক্যাংশ]
-                    """
-    summary.append(complete_prompt)
+    summary.append(prompt)
     summary.append(f"{'='*80}")
     
     # Add heading at the beginning
@@ -1743,7 +1821,7 @@ def analyze_trending_content_and_store(db: Session, analyzer, content: List[Dict
                 
                 trending_phrase = TrendingPhrase(
                     date=target_date,
-                    phrase=keyword_clean,
+                    phrase=enhanced_score,
                     score=enhanced_score,
                     frequency=phrase_newspapers,  # Store newspaper count as frequency
                     phrase_type=phrase_type,
@@ -2275,3 +2353,139 @@ def optimize_text_for_ai_analysis_with_categories(texts, analyzer, max_chars=120
                 text_list.append(str(item))
         
         return optimize_text_for_ai_analysis(text_list, analyzer, max_chars, max_articles)
+
+def process_mixed_content_for_llm(newspaper_articles: List[Dict], social_media_content: List[Dict], 
+                                analyzer, max_chars: int = 12000) -> Dict[str, str]:
+    """
+    Process mixed newspaper and social media content for LLM analysis
+    Creates separate optimized texts for each source type
+    
+    Args:
+        newspaper_articles: List of newspaper articles with metadata
+        social_media_content: List of social media content items
+        analyzer: TrendingBengaliAnalyzer instance
+        max_chars: Maximum characters per source type
+        
+    Returns:
+        Dictionary with separate optimized texts for each source
+    """
+    print(f"🔄 Processing mixed content: {len(newspaper_articles)} newspaper + {len(social_media_content)} social media")
+    
+    result = {
+        'newspaper_text': '',
+        'social_media_text': '',
+        'combined_text': '',
+        'source_stats': {
+            'newspaper_count': len(newspaper_articles),
+            'social_media_count': len(social_media_content),
+            'total_items': len(newspaper_articles) + len(social_media_content)
+        }
+    }
+    
+    # Process newspaper content with categories
+    if newspaper_articles:
+        print("📰 Processing newspaper content with categories...")
+        newspaper_text = optimize_text_for_ai_analysis_with_categories(
+            newspaper_articles,
+            analyzer,
+            max_chars=max_chars // 2,  # Half for newspapers
+            max_articles=100,
+            enable_categories=True
+        )
+        result['newspaper_text'] = newspaper_text
+        print(f"📰 Newspaper text optimized: {len(newspaper_text)} chars")
+    
+    # Process social media content
+    if social_media_content:
+        print("📱 Processing social media content...")
+        
+        # Group social media content by platform/subreddit
+        platform_groups = defaultdict(list)
+        for item in social_media_content:
+            platform = item.get('subreddit', item.get('platform', 'unknown'))
+            # Extract text content for processing
+            text_content = item.get('content', '') or item.get('text_content', '')
+            if text_content:
+                platform_groups[platform].append(text_content)
+        
+        # Create platform-organized text
+        social_sections = []
+        remaining_chars = max_chars // 2  # Half for social media
+        
+        # Sort platforms by content volume (prioritize active subreddits)
+        sorted_platforms = sorted(platform_groups.keys(), 
+                                key=lambda x: len(platform_groups[x]), 
+                                reverse=True)
+        
+        for platform in sorted_platforms:
+            if remaining_chars <= 100:  # Leave some buffer
+                break
+                
+            platform_texts = platform_groups[platform]
+            
+            # Process this platform's content
+            platform_optimized = optimize_text_for_ai_analysis(
+                platform_texts,
+                analyzer,
+                max_chars=min(remaining_chars // len(sorted_platforms), 2000),
+                max_articles=len(platform_texts)
+            )
+            
+            if platform_optimized.strip():
+                section = f"📱{platform}: {platform_optimized}"
+                if len(section) < remaining_chars:
+                    social_sections.append(section)
+                    remaining_chars -= len(section)
+        
+        social_media_text = " | ".join(social_sections)
+        result['social_media_text'] = social_media_text
+        print(f"📱 Social media text optimized: {len(social_media_text)} chars")
+    
+    # Create combined text with source labels
+    combined_parts = []
+    if result['newspaper_text']:
+        combined_parts.append(f"📰সংবাদ: {result['newspaper_text']}")
+    if result['social_media_text']:
+        combined_parts.append(f"📱সামাজিক মাধ্যম: {result['social_media_text']}")
+    
+    result['combined_text'] = " || ".join(combined_parts)
+    
+    print(f"🎯 Mixed content processing complete:")
+    print(f"   📰 Newspaper: {len(result['newspaper_text'])} chars")
+    print(f"   📱 Social Media: {len(result['social_media_text'])} chars")
+    print(f"   🔗 Combined: {len(result['combined_text'])} chars")
+    
+    return result
+
+def create_mixed_content_llm_prompt(combined_text, limit):
+    """
+    Create LLM prompt for mixed content (newspaper + social media).
+    
+    Args:
+        combined_text: String with mixed content
+        limit: Number of trending words to generate
+    
+    Returns:
+        str: LLM prompt
+    """
+    return f"""
+আপনি একজন বাংলা ভাষার বিশেষজ্ঞ এবং সংবাদ বিশ্লেষক। আজকের (২০২৫-০৬-২৪) বাংলাদেশের সংবাদপত্র এবং সামাজিক মিডিয়ার মিশ্র কনটেন্ট থেকে ট্রেন্ডিং শব্দ/বাক্যাংশ তৈরি করতে হবে।
+
+**বিশ্লেষণের জন্য কনটেন্ট:**
+{combined_text}
+
+**নির্দেশনা:**
+১. সংবাদপত্র এবং সামাজিক মিডিয়া - উভয় মাধ্যমের গুরুত্বপূর্ণ বিষয়গুলো বিবেচনা করুন
+২. সর্বোচ্চ {limit}টি ট্রেন্ডিং শব্দ/বাক্যাংশ তৈরি করুন
+৩. প্রতিটি এন্ট্রি ২-৮ শব্দের মধ্যে হতে হবে
+৪. রাজনৈতিক, অর্থনৈতিক, সামাজিক, আন্তর্জাতিক, খেলাধুলা, প্রযুক্তি এবং বিনোদন - সব ক্ষেত্র থেকে নির্বাচন করুন
+৫. সামাজিক মিডিয়ার প্রভাবশালী আলোচনাগুলোকে অগ্রাধিকার দিন
+৬. শুধুমাত্র বাংলায় উত্তর দিন
+
+**আউটপুট ফরম্যাট:**
+১. [শব্দ/বাক্যাংশ]
+২. [শব্দ/বাক্যাংশ]
+৩. [শব্দ/বাক্যাংশ]
+
+এভাবে {limit}টি এন্ট্রি তৈরি করুন।
+"""
