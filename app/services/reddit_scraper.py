@@ -73,20 +73,35 @@ class RedditScraper:
         self.session = self._create_session()
         
         # Bangladesh-related subreddits
+        # Primary working subreddits (verified to work)
         self.bangladesh_subreddits = [
-            'bangladesh',
-            'bengali',
-            'dhaka',
-            'chittagong',
-            'sylhet',
-            'bangladeshpolitics',
-            'bangladesheconomy',
-            'dhakauni',
-            'buet',
-            'du',
-            'nsu',
-            'ulab'
+            'bangladesh',       # Main Bangladesh subreddit - works
+            'dhaka',           # Dhaka city - works  
+            # 'chittagong',      # Chittagong city - works
+            # 'sylhet',          # Sylhet city - works
+            # 'bangladeshpolitics', # Politics - works
+            # 'buet',            # BUET university - works
+            # 'nsu',             # NSU university - works
+            'news',
+            'worldnews',
+            'AlJazeera',
+            'technology',
         ]
+        
+        # Backup subreddits to try if primary ones fail
+        self.backup_subreddits = [
+            'bengalimemes',    # Bengali memes
+            'southasia',       # South Asia region
+            'desitwitter',     # Desi social media
+            'bangladesh_news', # Bangladesh news
+        ]
+        
+        # Problematic subreddits (avoid these - they cause 403/404/redirect errors)
+        # 'bengali' - 403 Forbidden
+        # 'bangladesheconomy' - 404 Not Found  
+        # 'dhakauni' - Redirects to search
+        # 'du' - 404 Not Found
+        # 'ulab' - Redirects to search
         
         # Headers for fallback requests
         self.headers = {
@@ -431,7 +446,7 @@ class RedditScraper:
                 submission.comments.replace_more(limit=0)  # Remove "more comments" objects
                 top_comments = []
                 
-                for comment in submission.comments[:3]:  # Get top 3 comments
+                for comment in submission.comments[:15]:  # Get top 15 comments (increased from 3)
                     if hasattr(comment, 'body') and len(comment.body) > 10:
                         top_comments.append(comment.body)
                 
@@ -456,13 +471,26 @@ class RedditScraper:
             self.logger.info(f"Successfully retrieved {len(posts)} posts from r/{subreddit_name}")
             
         except Exception as e:
-            self.logger.error(f"Error scraping r/{subreddit_name} with PRAW: {e}")
+            error_msg = str(e).lower()
+            
+            # Handle specific Reddit API errors
+            if '403' in error_msg or 'forbidden' in error_msg:
+                self.logger.error(f"❌ r/{subreddit_name}: 403 Forbidden - Subreddit may be private or restricted")
+            elif '404' in error_msg or 'not found' in error_msg:
+                self.logger.error(f"❌ r/{subreddit_name}: 404 Not Found - Subreddit may not exist")
+            elif 'redirect' in error_msg or 'search' in error_msg:
+                self.logger.error(f"❌ r/{subreddit_name}: Redirect detected - Subreddit may have been moved or deleted")
+            elif 'rate limit' in error_msg:
+                self.logger.error(f"❌ r/{subreddit_name}: Rate limited - Too many requests")
+                time.sleep(5)  # Wait longer for rate limit
+            else:
+                self.logger.error(f"❌ r/{subreddit_name}: {e}")
         
         return posts
     
     def scrape_all_bangladesh_subreddits_praw(self, limit_per_subreddit: int = 10) -> List[Dict]:
         """
-        Scrape all Bangladesh-related subreddits using PRAW
+        Scrape all Bangladesh-related subreddits using PRAW with improved error handling
         
         Args:
             limit_per_subreddit: Number of posts to get from each subreddit
@@ -471,37 +499,92 @@ class RedditScraper:
             List of formatted post dictionaries
         """
         all_posts = []
+        successful_subreddits = []
+        failed_subreddits = []
         
-        self.logger.info(f"Starting to scrape {len(self.bangladesh_subreddits)} Bangladesh subreddits")
+        self.logger.info(f"Starting to scrape {len(self.bangladesh_subreddits)} primary Bangladesh subreddits")
         
+        # Try primary subreddits first
         for subreddit_name in self.bangladesh_subreddits:
             try:
                 posts = self.scrape_posts_with_praw(subreddit_name, limit_per_subreddit)
                 
-                for post in posts:
-                    formatted_post = {
-                        'source': f'reddit_r_{post.subreddit}',
-                        'title': post.title,
-                        'content': post.content,
-                        'url': post.permalink,
-                        'score': post.score,
-                        'comments_count': post.num_comments,
-                        'created_utc': post.created_utc,
-                        'author': post.author,
-                        'flair': post.flair,
-                        'comments': post.comments,
-                        'scraped_date': datetime.now().date()
-                    }
-                    all_posts.append(formatted_post)
+                if posts:  # Only process if we got posts
+                    for post in posts:
+                        formatted_post = {
+                            'source': f'reddit_r_{post.subreddit}',
+                            'title': post.title,
+                            'content': post.content,
+                            'url': post.permalink,
+                            'score': post.score,
+                            'comments_count': post.num_comments,
+                            'created_utc': post.created_utc,
+                            'author': post.author,
+                            'flair': post.flair,
+                            'comments': post.comments,
+                            'scraped_date': datetime.now().date()
+                        }
+                        all_posts.append(formatted_post)
+                    
+                    successful_subreddits.append(subreddit_name)
+                    self.logger.info(f"✅ Successfully scraped r/{subreddit_name}: {len(posts)} posts")
+                else:
+                    failed_subreddits.append(subreddit_name)
+                    self.logger.warning(f"⚠️ No posts found in r/{subreddit_name}")
                 
-                # Rate limiting
+                # Rate limiting between subreddits
                 time.sleep(2)
                 
             except Exception as e:
-                self.logger.error(f"Failed to scrape r/{subreddit_name}: {e}")
+                failed_subreddits.append(subreddit_name)
+                self.logger.error(f"❌ Failed to scrape r/{subreddit_name}: {e}")
                 continue
         
-        self.logger.info(f"Total posts collected: {len(all_posts)}")
+        # If we don't have enough posts, try backup subreddits
+        min_posts_threshold = 50  # Minimum posts we want
+        if len(all_posts) < min_posts_threshold:
+            self.logger.info(f"Only {len(all_posts)} posts collected. Trying backup subreddits...")
+            
+            for backup_subreddit in self.backup_subreddits:
+                if len(all_posts) >= min_posts_threshold:
+                    break
+                    
+                try:
+                    self.logger.info(f"Trying backup subreddit: r/{backup_subreddit}")
+                    posts = self.scrape_posts_with_praw(backup_subreddit, limit_per_subreddit)
+                    
+                    if posts:
+                        for post in posts:
+                            formatted_post = {
+                                'source': f'reddit_r_{post.subreddit}',
+                                'title': post.title,
+                                'content': post.content,
+                                'url': post.permalink,
+                                'score': post.score,
+                                'comments_count': post.num_comments,
+                                'created_utc': post.created_utc,
+                                'author': post.author,
+                                'flair': post.flair,
+                                'comments': post.comments,
+                                'scraped_date': datetime.now().date()
+                            }
+                            all_posts.append(formatted_post)
+                        
+                        successful_subreddits.append(f"{backup_subreddit} (backup)")
+                        self.logger.info(f"✅ Backup r/{backup_subreddit}: {len(posts)} posts")
+                    
+                    time.sleep(2)
+                    
+                except Exception as e:
+                    self.logger.error(f"❌ Backup r/{backup_subreddit} failed: {e}")
+                    continue
+        
+        # Summary logging
+        self.logger.info(f"📊 Scraping Summary:")
+        self.logger.info(f"   ✅ Successful subreddits: {len(successful_subreddits)} - {successful_subreddits}")
+        self.logger.info(f"   ❌ Failed subreddits: {len(failed_subreddits)} - {failed_subreddits}")
+        self.logger.info(f"   📄 Total posts collected: {len(all_posts)}")
+        
         return all_posts
 
 def main():

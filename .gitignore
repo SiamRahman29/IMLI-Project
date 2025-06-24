@@ -8,3 +8,6 @@ settings.json
 fb_*.html
 *.log
 **/*.log
+demo_*.py
+test_*.py
+**/*.json
