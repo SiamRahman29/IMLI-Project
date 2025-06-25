@@ -52,10 +52,19 @@ function Home() {
       ) : (
         <div className="bg-white shadow-lg rounded-lg mb-10 p-8 text-center">
           <h2 className="text-2xl font-bold mb-2">আজকের শব্দ</h2>
-          {date && (
-            <div className="text-gray-500 mb-2">{new Date(date).toLocaleDateString('bn-BD')}</div>
+          {word ? (
+            <>
+              {date && (
+                <div className="text-gray-500 mb-2">{new Date(date).toLocaleDateString('bn-BD')}</div>
+              )}
+              <div className="text-3xl font-extrabold text-blue-600 mt-2">{word}</div>
+            </>
+          ) : (
+            <>
+              <div className="text-gray-400 text-lg mb-4 font-semibold">আজকের জন্য কোনো শব্দ নির্ধারণ করা হয়নি।</div>
+              <div className="text-gray-600 text-base">নির্বাচন করতে নিচের <span className='font-bold text-pink-600'>শব্দ উৎপাদন করুন</span> বাটনে ক্লিক করুন।</div>
+            </>
           )}
-          <div className="text-3xl font-extrabold text-blue-600 mt-2">{word}</div>
         </div>
       )}
 
@@ -69,7 +78,7 @@ function Home() {
         <div className="bg-white shadow-md rounded-lg h-full flex flex-col items-center p-8 text-center">
           <Sparkles className="w-14 h-14 text-pink-500 mb-3" />
           <h3 className="text-xl font-semibold mb-2">শব্দ উৎপাদন</h3>
-          <p className="text-gray-600 mb-4">AI ব্যবহার করে নতুন ট্রেন্ডিং শব্দের প্রার্থী তৈরি করুন</p>
+          <p className="text-gray-600 mb-4">নতুন ট্রেন্ডিং শব্দের প্রার্থী তৈরি করুন</p>
           <Link to="/generate" className="inline-block border border-pink-500 text-pink-600 hover:bg-pink-500 hover:text-white font-semibold px-6 py-2 rounded-lg transition mt-2 shadow focus:outline-none focus:ring-2 focus:ring-pink-400 focus:ring-offset-2">শব্দ তৈরি করুন</Link>
         </div>
       </div>

@@ -53,22 +53,92 @@ def get_word_of_the_day(db: Session = Depends(get_db)):
             "message": "Today's word is not yet set"
         }
 
-@router.post("/generate_candidates", summary="Generate a list of candidates for trending words")
+@router.post("/generate_candidates", summary="Generate category-wise trending words from newspapers using LLM")
 def generate_candidates(db: Session = Depends(get_db)):
-    """Generate trending word candidates using real-time AI and NLP analysis, save top 15 to database"""
-    from app.routes.helpers import generate_trending_word_candidates_realtime_with_save
+    """Generate trending word candidates using filtered newspaper scraping and category-wise LLM analysis"""
+    from app.services.filtered_newspaper_service import FilteredNewspaperScraper
+    from app.services.category_llm_analyzer import (
+        get_জাতীয়_trending_words, get_অর্থনীতি_trending_words, get_রাজনীতি_trending_words,
+        get_লাইফস্টাইল_trending_words, get_বিনোদন_trending_words, get_খেলাধুলা_trending_words,
+        get_ধর্ম_trending_words, get_চাকরি_trending_words, get_শিক্ষা_trending_words,
+        get_স্বাস্থ্য_trending_words, get_মতামত_trending_words, get_বিজ্ঞান_trending_words
+    )
     
     try:
-        # Real-time analysis with database storage for top 15 LLM words
-        ai_candidates = generate_trending_word_candidates_realtime_with_save(db, limit=15)
+        # Target categories as requested
+        TARGET_CATEGORIES = [
+            'জাতীয়', 'অর্থনীতি', 'রাজনীতি', 'লাইফস্টাইল', 'বিনোদন', 
+            'খেলাধুলা', 'ধর্ম', 'চাকরি', 'শিক্ষা', 'স্বাস্থ্য', 'মতামত', 'বিজ্ঞান'
+        ]
+        
+        print(f"🚀 Starting filtered newspaper scraping for {len(TARGET_CATEGORIES)} categories...")
+        
+        # Initialize filtered newspaper scraper
+        scraper = FilteredNewspaperScraper(TARGET_CATEGORIES)
+        
+        # Scrape all newspapers with category filtering
+        results = scraper.scrape_all_newspapers()
+        
+        print(f"📊 Scraped {results['scraping_info']['total_articles']} articles")
+        print(f"📂 Category-wise breakdown:")
+        for category in TARGET_CATEGORIES:
+            count = scraper.statistics['category_counts'][category]
+            print(f"   {category}: {count} articles")
+        
+        # Category-wise LLM trending word extraction
+        category_functions = {
+            'জাতীয়': get_জাতীয়_trending_words,
+            'অর্থনীতি': get_অর্থনীতি_trending_words,
+            'রাজনীতি': get_রাজনীতি_trending_words,
+            'লাইফস্টাইল': get_লাইফস্টাইল_trending_words,
+            'বিনোদন': get_বিনোদন_trending_words,
+            'খেলাধুলা': get_খেলাধুলা_trending_words,
+            'ধর্ম': get_ধর্ম_trending_words,
+            'চাকরি': get_চাকরি_trending_words,
+            'শিক্ষা': get_শিক্ষা_trending_words,
+            'স্বাস্থ্য': get_স্বাস্থ্য_trending_words,
+            'মতামত': get_মতামত_trending_words,
+            'বিজ্ঞান': get_বিজ্ঞান_trending_words
+        }
+        
+        # Extract trending words for each category
+        all_trending_words = []
+        category_wise_trending = {}
+        
+        for category in TARGET_CATEGORIES:
+            articles = results['category_wise_articles'][category]
+            
+            if articles:
+                print(f"🤖 Processing {category} category with {len(articles)} articles...")
+                
+                # Get trending words for this category using LLM
+                trending_words = category_functions[category](articles)
+                
+                category_wise_trending[category] = trending_words
+                all_trending_words.extend(trending_words)
+                
+                print(f"✅ {category}: {len(trending_words)} trending words extracted")
+            else:
+                print(f"⚠️ {category}: No articles found")
+                category_wise_trending[category] = []
+        
+        print(f"🎉 Total trending words extracted: {len(all_trending_words)}")
         
         return {
-            "message": "Real-time trending word candidates generated and top 15 saved to database!",
-            "ai_candidates": ai_candidates,
-            "note": "Top 15 LLM trending words saved to database for trending analysis section."
+            "message": "Category-wise trending words generated successfully using filtered newspaper scraping and LLM analysis!",
+            "scraping_info": results['scraping_info'],
+            "category_wise_trending_words": category_wise_trending,
+            "all_trending_words": all_trending_words,
+            "statistics": {
+                "total_articles_scraped": results['scraping_info']['total_articles'],
+                "categories_processed": len([c for c in TARGET_CATEGORIES if category_wise_trending[c]]),
+                "total_trending_words": len(all_trending_words),
+                "scraping_time_seconds": results['scraping_info']['scraping_time_seconds']
+            }
         }
+        
     except Exception as e:
-        detail = f"Error generating candidates: {str(e)}\n{traceback.format_exc()}"
+        detail = f"Error generating category-wise candidates: {str(e)}\n{traceback.format_exc()}"
         raise HTTPException(status_code=500, detail=detail)
 
 @router.get("/trending-phrases", summary="Get trending phrases for a specific date range")
@@ -1361,18 +1431,18 @@ async def hybrid_generate_candidates(
             print("🔀 Merging results from multiple sources...")
             merged_results = await merge_and_generate_final_trending(results["results"], db)
             results["final_trending_words"] = merged_results["final_trending_words"]
-            results["merge_status"] = merged_results["status"]
-            results["final_llm_response"] = merged_results.get("llm_response", "")
+            results["status"] = merged_results["status"]
+            results["llm_response"] = merged_results.get("llm_response", "")
             results["merge_prompt"] = merged_results.get("merge_prompt", "")  # Add merge prompt to results
             results["merge_statistics"] = merged_results.get("merge_statistics", {})
         elif len(results["results"]) == 1:
             # Single source result
             single_result = list(results["results"].values())[0]
             results["final_trending_words"] = single_result.get("trending_words", [])
-            results["merge_status"] = "single_source"
+            results["status"] = "single_source"
         else:
             results["final_trending_words"] = []
-            results["merge_status"] = "no_successful_sources"
+            results["status"] = "no_successful_sources"
         
         # Summary
         results["summary"] = {

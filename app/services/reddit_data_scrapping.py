@@ -46,11 +46,11 @@ class RedditDataScrapper:
             self.logger.error(f"❌ Failed to initialize Reddit API: {e}")
             raise
         
-        # All subreddits to scrape (comprehensive list)
+        # All subreddits to scrape (comprehensive list) - 10 subreddits for 10 words
         self.all_subreddits = [
-            'bangladesh', 'dhaka',
+            'bangladesh', 'dhaka', 'chittagong', 
             'worldnews', 'AlJazeera', 'geopolitics',
-            'technology', 
+            'technology', 'Cricket','BangladeshMedia','india'
         ]
 
     def _setup_logging(self) -> logging.Logger:
@@ -103,12 +103,12 @@ class RedditDataScrapper:
         
         return text.strip()
     
-    def scrape_all_subreddits(self, posts_per_subreddit: int = 20) -> List[Dict]:
+    def scrape_all_subreddits(self, posts_per_subreddit: int = 10) -> List[Dict]:
         """
         Scrape content from all subreddits
         
         Args:
-            posts_per_subreddit: Number of posts per subreddit (increased to 20)
+            posts_per_subreddit: Number of posts per subreddit (set to 10)
         
         Returns:
             List of all posts from all subreddits
@@ -632,12 +632,12 @@ Reddit ট্রেন্ডিং শব্দ/বাক্যাংশ (৮ট
         
         return trending_words
     
-    def run_comprehensive_analysis(self, posts_per_subreddit: int = 20) -> Dict[str, Any]:
+    def run_comprehensive_analysis(self, posts_per_subreddit: int = 10) -> Dict[str, Any]:
         """
         Main function: Scrape all subreddits and get LLM analysis for each subreddit separately
         
         Args:
-            posts_per_subreddit: Number of posts per subreddit
+            posts_per_subreddit: Number of posts per subreddit (set to 10)
         
         Returns:
             Complete analysis results with one emerging word per subreddit
@@ -995,7 +995,7 @@ Reddit ট্রেন্ডিং শব্দ/বাক্যাংশ (৮ট
                 submission.comments.replace_more(limit=0)
                 top_comments = []
                 
-                for comment in submission.comments[:10]:  # Get top 10 comments
+                for comment in submission.comments[:8]:  # Get top 8 comments
                     if hasattr(comment, 'body') and len(comment.body) > 10:
                         top_comments.append(comment.body)
                 
@@ -1052,8 +1052,8 @@ def main():
         # Create scraper
         scraper = RedditDataScrapper()
         
-        # Run subreddit-wise analysis with 20 posts per subreddit and 8 comments per post
-        results = scraper.run_comprehensive_analysis(posts_per_subreddit=20)
+        # Run subreddit-wise analysis with 10 posts per subreddit and 8 comments per post
+        results = scraper.run_comprehensive_analysis(posts_per_subreddit=10)
         
         # Save results
         filename = scraper.save_results(results)

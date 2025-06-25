@@ -501,17 +501,19 @@ def scrape_prothom_alo():
     try:
         feed_url = "https://www.prothomalo.com/feed/"
         feed = feedparser.parse(feed_url)
+        seen_urls = set()
         for entry in feed.entries[:10]:
             url = entry.get('link', '')
+            if not url or url in seen_urls:
+                continue
+            seen_urls.add(url)
             try:
                 res = robust_request(url)
                 if not res:
                     continue
                 soup = BeautifulSoup(res.text, "html.parser")
-                headings = []
-                for tag in soup.find_all(['h1', 'h2']):
-                    if tag.text.strip():
-                        headings.append(tag.text.strip())
+                # Only use h1 tags for headings
+                headings = [tag.text.strip() for tag in soup.find_all('h1') if tag.text.strip()]
                 heading_text = ' '.join(headings)
                 articles.append({
                     'title': headings[0] if headings else entry.get('title', ''),
@@ -535,22 +537,58 @@ def robust_request(url, timeout=50):
 
 def scrape_jugantor():
     articles = []
+    # Only use these category URLs for Jugantor
+    category_urls = [
+        "https://www.jugantor.com/national",
+        "https://www.jugantor.com/economics",
+        "https://www.jugantor.com/politics",
+        "https://www.jugantor.com/lifestyle",
+        "https://www.jugantor.com/entertainment",
+        "https://www.jugantor.com/sports",
+        "https://www.jugantor.com/islam-life",
+        "https://www.jugantor.com/job-seek",
+        "https://www.jugantor.com/campus",
+        "https://www.jugantor.com/disease",
+        "https://www.jugantor.com/tech"
+    ]
+    import re
     try:
-        homepage = "https://www.jugantor.com/"
-        res = robust_request(homepage)
-        if not res:
-            return articles
-        soup = BeautifulSoup(res.text, "html.parser")
-        for link in soup.select("h2 a, h3 a"):
-            url = link.get('href')
-            if url and not url.startswith('http'):
-                url = homepage.rstrip('/') + '/' + url.lstrip('/')
+        candidate_urls = set()
+        for category_url in category_urls:
+            res = robust_request(category_url)
+            if not res:
+                continue
+            soup = BeautifulSoup(res.text, "html.parser")
+            count = 0
+            for link in soup.select("h2 a, h3 a, a[href]"):
+                if count >= 8:
+                    break
+                url = link.get('href')
+                if not url:
+                    continue
+                # Normalize URL
+                if not url.startswith('http'):
+                    url = "https://www.jugantor.com/".rstrip('/') + '/' + url.lstrip('/')
+                # Only keep URLs that end with a numeric ID (real articles)
+                if re.search(r'/[0-9]{4,}$', url):
+                    if url not in candidate_urls:
+                        candidate_urls.add(url)
+                        count += 1
+        # Deduplicate and scrape articles
+        for url in candidate_urls:
             article_res = robust_request(url)
             if not article_res:
                 continue
             try:
                 article_soup = BeautifulSoup(article_res.text, "html.parser")
-                headings = [tag.text.strip() for tag in article_soup.find_all(['h1', 'h2']) if tag.text.strip()]
+                # Only use h1 tags for headings, remove duplicates
+                headings = []
+                seen = set()
+                for tag in article_soup.find_all('h1'):
+                    text = tag.text.strip()
+                    if text and text not in seen:
+                        headings.append(text)
+                        seen.add(text)
                 heading_text = ' '.join(headings)
                 print(f"[scrape_jugantor] url: {url}\n  headings: {headings}")
                 articles.append({
@@ -563,7 +601,7 @@ def scrape_jugantor():
             except Exception as e:
                 print(f"Error scraping Jugantor article: {e}")
     except Exception as e:
-        print(f"Error scraping Jugantor homepage: {e}")
+        print(f"Error scraping Jugantor category pages: {e}")
     return articles
 
 def scrape_kaler_kantho():
@@ -574,16 +612,21 @@ def scrape_kaler_kantho():
         if not res:
             return articles
         soup = BeautifulSoup(res.text, "html.parser")
+        seen_urls = set()
         for link in soup.select("a[href*='/online/']"):
             url = link.get('href')
             if url and not url.startswith('http'):
                 url = homepage.rstrip('/') + '/' + url.lstrip('/')
+            if not url or url in seen_urls:
+                continue
+            seen_urls.add(url)
             article_res = robust_request(url)
             if not article_res:
                 continue
             try:
                 article_soup = BeautifulSoup(article_res.text, "html.parser")
-                headings = [tag.text.strip() for tag in article_soup.find_all(['h1', 'h2']) if tag.text.strip()]
+                # Only use h1 tags for headings
+                headings = [tag.text.strip() for tag in article_soup.find_all('h1') if tag.text.strip()]
                 heading_text = ' '.join(headings)
                 print(f"[scrape_kaler_kantho] url: {url}\n  headings: {headings}")
                 articles.append({
@@ -607,20 +650,25 @@ def scrape_ittefaq():
         if not res:
             return articles
         soup = BeautifulSoup(res.text, "html.parser")
+        seen_urls = set()
         for link in soup.select(".lead-news a, .main-news a, .title a"):
             url = link.get('href')
             if url and not url.startswith('http'):
                 url = homepage.rstrip('/') + '/' + url.lstrip('/')
+            if not url or url in seen_urls:
+                continue
+            seen_urls.add(url)
             article_res = robust_request(url)
             if not article_res:
                 continue
             try:
                 article_soup = BeautifulSoup(article_res.text, "html.parser")
-                headings = [tag.text.strip() for tag in article_soup.find_all(['h1', 'h2']) if tag.text.strip()]
+                # Only use h1 tags for headings
+                headings = [tag.text.strip() for tag in article_soup.find_all('h1') if tag.text.strip()]
                 heading_text = ' '.join(headings)
                 print(f"[scrape_ittefaq] url: {url}\n  headings: {headings}")
                 articles.append({
-                    "title": headings[0] if headings else "",
+                    "title": headings[0] if headings else entry.get('title', ''),
                     "heading": heading_text,
                     "url": url,
                     "published_date": datetime.now().date(),
@@ -640,16 +688,21 @@ def scrape_bd_pratidin():
         if not res:
             return articles
         soup = BeautifulSoup(res.text, "html.parser")
+        seen_urls = set()
         for link in soup.select(".lead-news a, .main-news a, .title a"):
             url = link.get('href')
             if url and not url.startswith('http'):
                 url = homepage.rstrip('/') + '/' + url.lstrip('/')
+            if not url or url in seen_urls:
+                continue
+            seen_urls.add(url)
             article_res = robust_request(url)
             if not article_res:
                 continue
             try:
                 article_soup = BeautifulSoup(article_res.text, "html.parser")
-                headings = [tag.text.strip() for tag in article_soup.find_all(['h1', 'h2']) if tag.text.strip()]
+                # Only use h1 tags for headings
+                headings = [tag.text.strip() for tag in article_soup.find_all('h1') if tag.text.strip()]
                 heading_text = ' '.join(headings)
                 print(f"[scrape_bd_pratidin] url: {url}\n  headings: {headings}")
                 articles.append({
@@ -673,16 +726,21 @@ def scrape_manab_zamin():
         if not res:
             return articles
         soup = BeautifulSoup(res.text, "html.parser")
+        seen_urls = set()
         for link in soup.select("h3 a, h2 a"):
             url = link.get('href')
             if url and not url.startswith('http'):
                 url = homepage.rstrip('/') + '/' + url.lstrip('/')
+            if not url or url in seen_urls:
+                continue
+            seen_urls.add(url)
             article_res = robust_request(url)
             if not article_res:
                 continue
             try:
                 article_soup = BeautifulSoup(article_res.text, "html.parser")
-                headings = [tag.text.strip() for tag in article_soup.find_all(['h1', 'h2']) if tag.text.strip()]
+                # Only use h1 tags for headings
+                headings = [tag.text.strip() for tag in article_soup.find_all('h1') if tag.text.strip()]
                 heading_text = ' '.join(headings)
                 print(f"[scrape_manab_zamin] url: {url}\n  headings: {headings}")
                 articles.append({
@@ -706,16 +764,21 @@ def scrape_samakal():
         if not res:
             return articles
         soup = BeautifulSoup(res.text, "html.parser")
+        seen_urls = set()
         for link in soup.select("a[href*='samakal.com/']"):
             url = link.get('href')
             if url and not url.startswith('http'):
                 url = homepage.rstrip('/') + '/' + url.lstrip('/')
+            if not url or url in seen_urls:
+                continue
+            seen_urls.add(url)
             article_res = robust_request(url)
             if not article_res:
                 continue
             try:
                 article_soup = BeautifulSoup(article_res.text, "html.parser")
-                headings = [tag.text.strip() for tag in article_soup.find_all(['h1', 'h2']) if tag.text.strip()]
+                # Only use h1 tags for headings
+                headings = [tag.text.strip() for tag in article_soup.find_all('h1') if tag.text.strip()]
                 heading_text = ' '.join(headings)
                 print(f"[scrape_samakal] url: {url}\n  headings: {headings}")
                 articles.append({
@@ -748,7 +811,8 @@ def scrape_amader_shomoy():
                 continue
             try:
                 article_soup = BeautifulSoup(article_res.text, "html.parser")
-                headings = [tag.text.strip() for tag in article_soup.find_all(['h1', 'h2']) if tag.text.strip()]
+                # Only use h1 tags for headings
+                headings = [tag.text.strip() for tag in article_soup.find_all('h1') if tag.text.strip()]
                 heading_text = ' '.join(headings)
                 print(f"[scrape_amader_shomoy] url: {url}\n  headings: {headings}")
                 articles.append({
@@ -781,7 +845,8 @@ def scrape_janakantha():
                 continue
             try:
                 article_soup = BeautifulSoup(article_res.text, "html.parser")
-                headings = [tag.text.strip() for tag in article_soup.find_all(['h1', 'h2']) if tag.text.strip()]
+                # Only use h1 tags for headings
+                headings = [tag.text.strip() for tag in article_soup.find_all('h1') if tag.text.strip()]
                 heading_text = ' '.join(headings)
                 print(f"[scrape_janakantha] url: {url}\n  headings: {headings}")
                 articles.append({
@@ -805,10 +870,14 @@ def scrape_inqilab():
         if not res:
             return articles
         soup = BeautifulSoup(res.text, "html.parser")
+        seen_urls = set()
         for link in soup.select("h2 a, h3 a, a[href*='/news/']"):
             url = link.get('href')
             if url and not url.startswith('http'):
                 url = homepage.rstrip('/') + '/' + url.lstrip('/')
+            if not url or url in seen_urls:
+                continue
+            seen_urls.add(url)
             article_res = robust_request(url)
             if not article_res:
                 continue
@@ -838,16 +907,21 @@ def scrape_sangbad():
         if not res:
             return articles
         soup = BeautifulSoup(res.text, "html.parser")
+        seen_urls = set()
         for link in soup.select("a[href*='/news/']"):
             url = link.get('href')
             if url and not url.startswith('http'):
                 url = homepage.rstrip('/') + '/' + url.lstrip('/')
+            if not url or url in seen_urls:
+                continue
+            seen_urls.add(url)
             article_res = robust_request(url)
             if not article_res:
                 continue
             try:
                 article_soup = BeautifulSoup(article_res.text, "html.parser")
-                headings = [tag.text.strip() for tag in article_soup.find_all(['h1', 'h2']) if tag.text.strip()]
+                # Only use h1 tags for headings
+                headings = [tag.text.strip() for tag in article_soup.find_all('h1') if tag.text.strip()]
                 heading_text = ' '.join(headings)
                 print(f"[scrape_sangbad] url: {url}\n  headings: {headings}")
                 articles.append({
@@ -871,6 +945,7 @@ def scrape_noya_diganta():
         if not res:
             return articles
         soup = BeautifulSoup(res.text, "html.parser")
+        seen_urls = set()
         for link in soup.select("h2 a, h3 a, a[href*='/news/']"):
             url = link.get('href')
             if url and not url.startswith('http'):
@@ -880,7 +955,8 @@ def scrape_noya_diganta():
                 continue
             try:
                 article_soup = BeautifulSoup(article_res.text, "html.parser")
-                headings = [tag.text.strip() for tag in article_soup.find_all(['h1', 'h2']) if tag.text.strip()]
+                # Only use h1 tags for headings
+                headings = [tag.text.strip() for tag in article_soup.find_all('h1') if tag.text.strip()]
                 heading_text = ' '.join(headings)
                 print(f"[scrape_noya_diganta] url: {url}\n  headings: {headings}")
                 articles.append({
@@ -913,11 +989,8 @@ def scrape_jai_jai_din():
                 continue
             try:
                 article_soup = BeautifulSoup(article_res.text, "html.parser")
-                # Collect all h1 and h2 headings as a single string
-                headings = []
-                for tag in article_soup.find_all(['h1', 'h2']):
-                    if tag.text.strip():
-                        headings.append(tag.text.strip())
+                # Only use h1 tags for headings
+                headings = [tag.text.strip() for tag in article_soup.find_all('h1') if tag.text.strip()]
                 heading_text = ' '.join(headings)
                 articles.append({
                     "title": headings[0] if headings else "",
@@ -949,6 +1022,7 @@ def scrape_manobkantha():
                 continue
             try:
                 article_soup = BeautifulSoup(article_res.text, "html.parser")
+                # Only use h1 and h2 tags for headings
                 headings = [tag.text.strip() for tag in article_soup.find_all(['h1', 'h2']) if tag.text.strip()]
                 heading_text = ' '.join(headings)
                 print(f"[scrape_manobkantha] url: {url}\n  headings: {headings}")
@@ -982,7 +1056,8 @@ def scrape_ajkaler_khobor():
                 continue
             try:
                 article_soup = BeautifulSoup(article_res.text, "html.parser")
-                headings = [tag.text.strip() for tag in article_soup.find_all(['h1', 'h2']) if tag.text.strip()]
+                # Only use h1 tags for headings
+                headings = [tag.text.strip() for tag in article_soup.find_all('h1') if tag.text.strip()]
                 heading_text = ' '.join(headings)
                 print(f"[scrape_ajkaler_khobor] url: {url}\n  headings: {headings}")
                 articles.append({
@@ -1006,16 +1081,22 @@ def scrape_ajker_patrika():
         if not res:
             return articles
         soup = BeautifulSoup(res.text, "html.parser")
+        seen_urls = set()
         for link in soup.select("h2 a, h3 a, a[href*='/news/'], a[href*='/details/']"):
             url = link.get('href')
             if url and not url.startswith('http'):
                 url = homepage.rstrip('/') + '/' + url.lstrip('/')
+            # Deduplicate by URL before scraping
+            if not url or url in seen_urls:
+                continue
+            seen_urls.add(url)
             article_res = robust_request(url)
             if not article_res:
                 continue
             try:
                 article_soup = BeautifulSoup(article_res.text, "html.parser")
-                headings = [tag.text.strip() for tag in article_soup.find_all(['h1', 'h2']) if tag.text.strip()]
+                # Only use h1 tags for headings
+                headings = [tag.text.strip() for tag in article_soup.find_all('h1') if tag.text.strip()]
                 heading_text = ' '.join(headings)
                 print(f"[scrape_ajker_patrika] url: {url}\n  headings: {headings}")
                 articles.append({
@@ -1039,16 +1120,21 @@ def scrape_protidiner_sangbad():
         if not res:
             return articles
         soup = BeautifulSoup(res.text, "html.parser")
+        seen_urls = set()
         for link in soup.select(".lead-news a, .main-news a, .title a"):
             url = link.get('href')
             if url and not url.startswith('http'):
                 url = homepage.rstrip('/') + '/' + url.lstrip('/')
+            if not url or url in seen_urls:
+                continue
+            seen_urls.add(url)
             article_res = robust_request(url)
             if not article_res:
                 continue
             try:
                 article_soup = BeautifulSoup(article_res.text, "html.parser")
-                headings = [tag.text.strip() for tag in article_soup.find_all(['h1', 'h2']) if tag.text.strip()]
+                # Only use h1 tags for headings
+                headings = [tag.text.strip() for tag in article_soup.find_all('h1') if tag.text.strip()]
                 heading_text = ' '.join(headings)
                 print(f"[scrape_protidiner_sangbad] url: {url}\n  headings: {headings}")
                 articles.append({
@@ -1081,9 +1167,9 @@ def scrape_bangladesher_khabor():
                 continue
             try:
                 article_soup = BeautifulSoup(article_res.text, "html.parser")
-                headings = [tag.text.strip() for tag in article_soup.find_all(['h1', 'h2']) if tag.text.strip()]
+                # Only use h1 tags for headings
+                headings = [tag.text.strip() for tag in article_soup.find_all('h1') if tag.text.strip()]
                 heading_text = ' '.join(headings)
-                print(f"[scrape_bangladesher_khabor] url: {url}\n  headings: {headings}")
                 articles.append({
                     "title": headings[0] if headings else "",
                     "heading": heading_text,
@@ -1114,9 +1200,9 @@ def scrape_bangladesh_journal():
                 continue
             try:
                 article_soup = BeautifulSoup(article_res.text, "html.parser")
-                headings = [tag.text.strip() for tag in article_soup.find_all(['h1', 'h2']) if tag.text.strip()]
+                # Only use h1 tags for headings
+                headings = [tag.text.strip() for tag in article_soup.find_all('h1') if tag.text.strip()]
                 heading_text = ' '.join(headings)
-                print(f"[scrape_bangladesh_journal] url: {url}\n  headings: {headings}")
                 articles.append({
                     "title": headings[0] if headings else "",
                     "heading": heading_text,
@@ -1603,6 +1689,7 @@ def generate_trending_word_candidates_realtime_with_save(db: Session, limit: int
                     line = re.sub(r'^["\'](.+)["\']$', r'\1', line)
                     cleaned_lines.append(line)
             
+            
             return '\n'.join(cleaned_lines)
         
         
@@ -1612,6 +1699,7 @@ def generate_trending_word_candidates_realtime_with_save(db: Session, limit: int
         # Save top 15 LLM trending words to database
         save_llm_trending_words_to_db(db, ai_response, today, limit=15)
         
+        
     except Exception as e:
         import traceback
         error_details = traceback.format_exc()
@@ -1620,10 +1708,11 @@ def generate_trending_word_candidates_realtime_with_save(db: Session, limit: int
         print(f"   Error Message: {str(e)}")
         print(f"   Full Traceback:\n{error_details}")
         
+        
         # Check for common Groq API issues
         error_str = str(e).lower()
         if "rate limit" in error_str:
-            print("🚫 Rate limit exceeded - need to wait before retrying")
+            print("🚫 Rate limit")
         elif "billing" in error_str:
             print("💳 Billing issue - check Groq account")
         elif "api key" in error_str:
@@ -1855,7 +1944,7 @@ def optimize_text_for_ai_analysis(texts, analyzer, max_chars=12000, max_articles
             w for w in words 
             if len(w) >= 2  # Very lenient length requirement
             and not w.isdigit()  # No pure numbers
-            and w not in ['এর', 'যে', 'করে', 'হয়', 'দিয়ে', 'থেকে', 'এই', 'সেই']  # Only remove very common ones
+            and w not in ['এর', 'যে', 'করে', 'হয়', 'দিয়ে', 'থেকে', 'জন্য', 'সাথে', 'এই', 'সেই']  # Only remove very common ones
         ]
         
         if len(filtered_words) >= 3:  # Keep if has reasonable content
@@ -2047,7 +2136,6 @@ def detect_category_from_url(url, title="", content=""):
         ]
     }
     
-    # Check URL patterns first (87.2% success rate)
     url_lower = url.lower()
     for category, patterns in url_patterns.items():
         for pattern in patterns:

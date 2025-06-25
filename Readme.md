@@ -24,7 +24,7 @@ This project is a full-stack system for extracting, analyzing, and visualizing t
    ```
 3. **Start the backend server:**
    ```bash
-   uvicorn app.main:app --reload
+   uvicorn app.main:app --reload --port 8000
    ```
 4. **Start the frontend (in `frontend/`):**
    ```bash
