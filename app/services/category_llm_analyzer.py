@@ -98,6 +98,7 @@ class CategoryLLMAnalyzer:
         # Category-specific instructions
         category_instructions = {
             'জাতীয়': 'জাতীয় সংবাদ, দেশের গুরুত্বপূর্ণ ঘটনা, সরকারি নীতি ও সিদ্ধান্ত',
+            'আন্তর্জাতিক': 'আন্তর্জাতিক সংবাদ, বৈশ্বিক ঘটনা, বিদেশি নীতি ও সম্পর্ক',
             'অর্থনীতি': 'অর্থনৈতিক সংবাদ, ব্যবসা-বাণিজ্য, বাজার, মুদ্রা, ব্যাংকিং',
             'রাজনীতি': 'রাজনৈতিক ঘটনা, নেতাদের বক্তব্য, দলীয় কার্যক্রম, নির্বাচন',
             'লাইফস্টাইল': 'জীবনযাত্রা, স্বাস্থ্য টিপস, ফ্যাশন, খাবার-দাবার',
@@ -108,7 +109,8 @@ class CategoryLLMAnalyzer:
             'শিক্ষা': 'শিক্ষাপ্রতিষ্ঠান, পরীক্ষা, শিক্ষানীতি, ভর্তি',
             'স্বাস্থ্য': 'চিকিৎসা, রোগ-ব্যাধি, স্বাস্থ্য সেবা, মেডিকেল',
             'মতামত': 'সম্পাদকীয়, মতামত, বিশ্লেষণ, কলাম',
-            'বিজ্ঞান': 'বৈজ্ঞানিক আবিষ্কার, গবেষণা, প্রযুক্তি, উদ্ভাবন'
+            'বিজ্ঞান': 'বৈজ্ঞানিক আবিষ্কার, গবেষণা, প্রযুক্তি, উদ্ভাবন',
+            'প্রযুক্তি': 'তথ্যপ্রযুক্তি, নতুন প্রযুক্তি, উদ্ভাবন, গ্যাজেট, সফটওয়্যার'
         }
         
         category_context = category_instructions.get(category, 'সাধারণ সংবাদ ও তথ্য')
@@ -226,6 +228,10 @@ def get_জাতীয়_trending_words(articles: List[Dict]) -> List[str]:
     """Get trending words for জাতীয় category"""
     return get_category_trending_words('জাতীয়', articles)
 
+def get_আন্তর্জাতিক_trending_words(articles: List[Dict]) -> List[str]:
+    """Get trending words for আন্তর্জাতিক category"""
+    return get_category_trending_words('আন্তর্জাতিক', articles)
+
 def get_অর্থনীতি_trending_words(articles: List[Dict]) -> List[str]:
     """Get trending words for অর্থনীতি category"""
     return get_category_trending_words('অর্থনীতি', articles)
@@ -269,6 +275,10 @@ def get_মতামত_trending_words(articles: List[Dict]) -> List[str]:
 def get_বিজ্ঞান_trending_words(articles: List[Dict]) -> List[str]:
     """Get trending words for বিজ্ঞান category"""
     return get_category_trending_words('বিজ্ঞান', articles)
+
+def get_প্রযুক্তি_trending_words(articles: List[Dict]) -> List[str]:
+    """Get trending words for প্রযুক্তি category"""
+    return get_category_trending_words('প্রযুক্তি', articles)
 
 
 if __name__ == "__main__":

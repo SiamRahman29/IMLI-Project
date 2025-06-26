@@ -411,6 +411,63 @@ class FilteredNewspaperScraper:
             raise
         
         return saved_count
+    
+    def save_llm_prompts_for_all_categories(self, output_filename: str = None):
+        """
+        Scrape newspapers, group articles by category, and save the LLM prompts for each category to a JSON file.
+        Prompts are generated with the FULL content (no truncation), and the character count is included.
+        """
+        from app.services.category_llm_analyzer import CategoryLLMAnalyzer
+        if output_filename is None:
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            output_filename = f"llm_prompts_by_category_{timestamp}.json"
+
+        # Use the same categories as the main pipeline
+        TARGET_CATEGORIES = [
+            'জাতীয়', 'আন্তর্জাতিক', 'অর্থনীতি', 'রাজনীতি', 'লাইফস্টাইল', 'বিনোদন',
+            'খেলাধুলা', 'ধর্ম', 'চাকরি', 'শিক্ষা', 'স্বাস্থ্য', 'মতামত', 'বিজ্ঞান', 'প্রযুক্তি'
+        ]
+        
+        # Scrape and group articles
+        scraper = FilteredNewspaperScraper(TARGET_CATEGORIES)
+        results = scraper.scrape_all_newspapers()
+        category_articles = results['category_wise_articles']
+
+        analyzer = CategoryLLMAnalyzer()
+        prompts = {}
+        for category in TARGET_CATEGORIES:
+            articles = category_articles.get(category, [])
+            if articles:
+                # --- FULL content, NO truncation ---
+                content_pieces = []
+                for article in articles:
+                    title = article.get('title', '').strip()
+                    headings = article.get('headings', [])
+                    if title:
+                        content_pieces.append(f"শিরোনাম: {title}")
+                    if headings:
+                        for heading in headings:
+                            if heading and heading.strip():
+                                content_pieces.append(f"সংবাদ: {heading.strip()}")
+                full_content_text = "\n".join(content_pieces)
+                prompt = analyzer._create_category_prompt(category, full_content_text)
+                prompts[category] = {
+                    'prompt': prompt,
+                    'prompt_length': len(prompt),
+                    'content_length': len(full_content_text),
+                    'num_articles': len(articles)
+                }
+            else:
+                prompts[category] = {
+                    'prompt': None,
+                    'prompt_length': 0,
+                    'content_length': 0,
+                    'num_articles': 0
+                }
+
+        with open(output_filename, 'w', encoding='utf-8') as f:
+            json.dump(prompts, f, ensure_ascii=False, indent=2)
+        print(f"✅ LLM prompts for all categories saved to: {output_filename}")
 
 
 def main():
@@ -418,8 +475,8 @@ def main():
     
     # Your specified target categories
     TARGET_CATEGORIES = [
-        'জাতীয়', 'অর্থনীতি', 'রাজনীতি', 'লাইফস্টাইল', 'বিনোদন', 
-        'খেলাধুলা', 'ধর্ম', 'চাকরি', 'শিক্ষা', 'স্বাস্থ্য', 'মতামত', 'বিজ্ঞান'
+        'জাতীয়', 'আন্তর্জাতিক', 'অর্থনীতি', 'রাজনীতি', 'লাইফস্টাইল', 'বিনোদন', 
+        'খেলাধুলা', 'ধর্ম', 'চাকরি', 'শিক্ষা', 'স্বাস্থ্য', 'মতামত', 'বিজ্ঞান', 'প্রযুক্তি'
     ]
     
     print("🎯 FILTERED NEWSPAPER SCRAPER")
@@ -452,4 +509,12 @@ def main():
 
 
 if __name__ == "__main__":
-    results = main()
+    import sys
+    if len(sys.argv) > 1 and sys.argv[1] == "--save-llm-prompts":
+        scraper = FilteredNewspaperScraper([
+            'জাতীয়', 'আন্তর্জাতিক', 'অর্থনীতি', 'রাজনীতি', 'লাইফস্টাইল', 'বিনোদন',
+            'খেলাধুলা', 'ধর্ম', 'চাকরি', 'শিক্ষা', 'স্বাস্থ্য', 'মতামত', 'বিজ্ঞান', 'প্রযুক্তি'
+        ])
+        scraper.save_llm_prompts_for_all_categories()
+    else:
+        results = main()

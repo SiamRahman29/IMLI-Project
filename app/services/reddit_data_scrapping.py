@@ -46,11 +46,10 @@ class RedditDataScrapper:
             self.logger.error(f"❌ Failed to initialize Reddit API: {e}")
             raise
         
-        # All subreddits to scrape (comprehensive list) - 10 subreddits for 10 words
         self.all_subreddits = [
-            'bangladesh', 'dhaka', 'chittagong', 
-            'worldnews', 'AlJazeera', 'geopolitics',
-            'technology', 'Cricket','BangladeshMedia','india'
+            # 'bangladesh', 'dhaka', 'chittagong', 
+            'worldnews', 'AlJazeera', 'geopolitics','politics'
+            # 'technology', 'Cricket','BangladeshMedia','india'
         ]
 
     def _setup_logging(self) -> logging.Logger:
@@ -122,13 +121,27 @@ class RedditDataScrapper:
         
         for subreddit in self.all_subreddits:
             try:
-                self.logger.info(f"   📡 Scraping r/{subreddit}...")
-                posts = self._scrape_posts_directly(
+                self.logger.info(f"📡 Scraping r/{subreddit} (top & new)...")
+                posts_top = self._scrape_posts_directly(
                     subreddit_name=subreddit, 
                     limit=posts_per_subreddit,
-                    sort='top'  # Use top posts instead of new posts
+                    sort='top'
                 )
-                
+                posts_new = self._scrape_posts_directly(
+                    subreddit_name=subreddit, 
+                    limit=posts_per_subreddit,
+                    sort='new'
+                )
+                # Merge and deduplicate by URL
+                all_sub_posts = posts_top + posts_new
+                seen_urls = set()
+                unique_posts = []
+                for post in all_sub_posts:
+                    url = getattr(post, 'permalink', None) or getattr(post, 'url', None)
+                    if url and url not in seen_urls:
+                        seen_urls.add(url)
+                        unique_posts.append(post)
+                posts = unique_posts
                 if posts:
                     # Convert RedditPost objects to dictionaries
                     for post in posts:
@@ -150,7 +163,7 @@ class RedditDataScrapper:
                         all_posts.append(post_dict)
                     
                     successful_subreddits.append(subreddit)
-                    self.logger.info(f"   ✅ r/{subreddit}: {len(posts)} posts")
+                    self.logger.info(f"   ✅ r/{subreddit}: {len(posts)} unique posts (top+new)")
                 else:
                     failed_subreddits.append(subreddit)
                     self.logger.warning(f"   ⚠️ r/{subreddit}: No posts found")
@@ -161,6 +174,12 @@ class RedditDataScrapper:
                 failed_subreddits.append(subreddit)
                 self.logger.error(f"   ❌ r/{subreddit}: {e}")
                 continue
+        
+        # Remove AlJazeera bot warning from comments for r/AlJazeera
+        warning_text = "# r/AlJazeera is an unofficial subreddit and has no affiliation with the Al Jazeera Media Network."
+        for post in all_posts:
+            if post.get('subreddit', '').lower() == 'aljazeera' and 'comments' in post:
+                post['comments'] = [c for c in post['comments'] if not c.strip().startswith(warning_text)]
         
         self.logger.info(f"📊 Scraping Summary:")
         self.logger.info(f"   ✅ Successful: {len(successful_subreddits)} subreddits")
@@ -204,39 +223,13 @@ class RedditDataScrapper:
 
         for post in sorted_posts:
             title = post.get('title', '').strip()
-            content = post.get('content', '').strip()
-            comments = post.get('comments', [])
-            
-            # Build comprehensive post content
             post_text = []
             
-            # Take full title but clean it
+            # Only include title (no comments)
             if title:
                 clean_title = self.clean_text_for_llm(title)
                 if clean_title:
                     post_text.append(f"Title: {clean_title}")
-            
-            # Take full content but clean it
-            if content and len(content) > 10:
-                clean_content = self.clean_text_for_llm(content)
-                if clean_content:
-                    # Increased content length for better context
-                    if len(clean_content) > 800:
-                        clean_content = clean_content[:800] + "..."
-                    post_text.append(f"Content: {clean_content}")
-            
-            # Take top 8 comments for each post
-            if comments:
-                top_comments = comments[:8]
-                clean_comments = []
-                for comment in top_comments:
-                    clean_comment = self.clean_text_for_llm(comment)
-                    if clean_comment and len(clean_comment) > 5:
-                        # Do not truncate comment, keep full comment
-                        clean_comments.append(clean_comment)
-                
-                if clean_comments:
-                    post_text.append(f"Comments: {' | '.join(clean_comments)}")
             
             if post_text:
                 content_parts.append(" ".join(post_text))
@@ -346,23 +339,7 @@ class RedditDataScrapper:
         Returns:
             LLM prompt for subreddit-specific analysis
         """
-        prompt = f"""তুমি একজন বাংলাদেশি সোশ্যাল মিডিয়া ট্রেন্ড বিশ্লেষক। নিচের r/{subreddit_name} subreddit এর পোস্ট, কন্টেন্ট এবং মন্তব্যগুলো থেকে এই subreddit এ বর্তমানে সবচেয়ে জনপ্রিয় ও ট্রেন্ডিং একটি বাক্য/বাক্যাংশ চিহ্নিত করো। Jeta niye manus ekhn beshi kotha bolche, eta trending topic.
-
-গুরুত্বপূর্ণ তথ্য:
-- response শুধুমাত্র বাংলায় দিতে হবে
-- উত্তরে শুধুমাত্র একটি ২-৪ শব্দের সংক্ষিপ্ত বাক্যাংশ দাও, যা ট্রেন্ডিং হওয়ার সম্ভাবনা বেশি।
-বিশ্লেষণের নিয়মাবলী:
-1.ফ্রিকোয়েন্সি ও প্রাসঙ্গিকতা: Topic ta বেশি পোস্টে বেশি ব্যবহৃত হয়েছে কি না, তা বিবেচনা করো। (first priority)
-2.ট্রেন্ডিং বিষয়: এই subreddit এ বর্তমানে জনপ্রিয় topic ta ফোকাস করো
-3.Stop words এড়াও
-4.ব্যক্তির নাম নয়: ব্যক্তির নাম বাদ দাও
-5.সংক্ষিপ্ত বাক্যাংশ: ২-৪ শব্দের মধ্যে স্পষ্ট বাংলা বাক্যাংশ দাও(jeta ekta topic er moto)
-
-r/{subreddit_name} subreddit content(Mixed Language):
-{content_text}
-
-আউটপুট ফরম্যাট (শুধুমাত্র বাংলায়):
-r/{subreddit_name} emerging word:[একটি বাংলা ট্রেন্ডিং শব্দ/বাক্যাংশ]"""
+        prompt = f"""তুমি একজন বাংলাদেশি সোশ্যাল মিডিয়া ট্রেন্ড বিশ্লেষক। নিচের r/{subreddit_name} subreddit এর পোস্টগুলোর শিরোনাম (title) থেকে এই subreddit এ বর্তমানে সবচেয়ে জনপ্রিয় ও ট্রেন্ডিং দুইটি শব্দ/বাক্যাংশ চিহ্নিত করো। যেটা নিয়ে মানুষ এখন বেশি কথা বলছে, সেটা ট্রেন্ডিং টপিক। এমন শব্দ/বাক্যাংশ দাও যেটা শুনলে মানুষ বুঝতে পারবে যে এটা কীসের সাথে সম্পর্কিত। যার একটা অর্থ থাকবে, এমন কিছু দেবে না যেটা অর্থহীন এবং যেটা দেখলে কনটেক্সট বোঝা যাবে না।\nগুরুত্বপূর্ণ তথ্য:\n- response শুধুমাত্র বাংলায় দিতে হবে\n- উত্তরে দুইটি ২-৪ শব্দের সংক্ষিপ্ত বাক্যাংশ দাও, যা ট্রেন্ডিং হওয়ার সম্ভাবনা বেশি।\nবিশ্লেষণের নিয়মাবলী:\n1.ফ্রিকোয়েন্সি ও প্রাসঙ্গিকতা: টপিকটি বেশি পোস্টে বেশি ব্যবহৃত হয়েছে কি না, তা বিবেচনা করো। (first priority)\n2.ট্রেন্ডিং বিষয়: এই subreddit এ বর্তমানে জনপ্রিয় bole mone koro emon topic ফোকাস করো\n3.Stop words এড়াও\n4.ব্যক্তির নাম নয়: ব্যক্তির নাম বাদ দাও\n\ncontent:\n{content_text}\n\nআউটপুট ফরম্যাট (শুধুমাত্র বাংলায়):\n[বাংলা ট্রেন্ডিং শব্দ/বাক্যাংশ]\n[বাংলা ট্রেন্ডিং শব্দ/বাক্যাংশ]\n"""
         
         return prompt
         """
@@ -579,58 +556,35 @@ Reddit ট্রেন্ডিং শব্দ/বাক্যাংশ (৮ট
             self.logger.error(f"❌ Error calling Groq API: {e}")
             return []
     
-    def parse_subreddit_response(self, llm_response: str, subreddit_name: str) -> str:
-        """Parse LLM response to extract emerging word for a specific subreddit"""
-        if not llm_response:
-            return ""
-        
-        # Look for the emerging word pattern
-        lines = llm_response.strip().split('\n')
-        
-        for line in lines:
-            line = line.strip()
-            if not line:
-                continue
-            
-            # Look for pattern like "r/bangladesh emerging word: ..."
-            if f"r/{subreddit_name} emerging word:" in line:
-                emerging_word = line.split(f"r/{subreddit_name} emerging word:")[-1].strip()
-                return emerging_word
-            elif "emerging word:" in line:
-                emerging_word = line.split("emerging word:")[-1].strip()
-                return emerging_word
-            # If no specific pattern, take the last meaningful line
-            elif len(line) > 1 and not line.startswith(('r/', 'emerging', 'word')):
-                return line
-        
-        # Fallback: return the cleaned response
-        clean_response = llm_response.replace(f"r/{subreddit_name}", "").replace("emerging word:", "").strip()
-        return clean_response if clean_response else ""
-        """Parse LLM response to extract trending words"""
+    def parse_subreddit_response(self, llm_response: str, subreddit_name: str) -> list:
+        """Parse LLM response to extract emerging words/phrases for a specific subreddit (multiple allowed)"""
         if not llm_response:
             return []
-        
-        trending_words = []
+        words = []
         lines = llm_response.strip().split('\n')
-        
         for line in lines:
             line = line.strip()
             if not line:
                 continue
-            
-            # Look for numbered items (Bengali or English numbers)
-            if any(char in line for char in ['১', '২', '৩', '৪', '৫', '৬', '৭', '৮']) or \
-               line.startswith(('1.', '2.', '3.', '4.', '5.', '6.', '7.', '8.')):
-                # Remove numbering
-                clean_line = line
-                for num in ['১.', '২.', '৩.', '৪.', '৫.', '৬.', '৭.', '৮.', 
-                           '1.', '2.', '3.', '4.', '5.', '6.', '7.', '8.']:
-                    clean_line = clean_line.replace(num, '').strip()
-                
-                if clean_line and len(clean_line) > 1:
-                    trending_words.append(clean_line)
-        
-        return trending_words
+            # Remove any leading numbering or brackets
+            line = re.sub(r'^[\[\d.\s\]]+', '', line)
+            # Remove trailing and leading brackets
+            line = line.strip('[]')
+            # Remove label if present
+            if f"r/{subreddit_name} emerging word:" in line:
+                line = line.split(f"r/{subreddit_name} emerging word:")[-1].strip()
+            elif "emerging word:" in line:
+                line = line.split("emerging word:")[-1].strip()
+            if line and len(line) > 1:
+                words.append(line)
+        # Fallback: if nothing found, try to split by lines or brackets
+        if not words:
+            clean_response = llm_response.replace(f"r/{subreddit_name}", "").replace("emerging word:", "").strip()
+            for w in re.split(r'\n|\[|\]', clean_response):
+                w = w.strip()
+                if w:
+                    words.append(w)
+        return words
     
     def run_comprehensive_analysis(self, posts_per_subreddit: int = 10) -> Dict[str, Any]:
         """
@@ -695,8 +649,7 @@ Reddit ট্রেন্ডিং শব্দ/বাক্যাংশ (৮ট
             self.logger.info(f"{'='*60}")
             
             successful_responses = 0
-            emerging_words = []
-            
+            all_emerging_words = []
             for subreddit in self.all_subreddits:
                 if subreddit not in subreddit_counts:
                     self.logger.warning(f"⚠️ No posts found for r/{subreddit}, skipping LLM analysis")
@@ -728,32 +681,35 @@ Reddit ট্রেন্ডিং শব্দ/বাক্যাংশ (৮ট
                 
                 if subreddit_response.get('status') == 'success':
                     successful_responses += 1
-                    emerging_word = subreddit_response.get('emerging_word', '')
-                    if emerging_word:
-                        emerging_words.append({
-                            'subreddit': subreddit,
-                            'emerging_word': emerging_word
-                        })
-                        self.logger.info(f"✅ r/{subreddit} emerging word: {emerging_word}")
-                    else:
+                    emerging_words = subreddit_response.get('emerging_word', [])
+                    if isinstance(emerging_words, str):
+                        emerging_words = [emerging_words]
+                    for word in emerging_words:
+                        if word:
+                            all_emerging_words.append({
+                                'subreddit': subreddit,
+                                'emerging_word': word
+                            })
+                            self.logger.info(f"✅ r/{subreddit} emerging word: {word}")
+                    if not emerging_words:
                         self.logger.warning(f"⚠️ No emerging word found for r/{subreddit}")
                 else:
                     self.logger.error(f"❌ Failed to get response for r/{subreddit}")
                 
-                # Small delay between requests
-                time.sleep(1)
+                # Increased delay between requests to avoid rate limiting
+                time.sleep(50)
             
             # Step 3: Finalize results
             self.logger.info(f"\n{'='*60}")
             self.logger.info(f"📊 STEP 3: FINALIZING RESULTS")
             self.logger.info(f"{'='*60}")
             
-            results['emerging_words'] = emerging_words
+            results['emerging_words'] = all_emerging_words
             
             # Final summary
             results['summary']['successful_llm_responses'] = successful_responses
-            results['summary']['total_emerging_words'] = len(emerging_words)
-            results['summary']['status'] = 'success' if emerging_words else 'partial'
+            results['summary']['total_emerging_words'] = len(all_emerging_words)
+            results['summary']['status'] = 'success' if all_emerging_words else 'partial'
             
             self.logger.info(f"✅ Analysis completed!")
             self.logger.info(f"📊 Final Summary:")
@@ -762,9 +718,9 @@ Reddit ট্রেন্ডিং শব্দ/বাক্যাংশ (৮ট
             self.logger.info(f"   🤖 Successful LLM responses: {results['summary']['successful_llm_responses']}")
             self.logger.info(f"   🔥 Emerging words found: {results['summary']['total_emerging_words']}")
             
-            if emerging_words:
+            if all_emerging_words:
                 self.logger.info(f"📝 Emerging words by subreddit:")
-                for item in emerging_words:
+                for item in all_emerging_words:
                     self.logger.info(f"   r/{item['subreddit']}: {item['emerging_word']}")
             
             return results
@@ -959,7 +915,7 @@ Reddit ট্রেন্ডিং শব্দ/বাক্যাংশ (৮ট
         print(f"{'='*80}")
 
 
-    def _scrape_posts_directly(self, subreddit_name: str, limit: int = 20, sort: str = 'top') -> List:
+    def _scrape_posts_directly(self, subreddit_name: str, limit: int = 30, sort: str = 'top') -> List:
         """
         Scrape posts directly using praw without external dependencies
         
@@ -1051,9 +1007,9 @@ def main():
         
         # Create scraper
         scraper = RedditDataScrapper()
-        
-        # Run subreddit-wise analysis with 10 posts per subreddit and 8 comments per post
-        results = scraper.run_comprehensive_analysis(posts_per_subreddit=10)
+
+        # Run subreddit-wise analysis with 30 posts per subreddit and 8 comments per post
+        results = scraper.run_comprehensive_analysis(posts_per_subreddit=30)
         
         # Save results
         filename = scraper.save_results(results)

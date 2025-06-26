@@ -61,14 +61,15 @@ def generate_candidates(db: Session = Depends(get_db)):
         get_জাতীয়_trending_words, get_অর্থনীতি_trending_words, get_রাজনীতি_trending_words,
         get_লাইফস্টাইল_trending_words, get_বিনোদন_trending_words, get_খেলাধুলা_trending_words,
         get_ধর্ম_trending_words, get_চাকরি_trending_words, get_শিক্ষা_trending_words,
-        get_স্বাস্থ্য_trending_words, get_মতামত_trending_words, get_বিজ্ঞান_trending_words
+        get_স্বাস্থ্য_trending_words, get_মতামত_trending_words, get_বিজ্ঞান_trending_words,
+        get_আন্তর্জাতিক_trending_words, get_প্রযুক্তি_trending_words
     )
     
     try:
         # Target categories as requested
         TARGET_CATEGORIES = [
-            'জাতীয়', 'অর্থনীতি', 'রাজনীতি', 'লাইফস্টাইল', 'বিনোদন', 
-            'খেলাধুলা', 'ধর্ম', 'চাকরি', 'শিক্ষা', 'স্বাস্থ্য', 'মতামত', 'বিজ্ঞান'
+            'জাতীয়', 'আন্তর্জাতিক', 'অর্থনীতি', 'রাজনীতি', 'লাইফস্টাইল', 'বিনোদন', 
+            'খেলাধুলা', 'ধর্ম', 'চাকরি', 'শিক্ষা', 'স্বাস্থ্য', 'মতামত', 'বিজ্ঞান', 'প্রযুক্তি'
         ]
         
         print(f"🚀 Starting filtered newspaper scraping for {len(TARGET_CATEGORIES)} categories...")
@@ -88,6 +89,7 @@ def generate_candidates(db: Session = Depends(get_db)):
         # Category-wise LLM trending word extraction
         category_functions = {
             'জাতীয়': get_জাতীয়_trending_words,
+            'আন্তর্জাতিক': get_আন্তর্জাতিক_trending_words,
             'অর্থনীতি': get_অর্থনীতি_trending_words,
             'রাজনীতি': get_রাজনীতি_trending_words,
             'লাইফস্টাইল': get_লাইফস্টাইল_trending_words,
@@ -98,7 +100,8 @@ def generate_candidates(db: Session = Depends(get_db)):
             'শিক্ষা': get_শিক্ষা_trending_words,
             'স্বাস্থ্য': get_স্বাস্থ্য_trending_words,
             'মতামত': get_মতামত_trending_words,
-            'বিজ্ঞান': get_বিজ্ঞান_trending_words
+            'বিজ্ঞান': get_বিজ্ঞান_trending_words,
+            'প্রযুক্তি': get_প্রযুক্তি_trending_words
         }
         
         # Extract trending words for each category
@@ -1282,7 +1285,7 @@ async def hybrid_generate_candidates(
     """
     import asyncio
     import os
-    from app.routes.helpers import fetch_news, generate_trending_word_candidates_realtime_with_save
+    from app.routes.helpers import fetch_news  # Removed generate_trending_word_candidates_realtime_with_save
     
     results = {
         "timestamp": datetime.now().isoformat(),
@@ -1311,13 +1314,14 @@ async def hybrid_generate_candidates(
                     get_জাতীয়_trending_words, get_অর্থনীতি_trending_words, get_রাজনীতি_trending_words,
                     get_লাইফস্টাইল_trending_words, get_বিনোদন_trending_words, get_খেলাধুলা_trending_words,
                     get_ধর্ম_trending_words, get_চাকরি_trending_words, get_শিক্ষা_trending_words,
-                    get_স্বাস্থ্য_trending_words, get_মতামত_trending_words, get_বিজ্ঞান_trending_words
+                    get_স্বাস্থ্য_trending_words, get_মতামত_trending_words, get_বিজ্ঞান_trending_words,
+                    get_আন্তর্জাতিক_trending_words, get_প্রযুক্তি_trending_words
                 )
                 
                 # Target categories
                 TARGET_CATEGORIES = [
-                    'জাতীয়', 'অর্থনীতি', 'রাজনীতি', 'লাইফস্টাইল', 'বিনোদন', 
-                    'খেলাধুলা', 'ধর্ম', 'চাকরি', 'শিক্ষা', 'স্বাস্থ্য', 'মতামত', 'বিজ্ঞান'
+                    'জাতীয়', 'আন্তর্জাতিক', 'অর্থনীতি', 'রাজনীতি', 'লাইফস্টাইল', 'বিনোদন', 
+                    'খেলাধুলা', 'ধর্ম', 'চাকরি', 'শিক্ষা', 'স্বাস্থ্য', 'মতামত', 'বিজ্ঞান', 'প্রযুক্তি'
                 ]
                 
                 print(f"🚀 Starting filtered newspaper scraping for {len(TARGET_CATEGORIES)} categories...")
@@ -1333,6 +1337,7 @@ async def hybrid_generate_candidates(
                 # Category-wise LLM trending word extraction
                 category_functions = {
                     'জাতীয়': get_জাতীয়_trending_words,
+                    'আন্তর্জাতিক': get_আন্তর্জাতিক_trending_words,
                     'অর্থনীতি': get_অর্থনীতি_trending_words,
                     'রাজনীতি': get_রাজনীতি_trending_words,
                     'লাইফস্টাইল': get_লাইফস্টাইল_trending_words,
@@ -1343,7 +1348,8 @@ async def hybrid_generate_candidates(
                     'শিক্ষা': get_শিক্ষা_trending_words,
                     'স্বাস্থ্য': get_স্বাস্থ্য_trending_words,
                     'মতামত': get_মতামত_trending_words,
-                    'বিজ্ঞান': get_বিজ্ঞান_trending_words
+                    'বিজ্ঞান': get_বিজ্ঞান_trending_words,
+                    'প্রযুক্তি': get_প্রযুক্তি_trending_words
                 }
                 
                 # Extract trending words for each category

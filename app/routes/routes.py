@@ -6,7 +6,7 @@ from typing import Optional, List
 
 from app.db.database import SessionLocal
 from app.models.word import Word, TrendingPhrase
-from app.routes.helpers import get_trending_words, generate_trending_word_candidates_realtime_with_save
+from app.routes.helpers import get_trending_words
 from app.dto.dtos import TrendingWordsResponse, TrendingPhraseResponse, DailyTrendingResponse, TrendingPhrasesRequest
 
 router = APIRouter()
