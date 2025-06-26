@@ -1305,8 +1305,8 @@ async def hybrid_generate_candidates(
                 if newspaper_key:
                     os.environ["GROQ_API_KEY"] = newspaper_key
                 
-                # Generate newspaper trending analysis
-                newspaper_result = generate_trending_word_candidates_realtime_with_save(db, limit=8)
+                # Generate newspaper trending analysis with only newspaper source
+                newspaper_result = generate_trending_word_candidates_realtime_with_save(db, limit=8, sources=['newspaper'])
                 
                 # Restore original key
                 if original_key:

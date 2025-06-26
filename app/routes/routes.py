@@ -41,7 +41,7 @@ def generate_candidates(db: Session = Depends(get_db)):
         get_trending_words(db)
         
         # Also generate AI candidates with database save
-        ai_candidates = generate_trending_word_candidates_realtime_with_save(db, limit=15)
+        ai_candidates = generate_trending_word_candidates_realtime_with_save(db, limit=15, sources=['newspaper', 'reddit'])
         
         return {
             "message": "Trending analysis completed!",

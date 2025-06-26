@@ -27,8 +27,8 @@ def test_complete_reddit_integration():
         
         print("📊 Starting Reddit integration test...")
         
-        # Run the complete pipeline with Reddit integration
-        result = generate_trending_word_candidates_realtime_with_save(db, limit=15)
+        # Run the complete pipeline with Reddit integration - testing both sources
+        result = generate_trending_word_candidates_realtime_with_save(db, limit=15, sources=['newspaper', 'reddit'])
         
         print("\n✅ Test completed successfully!")
         print("📊 Result Summary:")
