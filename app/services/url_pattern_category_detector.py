@@ -86,6 +86,8 @@ class URLPatternCategoryDetector:
                r'/dhallywood',
                r'/music',
                r'/cinema',
+               r'/web-stories',
+               r'/stories',
                r'/television',
                r'/বিনোদন'    # Encoded Bengali
            ],

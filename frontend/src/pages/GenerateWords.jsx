@@ -59,75 +59,101 @@ function GenerateWords() {
       
       // Add individual source responses
       if (response.data.results) {
-        candidatesText += "🔍 উৎস-ভিত্তিক LLM বিশ্লেষণ:\n";
+        candidatesText += "🔍 উৎস-ভিত্তিক বিশ্লেষণ:\n";
         candidatesText += "=" + "=".repeat(50) + "\n\n";
         
         for (const [source, result] of Object.entries(response.data.results)) {
           if (source === 'newspaper') {
-            candidatesText += "📰 সংবাদপত্র থেকে LLM বিশ্লেষণ:\n";
-            candidatesText += "-".repeat(30) + "\n";
-            candidatesText += result.raw_response || 'কোনো প্রতিক্রিয়া পাওয়া যায়নি';
+            candidatesText += "📰 সংবাদপত্র বিশ্লেষণ (ক্যাটেগরি-ভিত্তিক):\n";
+            candidatesText += "-".repeat(40) + "\n";
+            
+            // Show category-wise analysis
+            if (result.category_wise_trending) {
+              candidatesText += "📂 ক্যাটেগরি-ভিত্তিক ট্রেন্ডিং শব্দ:\n\n";
+              
+              for (const [category, words] of Object.entries(result.category_wise_trending)) {
+                if (words && words.length > 0) {
+                  candidatesText += `🔸 ${category}:\n`;
+                  words.forEach((word, idx) => {
+                    candidatesText += `   ${idx + 1}. ${word}\n`;
+                  });
+                  candidatesText += "\n";
+                } else {
+                  candidatesText += `⚠️ ${category}: কোনো শব্দ পাওয়া যায়নি\n\n`;
+                }
+              }
+            }
+            
+            // Summary statistics
+            if (result.scraping_info) {
+              candidatesText += "📊 সংবাদপত্র পরিসংখ্যান:\n";
+              candidatesText += `   - মোট স্ক্র্যাপ করা আর্টিকেল: ${result.scraping_info.total_articles}\n`;
+              candidatesText += `   - মোট ট্রেন্ডিং শব্দ: ${result.trending_words ? result.trending_words.length : 0}\n\n`;
+            }
+            
           } else if (source === 'reddit') {
-            candidatesText += "📡 Reddit থেকে LLM বিশ্লেষণ:\n";
+            candidatesText += "📡 Reddit বিশ্লেষণ:\n";
             candidatesText += "-".repeat(30) + "\n";
             
-            // Show subreddit-wise responses
+            // Show Reddit trending words
+            if (result.trending_words && result.trending_words.length > 0) {
+              candidatesText += "🔥 Reddit ট্রেন্ডিং শব্দ:\n";
+              result.trending_words.forEach((word, idx) => {
+                candidatesText += `   ${idx + 1}. ${word}\n`;
+              });
+              candidatesText += "\n";
+            }
+            
+            // Show subreddit results if available
             if (result.subreddit_results && result.subreddit_results.length > 0) {
-              candidatesText += "🔥 সাবরেডিট-ভিত্তিক ইমার্জিং শব্দ:\n";
+              candidatesText += "📋 সাবরেডিট-ভিত্তিক বিশ্লেষণ:\n";
               result.subreddit_results.forEach((subResult, idx) => {
                 if (subResult.status === 'success' && subResult.emerging_word) {
-                  candidatesText += `  ${idx + 1}. r/${subResult.subreddit}: ${subResult.emerging_word}\n`;
+                  candidatesText += `   r/${subResult.subreddit}: ${subResult.emerging_word}\n`;
                 }
               });
               candidatesText += "\n";
-              
-              // Show individual subreddit responses
-              candidatesText += "📋 সাবরেডিট LLM প্রতিক্রিয়া:\n";
-              result.subreddit_results.forEach((subResult, idx) => {
-                if (subResult.status === 'success' && subResult.raw_response) {
-                  candidatesText += `\n🔸 r/${subResult.subreddit}:\n`;
-                  candidatesText += subResult.raw_response + "\n";
-                }
-              });
             }
           }
-          candidatesText += "\n" + "=".repeat(60) + "\n\n";
+          candidatesText += "=".repeat(60) + "\n\n";
         }
       }
       
-      // Add merge analysis
-      if (response.data.final_llm_response) {
-        console.log("=== Adding Merge Analysis ===");
-        console.log("Has merge_prompt:", !!response.data.merge_prompt);
-        console.log("merge_prompt content:", response.data.merge_prompt);
-        
-        candidatesText += "🔀 চূড়ান্ত সমন্বিত বিশ্লেষণ:\n";
-        candidatesText += "=" + "=".repeat(50) + "\n\n";
+      // Add final merged analysis
+      if (response.data.final_trending_words && response.data.final_trending_words.length > 0) {
+        candidatesText += "🎯 চূড়ান্ত সমন্বিত ট্রেন্ডিং শব্দ (টপ ১৫):\n";
+        candidatesText += "=" + "=".repeat(45) + "\n\n";
         
         // Show merge statistics if available  
         if (response.data.merge_statistics) {
           candidatesText += "📊 মার্জ পরিসংখ্যান:\n";
-          candidatesText += `-  মোট ইনপুট শব্দ: ${response.data.merge_statistics.total_input_words}\n`;
-          candidatesText += `-  চূড়ান্ত আউটপুট শব্দ: ${response.data.merge_statistics.final_output_words}\n`;
-          candidatesText += `-  সোর্স সংখ্যা: ${response.data.merge_statistics.sources_merged}\n\n`;
+          candidatesText += `   - মোট ইনপুট শব্দ: ${response.data.merge_statistics.total_input_words}\n`;
+          candidatesText += `   - চূড়ান্ত নির্বাচিত শব্দ: ${response.data.merge_statistics.final_selected}\n`;
+          candidatesText += `   - সোর্স সংখ্যা: ${response.data.merge_statistics.sources_merged}\n`;
+          if (response.data.merge_statistics.source_summary) {
+            candidatesText += `   - সোর্স বিবরণ: ${response.data.merge_statistics.source_summary.join(', ')}\n`;
+          }
+          candidatesText += "\n";
         }
         
-        candidatesText += "🤖 মার্জ প্রম্পট:\n";
-        candidatesText += "-".repeat(20) + "\n";
-        if (response.data.merge_prompt) {
-          candidatesText += response.data.merge_prompt + "\n\n";
-          console.log("✅ Added merge prompt to display");
-        } else {
-          candidatesText += "❌ কোনো মার্জ প্রম্পট পাওয়া যায়নি\n\n";
-          console.log("❌ No merge prompt found in response");
+        candidatesText += "🏆 সর্বোচ্চ ১৫টি ট্রেন্ডিং শব্দ/বাক্যাংশ:\n";
+        candidatesText += "-".repeat(40) + "\n";
+        response.data.final_trending_words.forEach((word, index) => {
+          candidatesText += `${index + 1}. ${word}\n`;
+        });
+        
+        // Show LLM response if available
+        if (response.data.llm_response) {
+          candidatesText += "\n" + "=".repeat(50) + "\n";
+          candidatesText += "🤖 LLM চূড়ান্ত নির্বাচন প্রক্রিয়া:\n";
+          candidatesText += "-".repeat(30) + "\n";
+          candidatesText += response.data.llm_response;
         }
+        
+      } else if (response.data.llm_response) {
         candidatesText += "🎯 চূড়ান্ত LLM প্রতিক্রিয়া:\n";
         candidatesText += "-".repeat(25) + "\n";
-        candidatesText += response.data.final_llm_response;
-      } else if (response.data.final_trending_words && response.data.final_trending_words.length > 0) {
-        candidatesText += "🎯 চূড়ান্ত ট্রেন্ডিং শব্দ:\n";
-        candidatesText += "=" + "=".repeat(30) + "\n\n";
-        candidatesText += response.data.final_trending_words.map((word, index) => `${index + 1}. ${word}`).join('\n');
+        candidatesText += response.data.llm_response;
       } else {
         candidatesText = 'কোনো ট্রেন্ডিং শব্দ পাওয়া যায়নি';
       }

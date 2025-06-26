@@ -1331,9 +1331,6 @@ def generate_trending_word_candidates_realtime_with_save(db: Session, limit: int
     print(f"Starting real-time trending analysis with selected sources: {sources}")
     print("=" * 60)
     
-    from datetime import date
-    today = date.today()
-    
     # Fetch news articles (conditional based on source selection)
     articles = []
     texts = []
@@ -1591,14 +1588,15 @@ def generate_trending_word_candidates_realtime_with_save(db: Session, limit: int
                     ১. [শব্দ/বাক্যাংশ]
                     ২. [শব্দ/বাক্যাংশ]
                     ৩. [শব্দ/বাক্যাংশ]
-                    ...
-                    {limit}. [শব্দ/বাক্যাংশ]
+
+                    এভাবে {limit}টি এন্ট্রি তৈরি করুন।
                     """
             print("📰 Using newspaper-only prompt")
         else:
             # Fallback prompt for other content
             prompt = f"""
                     নিচের বাংলা টেক্সট থেকে আজকের জন্য সবচেয়ে গুরুত্বপূর্ণ এবং ট্রেন্ডিং {limit}টি শব্দ বা বাক্যাংশ খুঁজে বের করো। শব্দ/বাক্যাংশগুলো অবশ্যই বিশেষ্য (noun) এবং/অথবা বিশেষণ (adjective) প্রকৃতির হতে হবে এবং অর্থবহ, জনপ্রিয় ও আলোচিত বিষয়ের প্রতিনিধিত্ব করবে।
+
                     অবশ্যই অনুসরণীয় নিয়মাবলী:
                     1.শুধুমাত্র বিশেষ্য (noun) এবং বিশেষণ (adjective) ভিত্তিক শব্দ/বাক্যাংশ দাও
                     2.ট্রেন্ডিং বিষয়/থিম খুঁজে বের করো - যা বর্তমানে আলোচিত এবং প্রাসঙ্গিক।
@@ -1621,895 +1619,141 @@ def generate_trending_word_candidates_realtime_with_save(db: Session, limit: int
                     {limit}. [শব্দ/বাক্যাংশ]
                     """
             print("🔧 Using fallback prompt")
-        print(f"📤 Sending request to Groq API...")
-        print(f"📊 Prompt length: {len(prompt)} characters")
+        # Import the category-wise analyzer from routes_new.py
+        from app.services.filtered_newspaper_service import FilteredNewspaperScraper
+        from app.services.category_llm_analyzer import (
+            get_জাতীয়_trending_words, get_অর্থনীতি_trending_words, get_রাজনীতি_trending_words,
+            get_লাইফস্টাইল_trending_words, get_বিনোদন_trending_words, get_খেলাধুলা_trending_words,
+            get_ধর্ম_trending_words, get_চাকরি_trending_words, get_শিক্ষা_trending_words,
+            get_স্বাস্থ্য_trending_words, get_মতামত_trending_words, get_বিজ্ঞান_trending_words
+        )
         
-        # Retry logic for Groq API connection issues with LONGER delays for rate limiting
-        max_retries = 3
-        retry_delay = 3  # Reduced from 5 to 3 seconds 
-        response = None
+        # Target categories
+        TARGET_CATEGORIES = [
+            'জাতীয়', 'অর্থনীতি', 'রাজনীতি', 'লাইফস্টাইল', 'বিনোদন', 
+            'খেলাধুলা', 'ধর্ম', 'চাকরি', 'শিক্ষা', 'স্বাস্থ্য', 'মতামত', 'বিজ্ঞান'
+        ]
         
-        for attempt in range(max_retries):
-            try:
-                print(f"🔄 Attempt {attempt + 1}/{max_retries}")
+        print(f"🚀 Starting filtered newspaper scraping for {len(TARGET_CATEGORIES)} categories...")
+        
+        # Initialize filtered newspaper scraper
+        scraper = FilteredNewspaperScraper(TARGET_CATEGORIES)
+        
+        # Scrape all newspapers with category filtering
+        results = scraper.scrape_all_newspapers()
+        
+        print(f"📊 Scraped {results['scraping_info']['total_articles']} articles")
+        
+        # Category-wise LLM trending word extraction
+        category_functions = {
+            'জাতীয়': get_জাতীয়_trending_words,
+            'অর্থনীতি': get_অর্থনীতি_trending_words,
+            'রাজনীতি': get_রাজনীতি_trending_words,
+            'লাইফস্টাইল': get_লাইফস্টাইল_trending_words,
+            'বিনোদন': get_বিনোদন_trending_words,
+            'খেলাধুলা': get_খেলাধুলা_trending_words,
+            'ধর্ম': get_ধর্ম_trending_words,
+            'চাকরি': get_চাকরি_trending_words,
+            'শিক্ষা': get_শিক্ষা_trending_words,
+            'স্বাস্থ্য': get_স্বাস্থ্য_trending_words,
+            'মতামত': get_মতামত_trending_words,
+            'বিজ্ঞান': get_বিজ্ঞান_trending_words
+        }
+        
+        # Extract trending words for each category
+        all_trending_words = []
+        category_wise_trending = {}
+        
+        for category in TARGET_CATEGORIES:
+            articles = results['category_wise_articles'][category]
+            
+            if articles:
+                print(f"🤖 Processing {category} category with {len(articles)} articles...")
                 
-                # Use llama-3.3-70b-versatile for larger context window
-                response = client.chat.completions.create(
-                    messages=[{"role": "user", "content": prompt}],
-                    model="llama-3.3-70b-versatile",  # Using model with larger context window
-                    stream=False,
-                    temperature=0.7,
-                    max_tokens=1000,  # Increased from 800 to 1000 for more detailed output
-                    timeout=45.0  # Increased from 30 to 45 second timeout
-                )
-                print(f"✅ API call successful on attempt {attempt + 1}")
-                break
+                # Get trending words for this category using LLM
+                trending_words = category_functions[category](articles)
                 
-            except Exception as api_error:
-                print(f"❌ API attempt {attempt + 1} failed: {str(api_error)}")
+                category_wise_trending[category] = trending_words
+                all_trending_words.extend(trending_words)
                 
-                # Check for rate limit specifically
-                error_str = str(api_error).lower()
-                if "rate limit" in error_str:
-                    wait_time = retry_delay * (attempt + 1) * 2  # Longer wait for rate limits
-                    print(f"🚫 Rate limit detected - waiting {wait_time} seconds...")
-                    if attempt < max_retries - 1:
-                        import time
-                        time.sleep(wait_time)
-                   
-                    else:
-                        print(f"🚫 Rate limit exceeded after all retries")
-                        raise api_error
-                else:
-                    if attempt < max_retries -  1:
-                        print(f"⏳ Waiting {retry_delay} seconds before retry...")
-                        import time
-                        time.sleep(retry_delay)
-                        retry_delay *= 2  # Exponential backoff
-                    else:
-                        print(f"🚫 All {max_retries} attempts failed")
-                        raise api_error
+                print(f"✅ {category}: {len(trending_words)} trending words extracted")
+            else:
+                print(f"⚠️ {category}: No articles found")
+                category_wise_trending[category] = []
         
-        print(f"📥 Received response from Groq API")
-        print(f"🔍 Response object: {response}")
+        print(f"🎉 Total trending words extracted from newspapers: {len(all_trending_words)}")
         
-        if not response or not response.choices:
-            raise ValueError("Empty response from Groq API")
-            
-        ai_response = response.choices[0].message.content
-        print(f"✅ Raw AI Response length: {len(ai_response) if ai_response else 0}")
-        print(f"📝 Raw AI Response preview: {ai_response[:200] if ai_response else 'None'}...")
-        
-        # Clean markdown formatting from AI response
-        def clean_markdown_text(text):
-            if not text:
-                return text
-            import re
-            
-            # Remove markdown bold, italic, code formatting
-            text = re.sub(r'\*\*([^*]+)\*\*', r'\1', text)  # **bold**
-            text = re.sub(r'\*([^*]+)\*', r'\1', text)      # *italic*
-            text = re.sub(r'`([^`]+)`', r'\1', text)        # `code`
-            
-            # Split into lines and filter
-            lines = text.split('\n')
-            cleaned_lines = []
-            
-            for line in lines:
-                line = line.strip()
-                if not line:
-                    continue
-                
-                # Skip introductory and concluding messages
-                if any(phrase in line for phrase in [
-                    'বাংলা সংবাদ থেকে গুগল ট্রেন্ডস',
-                    'গুরুত্বপূর্ণ এবং trending',
-                    'নিচে রয়েছে',
-                    'এই সবগুলোই গুরুত্বপূর্ণ বিষয়',
-                    'এখনকার সময়ে সবচেয়ে আলোচিত',
-                    'trending শব্দ/বাক্যাংশ'
-                ]):
-                    continue
-                
-                # Keep only numbered items
-                if re.match(r'^\d+\.|^[\u09E6-\u09EF]+\.', line):
-                    # Remove quotes around entire phrases
-                    line = re.sub(r'^["\'](.+)["\']$', r'\1', line)
-                    cleaned_lines.append(line)
-            
-            
-            return '\n'.join(cleaned_lines)
-        
-        
-        ai_response = clean_markdown_text(ai_response)
-        print(f"🤖 Groq AI Response (cleaned): {ai_response}")
-        
-        # Save top 15 LLM trending words to database
-        save_llm_trending_words_to_db(db, ai_response, today, limit=15)
-        
+        return {
+            "status": "success",
+            "message": f"Category-wise analysis completed with {len(all_trending_words)} words",
+            "category_wise_trending": category_wise_trending,
+            "trending_words": all_trending_words,
+            "scraping_info": results['scraping_info']
+        }
         
     except Exception as e:
         import traceback
-        error_details = traceback.format_exc()
-        print(f"❌ Error generating trending words with Groq:")
-        print(f"   Error Type: {type(e).__name__}")
-        print(f"   Error Message: {str(e)}")
-        print(f"   Full Traceback:\n{error_details}")
-        
-        
-        # Check for common Groq API issues
-        error_str = str(e).lower()
-        if "rate limit" in error_str:
-            print("🚫 Rate limit")
-        elif "billing" in error_str:
-            print("💳 Billing issue - check Groq account")
-        elif "api key" in error_str:
-            print("🔑 API key issue - check GROQ_API_KEY")
-        elif "timeout" in error_str:
-            print("⏱️ Request timeout - server might be slow")
-        elif "connection" in error_str or "remote protocol" in error_str:
-            print("🌐 Network connection issue - check internet connectivity or try again later")
-        elif "peer closed" in error_str:
-            print("🔌 Server disconnected during request - this is usually temporary")
-        else:
-            print("🔧 Unknown API error - check logs above for details")
-        
-        ai_response = f"❌ Error generating trending words: Network connection issue. Please try again later."
-    
-    # Skip NLP analysis - only use LLM response for trending words
-    print(f"\n🤖 Using LLM-only approach for trending words generation")
-    
-    # Clean summary without NLP analysis - just show the AI response
-    summary = []
-    
-    # Main AI response section
-    summary.append(f"🤖 AI Generated Trending Words:\n{ai_response}")
-    summary.append(f"\n💾 Database Status: Top 15 LLM trending words saved for trending analysis section")
-    
-    # Create clean output for frontend
-    final_output = "🤖 AI Generated Trending Words থেকে আজকের শব্দ নির্বাচন করুন\n\n" + '\n'.join(summary)
-    
-    print(f"[Summary] Real-time analysis completed with database save for LLM words")
-    return final_output
+        error_detail = f"Newspaper category analysis failed: {str(e)}\n{traceback.format_exc()}"
+        print(f"❌ {error_detail}")
+        return {
+            "status": "failed",
+            "message": error_detail,
+            "trending_words": []
+        }
 
-def analyze_trending_content_and_store(db: Session, analyzer, content: List[Dict], source: str, target_date: date):
-    """Analyze trending content using advanced Bengali NLP and store results in database"""
+
+def reddit_trending_analysis(db: Session, sources: List[str]) -> Dict[str, any]:
+    """
+    Perform Reddit analysis as per user workflow requirements
+    
+    Returns:
+        Dict with Reddit LLM response and trending words
+    """
+    if 'reddit' not in sources:
+        return {
+            "status": "skipped", 
+            "message": "Reddit source not selected",
+            "trending_words": []
+        }
+    
+    print("📡 Starting Reddit trending analysis...")
+    
     try:
-        print(f"🔍 Analyzing {len(content)} items from {source} for {target_date}")
+        # Import Reddit scraper
+        import sys
+        import os
         
-        # Count unique newspaper sources
-        newspaper_sources = set()
-        for item in content:
-            item_source = item.get('source', 'unknown')
-            if item_source != 'unknown':
-                newspaper_sources.add(item_source)
+        # Add the project root to Python path
+        project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
+        if project_root not in sys.path:
+            sys.path.insert(0, project_root)
         
-        newspaper_count = len(newspaper_sources)
-        print(f"📰 Analyzing content from {newspaper_count} newspaper sources:")
-        for i, newspaper in enumerate(sorted(newspaper_sources), 1):
-            articles_from_source = len([item for item in content if item.get('source') == newspaper])
-            print(f"   {i}. {newspaper:<20} - {articles_from_source:2d} articles")
+        from app.services.reddit_data_scrapping import RedditDataScrapper
         
-        # Analyze content using advanced Bengali analyzer
-        analysis_result = analyzer.analyze_trending_content(content, source_type=source)
+        # Create Reddit scraper and run analysis
+        scraper = RedditDataScrapper()
+        reddit_results = scraper.run_comprehensive_analysis(posts_per_subreddit=20)
         
-        if not analysis_result or 'trending_keywords' not in analysis_result:
-            print(f"No analysis results for {source}")
-            return
+        # Extract emerging words from Reddit results
+        emerging_words = reddit_results.get('emerging_words', [])
+        reddit_trending = [item['emerging_word'] for item in emerging_words if item.get('emerging_word')]
         
-        trending_keywords = analysis_result.get('trending_keywords', [])
-        print(f"📊 Found {len(trending_keywords)} trending keywords from {source}")
+        print(f"📡 Reddit analysis completed with {len(reddit_trending)} trending words")
         
-        # Track which newspapers contain each phrase
-        phrase_newspaper_counts = {}
-        for keyword, score in trending_keywords[:50]:
-            keyword_clean = keyword.strip()
-            if len(keyword_clean) <= 1:
-                continue
-                
-            # Count how many newspapers contain this phrase
-            newspapers_with_phrase = set()
-            for item in content:
-                title = item.get('title', '').lower()
-                heading = item.get('heading', '').lower()
-                combined_text = f"{title} {heading}".lower()
-                
-                if keyword_clean.lower() in combined_text:
-                    item_source = item.get('source', 'unknown')
-                    if item_source != 'unknown':
-                        newspapers_with_phrase.add(item_source)
-            
-            phrase_newspaper_counts[keyword_clean] = len(newspapers_with_phrase)
-        
-        print(f"\n💾 Storing trending phrases in database:")
-        stored_count = 0
-        
-        # Store trending phrases in database with newspaper counts
-        for keyword, score in trending_keywords[:50]:  # Store top 50
-            keyword_clean = keyword.strip()
-            if len(keyword_clean) > 1:  # Skip very short words
-                # Determine phrase type based on word count
-                word_count = len(keyword_clean.split())
-                if word_count == 1:
-                    phrase_type = 'unigram'
-                elif word_count == 2:
-                    phrase_type = 'bigram'
-                else:
-                    phrase_type = 'trigram'
-                
-                # Get newspaper count for this phrase
-                phrase_newspapers = phrase_newspaper_counts.get(keyword_clean, 0)
-                
-                # Enhanced scoring with newspaper boost
-                newspaper_boost = min(phrase_newspapers / max(newspaper_count, 1), 1.0) * 0.3
-                enhanced_score = float(score) + newspaper_boost
-                
-                trending_phrase = TrendingPhrase(
-                    date=target_date,
-                    phrase=enhanced_score,
-                    score=enhanced_score,
-                    frequency=phrase_newspapers,  # Store newspaper count as frequency
-                    phrase_type=phrase_type,
-                    source=source
-                )
-                db.add(trending_phrase)
-                stored_count += 1
-                
-                # Print progress for top 15 phrases
-                if stored_count <= 15:
-                    print(f"   {stored_count:2d}. {keyword_clean:<30} | Score: {enhanced_score:.3f} | Newspapers: {phrase_newspapers:2d}/{newspaper_count}")
-        
-        print(f"✅ Stored {stored_count} trending phrases for {source}")
+        return {
+            "status": "success",
+            "message": f"Reddit analysis completed with {len(reddit_trending)} words",
+            "trending_words": reddit_trending,
+            "subreddit_results": reddit_results.get('subreddit_responses', []),
+            "summary": reddit_results.get('summary', {})
+        }
         
     except Exception as e:
-        print(f"❌ Error analyzing content from {source}: {e}")
         import traceback
-        traceback.print_exc()
-
-def save_llm_trending_words_to_db(db: Session, ai_response: str, target_date: date, limit: int = 15):
-    """Parse LLM response and save top trending words to database"""
-    try:
-        if not ai_response or ai_response.strip() == "":
-            print("❌ No AI response to parse")
-            return
-        
-        # Parse the LLM response to extract trending words
-        lines = ai_response.strip().split('\n')
-        saved_count = 0
-        
-        for line in lines:
-            if saved_count >= limit:
-                break
-                
-            # Clean the line and extract the trending word/phrase
-            line = line.strip()
-            if not line:
-                continue
-            
-            # Remove numbering if present (1. , 2. , etc.)
-            import re
-            cleaned_line = re.sub(r'^\d+\.\s*', '', line)
-            # Remove Bengali numbering (১. , ২. , etc.)
-            cleaned_line = re.sub(r'^[\u09E6-\u09EF]+\.\s*', '', cleaned_line)
-            # Remove markdown formatting
-            cleaned_line = re.sub(r'\*\*([^*]+)\*\*', r'\1', cleaned_line)  # Remove **bold**
-            cleaned_line = re.sub(r'\*([^*]+)\*', r'\1', cleaned_line)      # Remove *italic*
-            cleaned_line = re.sub(r'`([^`]+)`', r'\1', cleaned_line)        # Remove `code`
-            # Remove quotation marks around phrases
-            cleaned_line = re.sub(r'^["\'](.+)["\']$', r'\1', cleaned_line)
-            cleaned_line = cleaned_line.strip()
-            
-            # Skip if too short or contains unwanted patterns
-            if len(cleaned_line) < 2:
-                continue
-            
-            # Skip if contains person indicators or unwanted patterns
-            person_indicators = ['মাননীয়', 'জনাব', 'মিসেস', 'মিস', 'ডঃ', 'প্রফেসর']
-            if any(indicator in cleaned_line for indicator in person_indicators):
-                continue
-            
-            # Determine phrase type
-            word_count = len(cleaned_line.split())
-            if word_count == 1:
-                phrase_type = 'unigram'
-            elif word_count == 2:
-                phrase_type = 'bigram'
-            else:
-                phrase_type = 'trigram'
-            
-            # Create TrendingPhrase object
-            trending_phrase = TrendingPhrase(
-                date=target_date,
-                phrase=cleaned_line,
-                score=1.0 - (saved_count * 0.1),  # Decreasing score based on order
-                frequency=1,
-                phrase_type=phrase_type,
-                source='llm_generated'
-            )
-            
-            db.add(trending_phrase)
-            saved_count += 1
-            print(f"💾 Saved LLM trending word {saved_count}: {cleaned_line}")
-        
-        # Commit the changes
-        db.commit()
-        print(f"✅ Successfully saved {saved_count} LLM trending words to database")
-        
-    except Exception as e:
-        print(f"❌ Error saving LLM trending words: {e}")
-        db.rollback()
-
-def optimize_text_for_ai_analysis(texts, analyzer, max_chars=12000, max_articles=150):
-    """
-    Optimize texts for AI analysis while keeping MORE CONTENT per article
-    Target: 12000 chars max for 5000 token capacity (12000 chars ≈ 4800 tokens)
-    
-    Strategy:
-    1. Keep complete cleaned headings (no keyword extraction)
-    2. Light deduplication
-    3. Comma separation for clarity
-    4. Priority-based selection
-    """
-    print(f"🔧 Optimizing {len(texts)} texts for Groq API limits (COMPLETE HEADINGS MODE)...")
-    
-    if not texts:
-        return ""
-    
-    # Step 1: Keep complete cleaned headings (no aggressive keyword extraction)
-    processed_headings = []
-    processed_count = 0
-    
-    for text in texts[:max_articles]:  # Limit number of articles
-        if not text or len(text.strip()) < 5:
-            continue
-            
-        # Light normalization only
-        normalized = analyzer.processor.normalize_text(text)
-        
-        # Light stop words filtering but keep most content
-        words = normalized.split()
-        filtered_words = [
-            w for w in words 
-            if len(w) >= 2  # Very lenient length requirement
-            and not w.isdigit()  # No pure numbers
-            and w not in ['এর', 'যে', 'করে', 'হয়', 'দিয়ে', 'থেকে', 'জন্য', 'সাথে', 'এই', 'সেই']  # Only remove very common ones
-        ]
-        
-        if len(filtered_words) >= 3:  # Keep if has reasonable content
-            # Keep the complete filtered heading (no truncation)
-            complete_heading = ' '.join(filtered_words)
-            
-            # Limit individual heading length for readability
-            if len(complete_heading) > 80:
-                complete_heading = complete_heading[:77] + "..."
-                
-            processed_headings.append(complete_heading)
-            processed_count += 1
-    
-    print(f"📊 Processed {processed_count} complete headings")
-    
-    # Step 2: Light deduplication (less aggressive)
-    unique_headings = []
-    seen_words = set()
-    
-    for heading in processed_headings:
-        # Check for major overlap only
-        words = set(heading.lower().split())
-        
-        # Check overlap with existing content (less aggressive - 60% threshold)
-        has_major_overlap = False
-        for existing_words in seen_words:
-            if words and existing_words:
-                overlap = len(words.intersection(existing_words))
-                if overlap > 0 and overlap / max(len(words), len(existing_words)) > 0.6:  # 60% overlap = skip
-                    has_major_overlap = True
-                    break
-        
-        if not has_major_overlap and words:
-            seen_words.add(frozenset(words))
-            unique_headings.append(heading)
-    
-    print(f"🔄 Light deduplication: {len(processed_headings)} -> {len(unique_headings)} unique headings")
-    
-    # Step 3: Combine with comma separators for clarity
-    if not unique_headings:
-        return ""
-    
-    # Join with comma and space for clear separation between articles
-    combined_text = ' • '.join(unique_headings)  # Using bullet for better separation
-    
-    # Step 4: Smart truncation if needed
-    if len(combined_text) > max_chars:
-        print(f"⚠️  Text too long ({len(combined_text)} chars), truncating to {max_chars}...")
-        
-        # Try to fit as many complete headings as possible
-        final_headings = []
-        current_length = 0
-        
-        for heading in unique_headings:
-            addition_length = len(heading) + 3  # +3 for " • "
-            if current_length + addition_length <= max_chars - 10:  # Leave some margin
-                final_headings.append(heading)
-                current_length += addition_length
-            else:
-                break
-        
-        combined_text = ' • '.join(final_headings)
-        if len(combined_text) < len(' • '.join(unique_headings)):
-            combined_text += "..."
-    
-    # Calculate stats
-    original_total = sum(len(t) for t in texts if t)
-    compression_ratio = len(combined_text) / max(original_total, 1) * 100
-    
-    print(f"✅ Optimized to {len(combined_text)} chars from {len(texts)} texts")
-    print(f"📈 Compression: {compression_ratio:.1f}% of original size")
-    print(f"🎯 Token estimate: ~{len(combined_text)//3} tokens (limit: 5000 capacity)")
-    print(f"📄 Included {len(combined_text.split(' • '))} complete headings")
-    
-    return combined_text
-
-# Category Detection System for Bengali Newspapers
-def detect_category_from_url(url, title="", content=""):
-    """
-    Enhanced category detection using comprehensive URL patterns as primary method
-    and content analysis as secondary method for Bengali newspapers
-    
-    Returns Bengali category name with high accuracy
-    Based on analysis of 500 Bengali newspaper URLs with 87.2% success rate
-    """
-    
-    # URL Pattern Detection (PRIMARY method - comprehensive patterns)
-    url_patterns = {
-        # National/Bangladesh News
-        'জাতীয়': [
-            r'/bangladesh', r'/national', r'/country', r'/dhaka', r'/chittagong',
-            r'/barisal', r'/rangpur', r'/sylhet', r'/khulna', r'/rajshahi', r'/mymensingh',
-            r'/সারাদেশ', r'/জাতীয়', r'/country-news'
-        ],
-        
-        # International News
-        'আন্তর্জাতিক': [
-            r'/international', r'/world', r'/middle-east', r'/america', r'/asia',
-            r'/europe', r'/africa', r'/বিদেশ', r'/আন্তর্জাতিক'
-        ],
-        
-        # Politics
-        'রাজনীতি': [
-            r'/politics', r'/political', r'/election', r'/govt', r'/government',
-            r'/রাজনীতি'
-        ],
-        
-        # Sports
-        'খেলাধুলা': [
-            r'/sports', r'/cricket', r'/football', r'/game', r'/tennis', r'/খেলা'
-        ],
-        
-        # Entertainment
-        'বিনোদন': [
-            r'/entertainment', r'/bollywood', r'/hollywood', r'/tollywood',
-            r'/dhallywood', r'/music', r'/cinema', r'/television', r'/বিনোদন'
-        ],
-        
-        # Business/Economy
-        'অর্থনীতি': [
-            r'/business', r'/economy', r'/economics', r'/market', r'/bank',
-            r'/finance', r'/অর্থনীতি'
-        ],
-        
-        # Technology
-        'প্রযুক্তি': [
-            r'/technology', r'/tech', r'/digital', r'/প্রযুক্তি'
-        ],
-        
-        # Health
-        'স্বাস্থ্য': [
-            r'/health', r'/medical', r'/corona', r'/covid', r'/dengue', r'/স্বাস্থ্য'
-        ],
-        
-        # Education
-        'শিক্ষা': [
-            r'/education', r'/campus', r'/university', r'/school', r'/শিক্ষা'
-        ],
-        
-        # Opinion/Editorial
-        'মতামত': [
-            r'/opinion', r'/editorial', r'/op-ed', r'/column', r'/analysis', r'/মতামত'
-        ],
-        
-        # Lifestyle
-        'লাইফস্টাইল': [
-            r'/lifestyle', r'/life', r'/fashion', r'/food', r'/care',
-            r'/rupbatika', r'/জীবনধারা'
-        ],
-        
-        # Religion
-        'ধর্ম': [
-            r'/religion', r'/islam', r'/islamic', r'/islam-life', r'/ইসলাম'
-        ],
-        
-        # Environment
-        'পরিবেশ': [
-            r'/environment', r'/climate', r'/weather', r'/পরিবেশ'
-        ],
-        
-        # Science
-        'বিজ্ঞান': [
-            r'/science', r'/research', r'/বিজ্ঞান'
-        ],
-        
-        # Jobs/Career
-        'চাকরি': [
-            r'/job', r'/career', r'/employment', r'/job-seek', r'/চাকরি'
-        ],
-        
-        # Photos/Gallery
-        'ছবি': [
-            r'/picture', r'/photo', r'/gallery', r'/photos', r'/ছবি'
-        ],
-        
-        # Video
-        'ভিডিও': [
-            r'/video', r'/videos', r'/ভিডিও'
-        ],
-        
-        # Women
-        'নারী': [
-            r'/women', r'/woman', r'/নারী'
-        ],
-        
-        # Fact Check
-        'ফ্যাক্ট চেক': [
-            r'/fact-check', r'/factcheck', r'/verification'
-        ]
-    }
-    
-    url_lower = url.lower()
-    for category, patterns in url_patterns.items():
-        for pattern in patterns:
-            if re.search(pattern, url_lower):
-                return category
-    
-    # Handle uncategorized URLs with source-specific patterns
-    from urllib.parse import urlparse
-    parsed_url = urlparse(url)
-    domain = parsed_url.netloc.lower()
-    path = parsed_url.path.lower()
-    
-    # Source-specific subcategorization for better tracking
-    if 'prothomalo.com' in domain and re.search(r'/[a-z]{10,}$', path):
-        return 'প্রথম আলো নিবন্ধ'
-    elif 'samakal.com' in domain and '/divisions/' in path:
-        return 'সমকাল আঞ্চলিক'
-    elif 'jugantor.com' in domain and path in ['/', '/national', '/politics', '/international']:
-        return 'যুগান্তর বিভাগীয়'
-    
-    # Content-based detection (SECONDARY method for unmatched URLs)
-    if title or content:
-        text_to_check = f"{title} {content}".lower()
-        
-        # Comprehensive Bengali keywords with higher coverage
-        content_keywords = {
-            'রাজনীতি': [
-                'রাজনীতি', 'সরকার', 'মন্ত্রী', 'প্রধানমন্ত্রী', 'নির্বাচন', 'ভোট', 'পার্টি', 'নেতা',
-                'সংসদ', 'মেয়র', 'কাউন্সিলর', 'চেয়ারম্যান', 'আওয়ামী', 'বিএনপি', 'জাতীয়'
-            ],
-            'আন্তর্জাতিক': [
-                'আন্তর্জাতিক', 'বিশ্ব', 'যুক্তরাষ্ট্র', 'ভারত', 'চীন', 'ইউরোপ', 'ইরান', 'ইসরায়েল',
-                'পাকিস্তান', 'মিয়ানমার', 'ট্রাম্প', 'বাইডেন', 'পুতিন', 'মোদী', 'ইউক্রেন', 'গাজা'
-            ],
-            'খেলাধুলা': [
-                'খেলা', 'ক্রিকেট', 'ফুটবল', 'টেস্ট', 'ম্যাচ', 'দল', 'খেলোয়াড়', 'টুর্নামেন্ট',
-                'বাংলাদেশ ক্রিকেট', 'টাইগার', 'সাকিব', 'মুশফিক', 'তামিম', 'বিসিবি'
-            ],
-            'অর্থনীতি': [
-                'অর্থনীতি', 'টাকা', 'ব্যাংক', 'ব্যবসা', 'বাজার', 'দাম', 'বাণিজ্য', 'বিনিয়োগ',
-                'রপ্তানি', 'আমদানি', 'জিডিপি', 'ডলার', 'শেয়ার', 'স্টক', 'কৃষি', 'শিল্প', 'গার্মেন্টস'
-            ],
-            'প্রযুক্তি': [
-                'প্রযুক্তি', 'কম্পিউটার', 'ইন্টারনেট', 'মোবাইল', 'অ্যাপ', 'সফটওয়্যার', 'ডিজিটাল',
-                'আর্টিফিশিয়াল', 'এআই', 'গুগল', 'ফেসবুক', 'হোয়াটসঅ্যাপ', 'চ্যাটজিপিটি'
-            ],
-            'বিনোদন': [
-                'বিনোদন', 'সিনেমা', 'নাটক', 'গান', 'শিল্পী', 'অভিনেতা', 'অভিনেত্রী', 'চলচ্চিত্র',
-                'হলিউড', 'বলিউড', 'ঢালিউড', 'শাকিব খান', 'কনসার্ট', 'অনুষ্ঠান'
-            ],
-            'স্বাস্থ্য': [
-                'স্বাস্থ্য', 'চিকিৎসা', 'ডাক্তার', 'হাসপাতাল', 'ওষুধ', 'রোগ', 'চিকিৎসক',
-                'করোনা', 'কোভিড', 'ভ্যাকসিন', 'টিকা', 'ডেঙ্গু', 'ডায়াবেটিস', 'ক্যান্সার'
-            ],
-            'শিক্ষা': [
-                'শিক্ষা', 'বিশ্ববিদ্যালয়', 'কলেজ', 'স্কুল', 'পরীক্ষা', 'ছাত্র', 'শিক্ষার্থী',
-                'এইচএসসি', 'এসএসসি', 'ভর্তি', 'ফলাফল', 'বৃত্তি', 'শিক্ষক', 'ঢাকা বিশ্ববিদ্যালয়', 'বুয়েট'
-            ],
-            'লাইফস্টাইল': [
-                'জীবনযাত্রা', 'ফ্যাশন', 'রান্না', 'ভ্রমণ', 'স্টাইল', 'খাবার', 'রেসিপি', 'বিউটি',
-                'সৌন্দর্য', 'মেকআপ', 'পোশাক', 'ট্রেন্ড', 'টুরিজম', 'পর্যটন', 'শপিং'
-            ],
-            'মতামত': [
-                'মতামত', 'বিশ্লেষণ', 'কলাম', 'সম্পাদকীয়', 'দৃষ্টিভঙ্গি', 'মন্তব্য', 'পর্যালোচনা',
-                'সমালোচনা', 'প্রবন্ধ', 'আলোচনা', 'গবেষণা'
-            ],
-            'ধর্ম': [
-                'ইসলাম', 'ধর্ম', 'নামাজ', 'হজ', 'রমজান', 'ঈদ', 'মুসলিম', 'ইসলামী', 'কোরআন',
-                'হাদিস', 'মসজিদ', 'ইমাম', 'জুমা', 'হিন্দু', 'পূজা', 'মন্দির', 'খ্রিস্টান'
-            ]
+        error_detail = f"Reddit analysis failed: {str(e)}\n{traceback.format_exc()}"
+        print(f"❌ {error_detail}")
+        return {
+            "status": "failed",
+            "message": error_detail,
+            "trending_words": []
         }
-        
-        # Score categories based on keyword matches
-        category_scores = {}
-        for category, keywords in content_keywords.items():
-            score = sum(1 for keyword in keywords if keyword in text_to_check)
-            if score > 0:
-                category_scores[category] = score
-        
-        # Return highest scoring category if any matches found
-        if category_scores:
-            return max(category_scores, key=category_scores.get)
-    
-    # Default category for unmatched URLs
-    return 'সাধারণ'
-
-def categorize_articles(articles):
-    """
-    Add category detection to a list of articles
-    
-    Args:
-        articles: List of article dictionaries with 'url', 'title', 'content' etc.
-    
-    Returns:
-        List of articles with 'category' field added
-    """
-    categorized_articles = []
-    
-    for article in articles:
-        # Create a copy to avoid modifying original
-        categorized_article = article.copy()
-        
-        # Detect category
-        category = detect_category_from_url(
-            article.get('url', ''),
-            article.get('title', ''),
-            article.get('content', '') or article.get('text', '')
-        )
-        
-        categorized_article['category'] = category
-        categorized_articles.append(categorized_article)
-    
-    return categorized_articles
-
-# Enhanced optimize function with category support
-def optimize_text_for_ai_analysis_with_categories(texts, analyzer, max_chars=12000, max_articles=150, enable_categories=True):
-    """
-    Enhanced text optimization with category-wise formatting for better LLM analysis
-    Updated for 5000 token capacity (12000 chars ≈ 4800 tokens)
-    
-    Args:
-        texts: List of text articles (can include url, title, content fields)
-        analyzer: TrendingBengaliAnalyzer instance
-        max_chars: Maximum characters in output (default 12000 for 5000 token capacity)
-        max_articles: Maximum number of articles to process (default 150)
-        enable_categories: Whether to group by categories
-    
-    Returns:
-        Formatted text optimized for LLM analysis with category grouping
-    """
-    print(f"🔧 Optimizing {len(texts)} texts with category support...")
-    
-    if not texts:
-        return ""
-    
-    # If texts are dictionaries with metadata, extract and categorize
-    if enable_categories and texts and isinstance(texts[0], dict):
-        categorized_texts = categorize_articles(texts[:max_articles])
-        
-        # Group by category
-        category_groups = defaultdict(list)
-        for article in categorized_texts:
-            category = article.get('category', 'সাধারণ')
-            # Use title or content for text processing
-            text_content = article.get('title', '') or article.get('content', '') or article.get('text', '')
-            if text_content:
-                category_groups[category].append(text_content)
-        
-        # Category weights for prioritization
-        category_weights = {
-            'রাজনীতি': 1.5,      # Politics - highest priority
-            'অর্থনীতি': 1.3,      # Economics - high priority
-            'আন্তর্জাতিক': 1.2,   # International - medium-high
-            'খেলাধুলা': 1.0,      # Sports - normal
-            'প্রযুক্তি': 1.1,      # Technology - slightly higher
-            'বিনোদন': 0.9,       # Entertainment - lower
-            'লাইফস্টাইল': 0.8,    # Lifestyle - lower
-            'সাধারণ': 1.0         # General - normal
-        }
-        
-        # Sort categories by weight
-        sorted_categories = sorted(category_groups.keys(), 
-                                 key=lambda x: category_weights.get(x, 1.0), 
-                                 reverse=True)
-        
-        formatted_sections = []
-        total_chars = 0
-        
-        # Process each category
-        for category in sorted_categories:
-            if total_chars >= max_chars * 0.9:  # Leave some buffer
-                break
-                
-            category_texts = category_groups[category]
-            if not category_texts:
-                continue
-            
-            # Process this category's texts using original function
-            category_optimized = optimize_text_for_ai_analysis(
-                category_texts, 
-                analyzer, 
-                max_chars=max_chars // len(sorted_categories), 
-                max_articles=len(category_texts)
-            )
-            
-            if category_optimized.strip():
-                section = f"{category}: {category_optimized}"
-                if total_chars + len(section) < max_chars:
-                    formatted_sections.append(section)
-                    total_chars += len(section)
-        
-        result = " | ".join(formatted_sections)
-        
-        print(f"✅ Category-optimized to {len(result)} chars from {len(texts)} texts")
-        print(f"🏷️ Categories processed: {len(formatted_sections)}")
-        
-        return result
-    
-    else:
-        # Fallback to original function for simple text lists
-        # Convert dict articles to text strings
-        text_list = []
-        for item in texts:
-            if isinstance(item, dict):
-                # Extract text from dict
-                text_content = item.get('title', '') or item.get('content', '') or item.get('text', '')
-                if text_content:
-                    text_list.append(text_content)
-            else:
-                # Already a string
-                text_list.append(str(item))
-        
-        return optimize_text_for_ai_analysis(text_list, analyzer, max_chars, max_articles)
-
-def process_mixed_content_for_llm(newspaper_articles: List[Dict], social_media_content: List[Dict], 
-                                analyzer, max_chars: int = 12000) -> Dict[str, str]:
-    """
-    Process mixed newspaper and social media content for LLM analysis
-    Creates separate optimized texts for each source type
-    
-    Args:
-        newspaper_articles: List of newspaper articles with metadata
-        social_media_content: List of social media content items
-        analyzer: TrendingBengaliAnalyzer instance
-        max_chars: Maximum characters per source type
-        
-    Returns:
-        Dictionary with separate optimized texts for each source
-    """
-    print(f"🔄 Processing mixed content: {len(newspaper_articles)} newspaper + {len(social_media_content)} social media")
-    
-    result = {
-        'newspaper_text': '',
-        'social_media_text': '',
-        'combined_text': '',
-        'source_stats': {
-            'newspaper_count': len(newspaper_articles),
-            'social_media_count': len(social_media_content),
-            'total_items': len(newspaper_articles) + len(social_media_content)
-        }
-    }
-    
-    # Process newspaper content with categories
-    if newspaper_articles:
-        print("📰 Processing newspaper content with categories...")
-        newspaper_text = optimize_text_for_ai_analysis_with_categories(
-            newspaper_articles,
-            analyzer,
-            max_chars=max_chars // 2,  # Half for newspapers
-            max_articles=100,
-            enable_categories=True
-        )
-        result['newspaper_text'] = newspaper_text
-        print(f"📰 Newspaper text optimized: {len(newspaper_text)} chars")
-    
-    # Process social media content
-    if social_media_content:
-        print("📱 Processing social media content...")
-        
-        # Group social media content by platform/subreddit
-        platform_groups = defaultdict(list)
-        for item in social_media_content:
-            platform = item.get('subreddit', item.get('platform', 'unknown'))
-            # Extract text content for processing
-            text_content = item.get('content', '') or item.get('text_content', '')
-            if text_content:
-                platform_groups[platform].append(text_content)
-        
-        # Create platform-organized text
-        social_sections = []
-        remaining_chars = max_chars // 2  # Half for social media
-        
-        # Sort platforms by content volume (prioritize active subreddits)
-        sorted_platforms = sorted(platform_groups.keys(), 
-                                key=lambda x: len(platform_groups[x]), 
-                                reverse=True)
-        
-        for platform in sorted_platforms:
-            if remaining_chars <= 100:  # Leave some buffer
-                break
-                
-            platform_texts = platform_groups[platform]
-            
-            # Process this platform's content
-            platform_optimized = optimize_text_for_ai_analysis(
-                platform_texts,
-                analyzer,
-                max_chars=min(remaining_chars // len(sorted_platforms), 2000),
-                max_articles=len(platform_texts)
-            )
-            
-            if platform_optimized.strip():
-                section = f"📱{platform}: {platform_optimized}"
-                if len(section) < remaining_chars:
-                    social_sections.append(section)
-                    remaining_chars -= len(section)
-        
-        social_media_text = " | ".join(social_sections)
-        result['social_media_text'] = social_media_text
-        print(f"📱 Social media text optimized: {len(social_media_text)} chars")
-    
-    # Create combined text with source labels
-    combined_parts = []
-    if result['newspaper_text']:
-        combined_parts.append(f"📰সংবাদ: {result['newspaper_text']}")
-    if result['social_media_text']:
-        combined_parts.append(f"📱সামাজিক মাধ্যম: {result['social_media_text']}")
-    
-    result['combined_text'] = " || ".join(combined_parts)
-    
-    print(f"🎯 Mixed content processing complete:")
-    print(f"   📰 Newspaper: {len(result['newspaper_text'])} chars")
-    print(f"   📱 Social Media: {len(result['social_media_text'])} chars")
-    print(f"   🔗 Combined: {len(result['combined_text'])} chars")
-    
-    return result
-
-def create_mixed_content_llm_prompt(combined_text, limit):
-    """
-    Create LLM prompt for mixed content (newspaper + social media).
-    
-    Args:
-        combined_text: String with mixed content
-        limit: Number of trending words to generate
-    
-    Returns:
-        str: LLM prompt
-    """
-    return f"""
-আপনি একজন বাংলা ভাষার বিশেষজ্ঞ এবং সংবাদ বিশ্লেষক। আজকের (২০২৫-০৬-২৪) বাংলাদেশের সংবাদপত্র এবং সামাজিক মিডিয়ার মিশ্র কনটেন্ট থেকে ট্রেন্ডিং শব্দ/বাক্যাংশ তৈরি করতে হবে।
-
-**বিশ্লেষণের জন্য কনটেন্ট:**
-{combined_text}
-
-**নির্দেশনা:**
-১. সংবাদপত্র এবং সামাজিক মিডিয়া - উভয় মাধ্যমের গুরুত্বপূর্ণ বিষয়গুলো বিবেচনা করুন
-২. সর্বোচ্চ {limit}টি ট্রেন্ডিং শব্দ/বাক্যাংশ তৈরি করুন
-৩. প্রতিটি এন্ট্রি ২-৮ শব্দের মধ্যে হতে হবে
-৪. রাজনৈতিক, অর্থনৈতিক, সামাজিক, আন্তর্জাতিক, খেলাধুলা, প্রযুক্তি এবং বিনোদন - সব ক্ষেত্র থেকে নির্বাচন করুন
-৫. সামাজিক মিডিয়ার প্রভাবশালী আলোচনাগুলোকে অগ্রাধিকার দিন
-৬. শুধুমাত্র বাংলায় উত্তর দিন
-
-**আউটপুট ফরম্যাট:**
-১. [শব্দ/বাক্যাংশ]
-২. [শব্দ/বাক্যাংশ]
-৩. [শব্দ/বাক্যাংশ]
-
-এভাবে {limit}টি এন্ট্রি তৈরি করুন।
-"""

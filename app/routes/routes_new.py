@@ -1305,18 +1305,76 @@ async def hybrid_generate_candidates(
                 if newspaper_key:
                     os.environ["GROQ_API_KEY"] = newspaper_key
                 
-                # Generate newspaper trending analysis with only newspaper source
-                newspaper_result = generate_trending_word_candidates_realtime_with_save(db, limit=8, sources=['newspaper'])
+                # Use category-wise newspaper analysis as per user requirements
+                from app.services.filtered_newspaper_service import FilteredNewspaperScraper
+                from app.services.category_llm_analyzer import (
+                    get_জাতীয়_trending_words, get_অর্থনীতি_trending_words, get_রাজনীতি_trending_words,
+                    get_লাইফস্টাইল_trending_words, get_বিনোদন_trending_words, get_খেলাধুলা_trending_words,
+                    get_ধর্ম_trending_words, get_চাকরি_trending_words, get_শিক্ষা_trending_words,
+                    get_স্বাস্থ্য_trending_words, get_মতামত_trending_words, get_বিজ্ঞান_trending_words
+                )
                 
-                # Restore original key
-                if original_key:
-                    os.environ["GROQ_API_KEY"] = original_key
+                # Target categories
+                TARGET_CATEGORIES = [
+                    'জাতীয়', 'অর্থনীতি', 'রাজনীতি', 'লাইফস্টাইল', 'বিনোদন', 
+                    'খেলাধুলা', 'ধর্ম', 'চাকরি', 'শিক্ষা', 'স্বাস্থ্য', 'মতামত', 'বিজ্ঞান'
+                ]
+                
+                print(f"🚀 Starting filtered newspaper scraping for {len(TARGET_CATEGORIES)} categories...")
+                
+                # Initialize filtered newspaper scraper
+                scraper = FilteredNewspaperScraper(TARGET_CATEGORIES)
+                
+                # Scrape all newspapers with category filtering
+                results = scraper.scrape_all_newspapers()
+                
+                print(f"📊 Scraped {results['scraping_info']['total_articles']} articles")
+                
+                # Category-wise LLM trending word extraction
+                category_functions = {
+                    'জাতীয়': get_জাতীয়_trending_words,
+                    'অর্থনীতি': get_অর্থনীতি_trending_words,
+                    'রাজনীতি': get_রাজনীতি_trending_words,
+                    'লাইফস্টাইল': get_লাইফস্টাইল_trending_words,
+                    'বিনোদন': get_বিনোদন_trending_words,
+                    'খেলাধুলা': get_খেলাধুলা_trending_words,
+                    'ধর্ম': get_ধর্ম_trending_words,
+                    'চাকরি': get_চাকরি_trending_words,
+                    'শিক্ষা': get_শিক্ষা_trending_words,
+                    'স্বাস্থ্য': get_স্বাস্থ্য_trending_words,
+                    'মতামত': get_মতামত_trending_words,
+                    'বিজ্ঞান': get_বিজ্ঞান_trending_words
+                }
+                
+                # Extract trending words for each category
+                all_trending_words = []
+                category_wise_trending = {}
+                
+                for category in TARGET_CATEGORIES:
+                    articles = results['category_wise_articles'][category]
+                    
+                    if articles:
+                        print(f"🤖 Processing {category} category with {len(articles)} articles...")
+                        
+                        # Get trending words for this category using LLM
+                        trending_words = category_functions[category](articles)
+                        
+                        category_wise_trending[category] = trending_words
+                        all_trending_words.extend(trending_words)
+                        
+                        print(f"✅ {category}: {len(trending_words)} trending words extracted")
+                    else:
+                        print(f"⚠️ {category}: No articles found")
+                        category_wise_trending[category] = []
+                
+                print(f"🎉 Total trending words extracted from newspapers: {len(all_trending_words)}")
                 
                 return {
                     "status": "success",
                     "source": "newspaper",
-                    "trending_words": parse_trending_words_from_response(newspaper_result),
-                    "raw_response": newspaper_result
+                    "trending_words": all_trending_words,
+                    "category_wise_trending": category_wise_trending,
+                    "scraping_info": results['scraping_info']
                 }
             except Exception as e:
                 return {
@@ -1491,49 +1549,46 @@ async def merge_and_generate_final_trending(source_results: dict, db: Session) -
     try:
         import os
         from groq import Groq
-        
+
         # Collect all trending words from sources
         all_words = []
         source_summary = []
-        
         for source, result in source_results.items():
             words = result.get("trending_words", [])
             all_words.extend(words)
-            source_summary.append(f"{source}: {len(words)} words")
-            print(f"📊 {source}: {words}")
-        
+            source_summary.append(f"📊 {source}: {len(words)} words")
+            print(f"📊 {source}: {len(words)} words - {words[:5]}...")
+
+        # If only one source, return its top 15 directly (no LLM merge)
+        if len(source_results) == 1:
+            single_source = list(source_results.keys())[0]
+            return {
+                "status": "single_source",
+                "final_trending_words": all_words[:15],
+                "llm_response": "Single source, no merge needed.",
+                "source_summary": source_summary,
+                "merge_prompt": None,
+                "merge_statistics": {
+                    "total_input_words": len(all_words),
+                    "final_output_words": len(all_words[:15]),
+                    "sources_merged": 1
+                }
+            }
+
         if not all_words:
             return {
                 "status": "no_words_to_merge",
                 "final_trending_words": [],
                 "llm_response": "No trending words found from any source"
             }
-        
-        # Create merge prompt
-        combined_words = '\n'.join([f"{i+1}. {word}" for i, word in enumerate(all_words)])
-        
-        merge_prompt = f"""তুমি একজন বাংলাদেশি সোশ্যাল মিডিয়া ট্রেন্ড বিশ্লেষক। নিচে বিভিন্ন সোর্স (সংবাদ ও Reddit) থেকে পাওয়া বর্তমানে সবচেয়ে জনপ্রিয় ও ট্রেন্ডিং একটি বাক্য/বাক্যাংশ চিহ্নিত করো।Jeta niye manus ekhn beshi kotha bolche bole mone koro,shetai trending topic.
 
-এই সব শব্দ/বাক্যাংশ থেকে সবচেয়ে গুরুত্বপূর্ণ ও ট্রেন্ডিং ১৫টি শব্দ/বাক্যাংশ নির্বাচন করো। response banglay dibe. extra kono message lekhbe nah
+        print(f"🔀 Merging {len(all_words)} total words from {len(source_results)} sources")
 
-নিয়মাবলী:
-1. সবচেয়ে জনপ্রিয় ও প্রাসঙ্গিক শব্দগুলো প্রাধান্য দাও
-2. Duplicate বা similar meaning ke e indicate kore emon শব্দ thakle ekta consider kore nibe and jodi sheta trending howyar moto hoy tokhn sheta add korbe  
-3. ২-৪ শব্দের মধ্যে সংক্ষিপ্ত বাক্যাংশ রাখো
+        # Create merge prompt for final LLM selection
+        words_list = '\n'.join([f"{i+1}. {word}" for i, word in enumerate(all_words)])
+        merge_prompt = f"""আপনি একজন বাংলা ভাষার ট্রেন্ডিং শব্দ বিশেষজ্ঞ। নিচের তালিকা থেকে আজকের জন্য সবচেয়ে গুরুত্বপূর্ণ এবং ট্রেন্ডিং ১৫টি শব্দ/বাক্যাংশ নির্বাচন করুন।\n\nসংগৃহীত শব্দ/বাক্যাংশের তালিকা:\n{words_list}\n\nনির্বাচনের নিয়মাবলী:\n1. সবচেয়ে গুরুত্বপূর্ণ এবং আলোচিত বিষয়গুলো প্রাধান্য দিন\n2. একই ধরনের/সমার্থক শব্দের মধ্যে সবচেয়ে ভালোটি নির্বাচন করুন\n3. বিভিন্ন ক্যাটেগরি থেকে সমানভাবে নির্বাচন করুন (রাজনীতি, অর্থনীতি, খেলা, বিনোদন ইত্যাদি)\n4. ব্যক্তির নাম বাদ দিন\n5. সংক্ষিপ্ত ও স্পষ্ট শব্দ/বাক্যাংশ দিন\n6. শুধুমাত্র বাংলা শব্দ ব্যবহার করুন\n\nআউটপুট ফরম্যাট:\nচূড়ান্ত ১৫টি ট্রেন্ডিং শব্দ/বাক্যাংশ:\n১. [শব্দ/বাক্যাংশ]\n২. [শব্দ/বাক্যাংশ]\n৩. [শব্দ/বাক্যাংশ]\n৪. [শব্দ/বাক্যাংশ]\n৫. [শব্দ/বাক্যাংশ]\n৬. [শব্দ/বাক্যাংশ]\n৭. [শব্দ/বাক্যাংশ]\n৮. [শব্দ/বাক্যাংশ]\n৯. [শব্দ/বাক্যাংশ]\n১০. [শব্দ/বাক্যাংশ]\n১১. [শব্দ/বাক্যাংশ]\n১২. [শব্দ/বাক্যাংশ]\n১৩. [শব্দ/বাক্যাংশ]\n১৪. [শব্দ/বাক্যাংশ]\n১৫. [শব্দ/বাক্যাংশ]"""
 
-সোর্স সামারি: {', '.join(source_summary)}
-
-সংগৃহীত ট্রেন্ডিং শব্দ/বাক্যাংশ:
-{combined_words}
-
-আউটপুট ফরম্যাট:
-চূড়ান্ত ট্রেন্ডিং শব্দ/বাক্যাংশ (১৫টি):
-১. [শব্দ/বাক্যাংশ]
-২. [শব্দ/বাক্যাংশ]
-...
-১৫. [শব্দ/বাক্যাংশ]"""
-
-        # Use dedicated combine API key for merging
+        # Use combine API key for final merge
         api_key = os.environ.get("GROQ_API_KEY_COMBINE") or os.environ.get("GROQ_API_KEY_NEWSPAPER") or os.environ.get("GROQ_API_KEY")
         if not api_key:
             return {
@@ -1541,55 +1596,61 @@ async def merge_and_generate_final_trending(source_results: dict, db: Session) -
                 "final_trending_words": all_words[:15],  # Fallback
                 "llm_response": "API key not found for merging"
             }
-        
-        print("🤖 Calling LLM for final merge...")
-        client = Groq(api_key=api_key)
-        
-        response = client.chat.completions.create(
-            model="llama-3.3-70b-versatile",
-            messages=[
-                {
-                    "role": "system", 
-                    "content": "তুমি বাংলা ভাষা বিশ্লেষক। response বাংলায় দাও।"
-                },
-                {
-                    "role": "user", 
-                    "content": merge_prompt
+        try:
+            print("🤖 Calling LLM for final merge...")
+            client = Groq(api_key=api_key)
+            response = client.chat.completions.create(
+                model="llama-3.3-70b-versatile",
+                messages=[
+                    {
+                        "role": "system", 
+                        "content": "তুমি বাংলা ভাষা বিশ্লেষক। response বাংলায় দাও।"
+                    },
+                    {
+                        "role": "user", 
+                        "content": merge_prompt
+                    }
+                ],
+                temperature=0.7,
+                max_tokens=800,
+                top_p=0.9
+            )
+            merge_response = response.choices[0].message.content.strip()
+            final_words = parse_trending_words_from_response(merge_response)
+            print(f"✅ Final merged trending words: {len(final_words)}")
+            for i, word in enumerate(final_words, 1):
+                print(f"   {i}. {word}")
+            return {
+                "status": "success",
+                "final_trending_words": final_words[:15],
+                "llm_response": merge_response,
+                "source_summary": source_summary,
+                "merge_prompt": merge_prompt,  # Show merge prompt in frontend
+                "api_key_used": "GROQ_API_KEY_COMBINE",
+                "merge_statistics": {
+                    "total_input_words": len(all_words),
+                    "final_output_words": len(final_words[:15]),
+                    "sources_merged": len(source_results)
                 }
-            ],
-            temperature=0.7,
-            max_tokens=800,
-            top_p=0.9
-        )
-        
-        merge_response = response.choices[0].message.content.strip()
-        final_words = parse_trending_words_from_response(merge_response)
-        
-        print(f"✅ Final merged trending words: {len(final_words)}")
-        for i, word in enumerate(final_words, 1):
-            print(f"   {i}. {word}")
-        
-        return {
-            "status": "success",
-            "final_trending_words": final_words[:15],
-            "llm_response": merge_response,
-            "source_summary": source_summary,
-            "merge_prompt": merge_prompt,  # Show merge prompt in frontend
-            "api_key_used": "GROQ_API_KEY_COMBINE",
-            "merge_statistics": {
-                "total_input_words": len(all_words),
-                "final_output_words": len(final_words[:15]),
-                "sources_merged": len(source_results)
             }
-        }
-        
+        except Exception as e:
+            print(f"❌ Error in merge process: {e}")
+            # Fallback: just combine and truncate
+            fallback_words = []
+            for source, result in source_results.items():
+                fallback_words.extend(result.get("trending_words", []))
+            return {
+                "status": "merge_failed_fallback",
+                "final_trending_words": fallback_words[:15],
+                "llm_response": f"Merge failed: {str(e)}. Using fallback combination.",
+                "error": str(e)
+            }
     except Exception as e:
         print(f"❌ Error in merge process: {e}")
         # Fallback: just combine and truncate
         fallback_words = []
         for source, result in source_results.items():
             fallback_words.extend(result.get("trending_words", []))
-        
         return {
             "status": "merge_failed_fallback",
             "final_trending_words": fallback_words[:15],
