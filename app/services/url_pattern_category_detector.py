@@ -172,6 +172,7 @@ class URLPatternCategoryDetector:
                r'/science',
                r'/research',
                r'/tech',
+               r'/it',
                r'/বিজ্ঞান'    # Encoded Bengali
            ],
           

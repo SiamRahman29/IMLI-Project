@@ -502,7 +502,7 @@ def scrape_prothom_alo():
         feed_url = "https://www.prothomalo.com/feed/"
         feed = feedparser.parse(feed_url)
         seen_urls = set()
-        for entry in feed.entries[:10]:
+        for entry in feed.entries:
             url = entry.get('link', '')
             if not url or url in seen_urls:
                 continue
@@ -527,6 +527,7 @@ def scrape_prothom_alo():
     except Exception as e:
         print(f"Error scraping Prothom Alo: {e}")
     return articles
+
 
 def robust_request(url, timeout=50):
     try:
@@ -668,7 +669,7 @@ def scrape_ittefaq():
                 heading_text = ' '.join(headings)
                 print(f"[scrape_ittefaq] url: {url}\n  headings: {headings}")
                 articles.append({
-                    "title": headings[0] if headings else entry.get('title', ''),
+                    "title": headings[0] if headings else "",
                     "heading": heading_text,
                     "url": url,
                     "published_date": datetime.now().date(),
@@ -901,40 +902,54 @@ def scrape_inqilab():
 
 def scrape_sangbad():
     articles = []
-    try:
-        homepage = "https://sangbad.net.bd/"
-        res = robust_request(homepage)
+    section_urls = [
+        "https://sangbad.net.bd/news/national/",
+        "https://sangbad.net.bd/news/bangladesh/",
+        "https://sangbad.net.bd/news/sports/",
+        "https://sangbad.net.bd/news/entertainment/",
+        "https://sangbad.net.bd/news/it/",
+        "https://sangbad.net.bd/news/education/",
+        "https://sangbad.net.bd/news/politics/",
+        "https://sangbad.net.bd/news/campus/",
+        "https://sangbad.net.bd/opinion/open-discussion/"
+    ]
+    seen_urls = set()
+    for section_url in section_urls:
+        res = robust_request(section_url)
         if not res:
-            return articles
+            print(f"[scrape_sangbad] Failed to fetch section: {section_url}")
+            continue
         soup = BeautifulSoup(res.text, "html.parser")
-        seen_urls = set()
+        section_candidate_urls = set()
         for link in soup.select("a[href*='/news/']"):
             url = link.get('href')
             if url and not url.startswith('http'):
-                url = homepage.rstrip('/') + '/' + url.lstrip('/')
-            if not url or url in seen_urls:
-                continue
-            seen_urls.add(url)
+                url = "https://sangbad.net.bd" + url
+            if url and url not in seen_urls and '/news/' in url:
+                section_candidate_urls.add(url)
+                seen_urls.add(url)
+            if len(section_candidate_urls) >= 15:
+                break
+        print(f"[scrape_sangbad] {section_url} -> {len(section_candidate_urls)} candidate article URLs for this section.")
+        for url in list(section_candidate_urls):
             article_res = robust_request(url)
             if not article_res:
                 continue
             try:
                 article_soup = BeautifulSoup(article_res.text, "html.parser")
-                # Only use h1 tags for headings
-                headings = [tag.text.strip() for tag in article_soup.find_all('h1') if tag.text.strip()]
-                heading_text = ' '.join(headings)
-                print(f"[scrape_sangbad] url: {url}\n  headings: {headings}")
+                heading_tag = article_soup.find('h2')
+                heading = heading_tag.text.strip() if heading_tag and heading_tag.text.strip() else ""
+                print(f"[scrape_sangbad] url: {url}\n  heading: {heading}")
                 articles.append({
-                    "title": headings[0] if headings else "",
-                    "heading": heading_text,
+                    "title": heading,
+                    "heading": heading,
                     "url": url,
-                    "published_date": datetime.now().date(),
+                    "published_date": datetime.now().date().isoformat(),
                     "source": "sangbad"
                 })
             except Exception as e:
                 print(f"Error scraping Sangbad article: {e}")
-    except Exception as e:
-        print(f"Error scraping Sangbad homepage: {e}")
+    print(f"[scrape_sangbad] Scraped {len(articles)} articles.")
     return articles
 
 def scrape_noya_diganta():
@@ -990,7 +1005,7 @@ def scrape_jai_jai_din():
             try:
                 article_soup = BeautifulSoup(article_res.text, "html.parser")
                 # Only use h1 tags for headings
-                headings = [tag.text.strip() for tag in article_soup.find_all('h1') if tag.text.strip()]
+                headings = [tag.text.strip() for tag in article_soup.find_all(['h1','h2']) if tag.text.strip()]
                 heading_text = ' '.join(headings)
                 articles.append({
                     "title": headings[0] if headings else "",
@@ -1023,7 +1038,7 @@ def scrape_manobkantha():
             try:
                 article_soup = BeautifulSoup(article_res.text, "html.parser")
                 # Only use h1 and h2 tags for headings
-                headings = [tag.text.strip() for tag in article_soup.find_all(['h1', 'h2']) if tag.text.strip()]
+                headings = [tag.text.strip() for tag in article_soup.find_all('h1') if tag.text.strip()]
                 heading_text = ' '.join(headings)
                 print(f"[scrape_manobkantha] url: {url}\n  headings: {headings}")
                 articles.append({
@@ -1134,7 +1149,7 @@ def scrape_protidiner_sangbad():
             try:
                 article_soup = BeautifulSoup(article_res.text, "html.parser")
                 # Only use h1 tags for headings
-                headings = [tag.text.strip() for tag in article_soup.find_all('h1') if tag.text.strip()]
+                headings = [tag.text.strip() for tag in article_soup.find_all(['h1','h2']) if tag.text.strip()]
                 heading_text = ' '.join(headings)
                 print(f"[scrape_protidiner_sangbad] url: {url}\n  headings: {headings}")
                 articles.append({
@@ -1232,9 +1247,9 @@ def scrape_bengali_news() -> List[Dict]:
         # ("amader_shomoy", scrape_amader_shomoy),
         ("janakantha", scrape_janakantha),
         ("inqilab", scrape_inqilab),
-        # ("sangbad", scrape_sangbad),
-             # ("noya_diganta", scrape_noya_diganta),
-             # ("jai_jai_din", scrape_jai_jai_din),
+        ("sangbad", scrape_sangbad),
+        ("noya_diganta", scrape_noya_diganta),
+        # ("jai_jai_din", scrape_jai_jai_din),
         ("manobkantha", scrape_manobkantha),
             # ("ajkaler_khobor", scrape_ajkaler_khobor),
         ("ajker_patrika", scrape_ajker_patrika),
@@ -1306,35 +1321,47 @@ def parse_news(articles: List[Dict]) -> str:
 
 
 
-def generate_trending_word_candidates_realtime_with_save(db: Session, limit: int = 15) -> str:
-    """Generate trending word candidates using REAL-TIME analysis with newspaper + social media integration and save top 15 LLM words to database"""
-    print("Starting real-time trending analysis with newspaper + social media integration...")
+def generate_trending_word_candidates_realtime_with_save(db: Session, limit: int = 15, sources: List[str] = None) -> str:
+    """Generate trending word candidates using REAL-TIME analysis with selective data sources and save top 15 LLM words to database"""
+    
+    # Default to both sources if not specified
+    if sources is None:
+        sources = ['newspaper', 'reddit']
+    
+    print(f"Starting real-time trending analysis with selected sources: {sources}")
     print("=" * 60)
     
     from datetime import date
     today = date.today()
     
-    # Fetch news articles (existing)
-    articles = fetch_news() or []
-    # Use only heading for content (as requested)
+    # Fetch news articles (conditional based on source selection)
+    articles = []
     texts = []
-    for a in articles:
-        heading = a.get('heading', '').strip() 
-        if heading:
-            texts.append(heading)
+    if 'newspaper' in sources:
+        print("📰 Fetching newspaper content...")
+        articles = fetch_news() or []
+        # Use only heading for content (as requested)
+        for a in articles:
+            heading = a.get('heading', '').strip() 
+            if heading:
+                texts.append(heading)
+        print(f"📰 Extracted {len(texts)} text segments from {len(articles)} scraped articles")
+    else:
+        print("⏭️ Skipping newspaper content (not selected)")
     
-    print(f"📰 Extracted {len(texts)} text segments from {len(articles)} scraped articles")
-    
-    # Fetch social media content (NEW: Reddit integration)
+    # Fetch social media content (conditional based on source selection)
     social_media_content = []
-    try:
-        print("📱 Fetching social media content (Reddit)...")
-        from app.services.social_media_scraper import scrape_social_media_content
-        social_media_content = scrape_social_media_content()
-        print(f"📱 Retrieved {len(social_media_content)} social media items")
-    except Exception as e:
-        print(f"⚠️ Social media scraping failed: {e}")
-        social_media_content = []
+    if 'reddit' in sources:
+        try:
+            print("📱 Fetching social media content (Reddit)...")
+            from app.services.social_media_scraper import scrape_social_media_content
+            social_media_content = scrape_social_media_content()
+            print(f"📱 Retrieved {len(social_media_content)} social media items")
+        except Exception as e:
+            print(f"⚠️ Social media scraping failed: {e}")
+            social_media_content = []
+    else:
+        print("⏭️ Skipping Reddit content (not selected)")
     
     # Fetch Google Trends
     google_trends = get_google_trends_bangladesh()
@@ -1629,11 +1656,12 @@ def generate_trending_word_candidates_realtime_with_save(db: Session, limit: int
                     if attempt < max_retries - 1:
                         import time
                         time.sleep(wait_time)
+                   
                     else:
                         print(f"🚫 Rate limit exceeded after all retries")
                         raise api_error
                 else:
-                    if attempt < max_retries - 1:
+                    if attempt < max_retries -  1:
                         print(f"⏳ Waiting {retry_delay} seconds before retry...")
                         import time
                         time.sleep(retry_delay)
