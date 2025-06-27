@@ -116,6 +116,8 @@ class FilteredNewspaperScraper:
                 'Religion': 'ধর্ম',
                 'Science': 'বিজ্ঞান',
                 'Jobs/Career': 'চাকরি',
+                'International': 'আন্তর্জাতিক',
+                'আন্তর্জাতিক': 'আন্তর্জাতিক',
                 'প্রযুক্তি': 'প্রযুক্তি',
                 'স্বাস্থ্য': 'স্বাস্থ্য',
                 'শিক্ষা': 'শিক্ষা',
@@ -468,6 +470,23 @@ class FilteredNewspaperScraper:
         with open(output_filename, 'w', encoding='utf-8') as f:
             json.dump(prompts, f, ensure_ascii=False, indent=2)
         print(f"✅ LLM prompts for all categories saved to: {output_filename}")
+
+    def combine_reddit_trending_with_international(self, trending_words: Dict[str, List[str]], reddit_trending_words: List[str]) -> Dict[str, List[str]]:
+        """
+        Combine Reddit LLM trending words with newspaper 'আন্তর্জাতিক' category trending words.
+        Args:
+            trending_words: Dictionary of category -> trending words (from newspaper)
+            reddit_trending_words: List of 8 trending words from Reddit LLM (for international topics)
+        Returns:
+            Updated trending_words with 'আন্তর্জাতিক' containing both sources
+        """
+        combined = list(trending_words.get('আন্তর্জাতিক', []))
+        # Add Reddit words, avoiding duplicates
+        for word in reddit_trending_words:
+            if word not in combined:
+                combined.append(word)
+        trending_words['আন্তর্জাতিক'] = combined
+        return trending_words
 
 
 def main():

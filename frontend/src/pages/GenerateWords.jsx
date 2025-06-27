@@ -119,33 +119,55 @@ function GenerateWords() {
         }
       }
       
-      // Add final merged analysis
-      if (response.data.final_trending_words && response.data.final_trending_words.length > 0) {
-        candidatesText += "🎯 চূড়ান্ত সমন্বিত ট্রেন্ডিং শব্দ (টপ ১৫):\n";
-        candidatesText += "=" + "=".repeat(45) + "\n\n";
+      // Add final merged analysis with category-wise display
+      if (response.data.category_wise_final && Object.keys(response.data.category_wise_final).length > 0) {
+        candidatesText += "🎯 ক্যাটেগরি অনুযায়ী চূড়ান্ত ট্রেন্ডিং শব্দ (৫টি করে):\n";
+        candidatesText += "=" + "=".repeat(50) + "\n\n";
         
-        // Show merge statistics if available  
-        if (response.data.merge_statistics) {
-          candidatesText += "📊 মার্জ পরিসংখ্যান:\n";
-          candidatesText += `   - মোট ইনপুট শব্দ: ${response.data.merge_statistics.total_input_words}\n`;
-          candidatesText += `   - চূড়ান্ত নির্বাচিত শব্দ: ${response.data.merge_statistics.final_selected}\n`;
-          candidatesText += `   - সোর্স সংখ্যা: ${response.data.merge_statistics.sources_merged}\n`;
-          if (response.data.merge_statistics.source_summary) {
-            candidatesText += `   - সোর্স বিবরণ: ${response.data.merge_statistics.source_summary.join(', ')}\n`;
-          }
+        // Show LLM selection statistics if available  
+        if (response.data.llm_selection) {
+          candidatesText += "📊 LLM নির্বাচন পরিসংখ্যান:\n";
+          candidatesText += `   - মোট ইনপুট ক্যাটেগরি: ${response.data.llm_selection.total_input_categories || 0}\n`;
+          candidatesText += `   - মোট ইনপুট শব্দ: ${response.data.llm_selection.total_input_words || 0}\n`;
+          candidatesText += `   - চূড়ান্ত নির্বাচিত শব্দ: ${response.data.llm_selection.selected_words || 0}\n`;
+          candidatesText += `   - প্রক্রিয়াকৃত ক্যাটেগরি: ${response.data.llm_selection.categories_processed || 0}\n`;
+          candidatesText += `   - নির্বাচন পদ্ধতি: ${response.data.llm_selection.selection_method || 'N/A'}\n`;
           candidatesText += "\n";
         }
         
-        candidatesText += "🏆 সর্বোচ্চ ১৫টি ট্রেন্ডিং শব্দ/বাক্যাংশ:\n";
+        // Display category-wise results
+        Object.entries(response.data.category_wise_final).forEach(([category, words]) => {
+          if (words && words.length > 0) {
+            candidatesText += `🏷️ ${category}:\n`;
+            words.forEach((word, index) => {
+              candidatesText += `   ${index + 1}. ${word}\n`;
+            });
+            candidatesText += "\n";
+          }
+        });
+        
+        // Show raw LLM response if available for debugging
+        if (response.data.llm_response) {
+          candidatesText += "\n" + "=".repeat(50) + "\n";
+          candidatesText += "🤖 LLM চূড়ান্ত প্রতিক্রিয়া:\n";
+          candidatesText += "-".repeat(30) + "\n";
+          candidatesText += response.data.llm_response;
+        }
+        
+      } else if (response.data.final_trending_words && response.data.final_trending_words.length > 0) {
+        candidatesText += "🎯 চূড়ান্ত সমন্বিত ট্রেন্ডিং শব্দ:\n";
+        candidatesText += "=" + "=".repeat(45) + "\n\n";
+        
+        candidatesText += "🏆 ট্রেন্ডিং শব্দ/বাক্যাংশ:\n";
         candidatesText += "-".repeat(40) + "\n";
         response.data.final_trending_words.forEach((word, index) => {
           candidatesText += `${index + 1}. ${word}\n`;
         });
         
-        // Show LLM response if available
+        // Show raw LLM response if available for debugging
         if (response.data.llm_response) {
           candidatesText += "\n" + "=".repeat(50) + "\n";
-          candidatesText += "🤖 LLM চূড়ান্ত নির্বাচন প্রক্রিয়া:\n";
+          candidatesText += "🤖 LLM চূড়ান্ত প্রতিক্রিয়া:\n";
           candidatesText += "-".repeat(30) + "\n";
           candidatesText += response.data.llm_response;
         }
@@ -250,78 +272,82 @@ function GenerateWords() {
     
     let keywords = [];
     const lines = candidatesText.split('\n');
-    let inFinalSection = false;
-    let inTrendingSection = false;
     
     // Debug log
     console.log("=== Parsing Candidates for Quick Selection ===");
     console.log("Total lines:", lines.length);
     
-    // First, try to find the final merged trending words section
+    // Priority 1: Try to extract from category-wise final results (🏷️ format)
+    let inCategorySection = false;
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i];
       const trimmed = line.trim();
       
-      // Look for final trending words section
-      if (trimmed.includes('চূড়ান্ত ট্রেন্ডিং শব্দ') || trimmed.includes('চূড়ান্ত LLM প্রতিক্রিয়া') || trimmed.includes('🎯')) {
-        inFinalSection = true;
-        console.log("Found final section at line:", i, "->", trimmed);
+      // Look for category-wise section
+      if (trimmed.includes('🏷️') || (trimmed.includes('ক্যাটেগরি অনুযায়ী') && trimmed.includes('চূড়ান্ত'))) {
+        inCategorySection = true;
+        console.log("Found category section at line:", i, "->", trimmed);
         continue;
       }
       
-      // Look for numbered trending words pattern in final section
-      if (inFinalSection && (trimmed.includes('ট্রেন্ডিং শব্দ') || trimmed.includes('(১৫টি)') || /^\d+\.\s/.test(trimmed) || /^[১-৯০]/.test(trimmed))) {
-        inTrendingSection = true;
-        console.log("Found trending words section at line:", i, "->", trimmed);
+      // If in category section, extract numbered items
+      if (inCategorySection && (/^\s*\d+\.\s/.test(trimmed) || /^\s*[১-৯০]+\.\s/.test(trimmed))) {
+        let cleanedLine = trimmed
+          .replace(/^\s*\d+\.\s*/, '') // Remove English numbers
+          .replace(/^\s*[১-৯০]+\.\s*/, '') // Remove Bengali numbers  
+          .replace(/^\[/, '').replace(/\]$/, '') // Remove brackets
+          .trim();
+          
+        if (cleanedLine.length > 1 && /[\u0980-\u09FF]/.test(cleanedLine)) {
+          keywords.push(cleanedLine);
+          console.log("Added from category section:", cleanedLine);
+        }
+      }
+      
+      // Stop if we hit another major section or reach end of category section
+      if (inCategorySection && (trimmed.includes('='*10) || trimmed.includes('📊 LLM') || trimmed.includes('🤖 LLM'))) {
+        break;
+      }
+    }
+    
+    // Priority 2: If no category-wise results, look for final trending words section
+    if (keywords.length === 0) {
+      console.log("No category results found, looking for final trending words...");
+      let inFinalSection = false;
+      
+      for (let i = 0; i < lines.length; i++) {
+        const line = lines[i];
+        const trimmed = line.trim();
         
-        // If this line itself has a numbered item, process it
-        if (/^\d+\.\s/.test(trimmed) || /^[১-৯০]/.test(trimmed)) {
+        // Look for final trending words section
+        if (trimmed.includes('চূড়ান্ত ট্রেন্ডিং শব্দ') || trimmed.includes('🎯') || trimmed.includes('🏆 ট্রেন্ডিং শব্দ')) {
+          inFinalSection = true;
+          console.log("Found final section at line:", i, "->", trimmed);
+          continue;
+        }
+        
+        // Extract numbered items from final section
+        if (inFinalSection && (/^\d+\.\s/.test(trimmed) || /^[১-৯০]+\.\s/.test(trimmed))) {
           let cleanedLine = trimmed
             .replace(/^\d+\.\s*/, '') // Remove English numbers
             .replace(/^[১-৯০]+\.\s*/, '') // Remove Bengali numbers  
             .replace(/^\[/, '').replace(/\]$/, '') // Remove brackets
             .trim();
-          
+            
           if (cleanedLine.length > 1 && /[\u0980-\u09FF]/.test(cleanedLine)) {
             keywords.push(cleanedLine);
             console.log("Added from final section:", cleanedLine);
           }
         }
-        continue;
-      }
-      
-      // If we're in trending section, look for numbered items (IMPROVED BENGALI PARSING)
-      if (inTrendingSection && (
-        /^\d+\.\s/.test(trimmed) || // English numbers: 1. 2. etc.
-        /^[১-৯০]+\.\s/.test(trimmed) || // Bengali numbers
-        /^\d+\s*[\.\:]/.test(trimmed) // Numbers with dots or colons
-      )) {
-        let cleanedLine = trimmed
-          .replace(/^\d+\s*[\.\:]\s*/, '') // Remove English numbers
-          .replace(/^[১-৯০]+\s*[\.\:]\s*/, '') // Remove Bengali numbers (FIXED)
-          .replace(/^\[/, '').replace(/\]$/, '') // Remove brackets
-          .replace(/^["'](.+)["']$/, '$1') // Remove quotes
-          .replace(/^r\/[a-zA-Z0-9_]+:\s*/, '') // Remove subreddit prefixes like "r/bangladesh: "
-          .trim();
         
-        if (cleanedLine.length > 1 && 
-            /[\u0980-\u09FF]/.test(cleanedLine) &&
-            !cleanedLine.includes('❌') && 
-            !cleanedLine.includes('Error') &&
-            !cleanedLine.includes('emerging word') &&
-            !cleanedLine.includes('সাবরেডিট')) {
-          keywords.push(cleanedLine);
-          console.log("Added trending word:", cleanedLine);
+        // Stop if we hit another major section  
+        if (inFinalSection && (trimmed.includes('='*10) || trimmed.includes('🤖 LLM'))) {
+          break;
         }
-      }
-      
-      // Stop if we hit another major section  
-      if (inFinalSection && (trimmed.includes('='*10) || trimmed.includes('---'))) {
-        break;
       }
     }
     
-    // Fallback 1: If no final section found, look for any numbered Bengali words
+    // Priority 3: Look for any numbered Bengali words (fallback)
     if (keywords.length === 0) {
       console.log("No final section found, trying fallback parsing...");
       
@@ -329,11 +355,13 @@ function GenerateWords() {
         const line = lines[i];
         const trimmed = line.trim();
         
-        // Look for numbered items (1. 2. etc.) that contain Bengali words
-        if (/^\d+\.\s*/.test(trimmed) && /[\u0980-\u09FF]/.test(trimmed)) {
-          let cleanedLine = trimmed.replace(/^\d+\.\s*/, '').trim();
-          cleanedLine = cleanedLine.replace(/^["'](.+)["']$/, '$1');
-          cleanedLine = cleanedLine.trim();
+        // Look for numbered items that contain Bengali words
+        if ((/^\d+\.\s*/.test(trimmed) || /^[১-৯০]+\.\s*/.test(trimmed)) && /[\u0980-\u09FF]/.test(trimmed)) {
+          let cleanedLine = trimmed
+            .replace(/^\d+\.\s*/, '')
+            .replace(/^[১-৯০]+\.\s*/, '')
+            .replace(/^["'](.+)["']$/, '$1')
+            .trim();
           
           console.log("Fallback found:", trimmed, "-> cleaned:", cleanedLine);
           
@@ -348,12 +376,23 @@ function GenerateWords() {
       }
     }
     
-    // Fallback 2: Try to get from hybridResults final_trending_words if parsing failed
-    if (keywords.length === 0 && hybridResults && hybridResults.final_trending_words) {
-      console.log("Using fallback from hybridResults.final_trending_words");
-      keywords = hybridResults.final_trending_words.slice(0, 15);
+    // Priority 4: Use direct results from API response if parsing failed
+    if (keywords.length === 0 && hybridResults) {
+      if (hybridResults.final_trending_words && hybridResults.final_trending_words.length > 0) {
+        console.log("Using fallback from hybridResults.final_trending_words");
+        keywords = hybridResults.final_trending_words.slice(0, 15);
+      } else if (hybridResults.category_wise_final) {
+        console.log("Using fallback from hybridResults.category_wise_final");
+        Object.values(hybridResults.category_wise_final).forEach(words => {
+          if (Array.isArray(words)) {
+            keywords.push(...words);
+          }
+        });
+      }
     }
     
+    // Remove duplicates and limit to 15
+    keywords = [...new Set(keywords)];
     console.log("Final parsed candidates:", keywords);
     console.log("=== End Debug ===");
     return keywords.slice(0, 15); // Show max 15 words for quick selection

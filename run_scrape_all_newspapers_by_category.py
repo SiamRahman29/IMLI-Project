@@ -1,24 +1,23 @@
-from app.routes.helpers import scrape_bengali_news, categorize_articles
+from app.services.filtered_newspaper_service import FilteredNewspaperScraper
 import json
 
 if __name__ == "__main__":
-    articles = scrape_bengali_news()
-    # Add category detection to each article
-    categorized_articles = categorize_articles(articles)
     # User-defined 12 Bengali news categories
     user_categories = [
         'জাতীয়', 'অর্থনীতি', 'রাজনীতি', 'লাইফস্টাইল', 'বিনোদন', 'খেলাধুলা',
-        'ধর্ম', 'চাকরি', 'শিক্ষা', 'স্বাস্থ্য', 'মতামত', 'বিজ্ঞান'
+        'ধর্ম', 'চাকরি', 'শিক্ষা', 'স্বাস্থ্য', 'মতামত', 'বিজ্ঞান', 'আন্তর্জাতিক'
     ]
+    # Use the main pipeline's categorization logic
+    scraper = FilteredNewspaperScraper(user_categories)
+    results = scraper.scrape_all_newspapers()
     # Organize articles by user-defined categories
     category_dict = {cat: [] for cat in user_categories}
     category_dict['অন্যান্য'] = []  # For uncategorized/other
-    for article in categorized_articles:
-        cat = article.get('category', 'অন্যান্য')
-        if cat in user_categories:
-            category_dict[cat].append(article)
+    for category, articles in results['category_wise_articles'].items():
+        if category in user_categories:
+            category_dict[category].extend(articles)
         else:
-            category_dict['অন্যান্য'].append(article)
+            category_dict['অন্যান্য'].extend(articles)
     # Save to JSON file
     def default_serializer(obj):
         if hasattr(obj, 'isoformat'):

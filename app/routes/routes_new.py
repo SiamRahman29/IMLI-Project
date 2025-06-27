@@ -11,9 +11,8 @@ import sys
 import random
 import traceback
 import builtins
-import traceback
-import json
-import time
+import os
+import asyncio
 import io
 import sys
 import random
@@ -107,35 +106,171 @@ def generate_candidates(db: Session = Depends(get_db)):
         # Extract trending words for each category
         all_trending_words = []
         category_wise_trending = {}
-        
         for category in TARGET_CATEGORIES:
             articles = results['category_wise_articles'][category]
-            
             if articles:
                 print(f"🤖 Processing {category} category with {len(articles)} articles...")
-                
-                # Get trending words for this category using LLM
                 trending_words = category_functions[category](articles)
-                
                 category_wise_trending[category] = trending_words
                 all_trending_words.extend(trending_words)
-                
                 print(f"✅ {category}: {len(trending_words)} trending words extracted")
             else:
                 print(f"⚠️ {category}: No articles found")
                 category_wise_trending[category] = []
+
+        # --- Integrate Reddit LLM trending words for 'আন্তর্জাতিক' ---
+        try:
+            from app.services.reddit_data_scrapping import RedditDataScrapper
+            reddit_scraper = RedditDataScrapper()
+            reddit_results = reddit_scraper.run_comprehensive_analysis(posts_per_subreddit=20)
+            reddit_emerging_words = reddit_results.get('emerging_words', [])
+            reddit_trending_words = [item['emerging_word'] for item in reddit_emerging_words if item.get('emerging_word')]
+            if reddit_trending_words:
+                # Merge Reddit trending words with newspaper 'আন্তর্জাতিক' trending words
+                category_wise_trending = scraper.combine_reddit_trending_with_international(
+                    category_wise_trending, reddit_trending_words
+                )
+                # Also update all_trending_words for completeness
+                all_trending_words.extend([w for w in reddit_trending_words if w not in all_trending_words])
+        except Exception as e:
+            print(f"⚠️ Could not integrate Reddit LLM trending words: {e}")
+
+        # --- Final LLM Selection: Get 5 words per category ---
+        category_wise_final = {}
+        final_trending_words = []
+        llm_selection_stats = {}
         
+        try:
+            # Create category-wise prompt for final selection
+            category_prompt_sections = []
+            total_input_words = 0
+            
+            for category, words in category_wise_trending.items():
+                if words and len(words) > 0:
+                    # Take up to 8 words per category (or 16 for আন্তর্জাতিক)
+                    word_limit = 16 if category == 'আন্তর্জাতিক' else 8
+                    limited_words = words[:word_limit]
+                    total_input_words += len(limited_words)
+                    
+                    words_text = "\n".join([f"  {i}. {word}" for i, word in enumerate(limited_words, 1)])
+                    section = f"{category} ({len(limited_words)}টি):\n{words_text}"
+                    category_prompt_sections.append(section)
+            
+            if category_prompt_sections:
+                categories_text = "\n\n".join(category_prompt_sections)
+                
+                from groq import Groq
+                client = Groq(api_key=os.getenv('GROQ_API_KEY_NEWSPAPER'))
+                
+                final_selection_prompt = f"""
+তুমি একজন বিশেষজ্ঞ বাংলা ভাষা বিশ্লেষক। নিচে বিভিন্ন ক্যাটেগরি থেকে সংগৃহীত ট্রেন্ডিং শব্দ/বাক্যাংশের তালিকা দেওয়া হল। প্রতিটি ক্যাটেগরি থেকে সবচেয়ে গুরুত্বপূর্ণ ও ট্রেন্ডিং ৫টি শব্দ/বাক্যাংশ নির্বাচন করো।
+
+নির্বাচনের মানদণ্ড:
+1. সর্বোচ্চ ট্রেন্ডিং ও আলোচিত বিষয়
+2. বর্তমান সময়ের সবচেয়ে প্রাসঙ্গিক
+3. ২-৪ শব্দের মধ্যে সংক্ষিপ্ত ও স্পষ্ট বাংলা শব্দ/বাক্যাংশ
+4. এক ক্যাটেগরিতে একই টপিক বা অর্থের কাছাকাছি শব্দ থাকবে না, প্রতিটি শব্দ ইউনিক ও প্রসঙ্গভিত্তিক অর্থবহ হতে হবে
+5. প্রতি ক্যাটেগরিতে ঠিক ৫টি করে
+
+ক্যাটেগরি-ভিত্তিক ট্রেন্ডিং শব্দ:
+
+{categories_text}
+
+আউটপুট ফরম্যাট (প্রতি ক্যাটেগরিতে ৫টি করে):
+
+[ক্যাটেগরির নাম]:
+১. [শব্দ/বাক্যাংশ]
+২. [শব্দ/বাক্যাংশ]
+৩. [শব্দ/বাক্যাংশ]
+৪. [শব্দ/বাক্যাংশ]
+৫. [শব্দ/বাক্যাংশ]
+
+**গুরুত্বপূর্ণ:** শুধুমাত্র উপরের ফরম্যাটে উত্তর দাও। অতিরিক্ত ব্যাখ্যা যোগ করো না।
+"""
+                
+                print(f"🤖 Generating final category-wise selection from {len(category_prompt_sections)} categories using LLM...")
+                
+                completion = client.chat.completions.create(
+                    model="llama-3.3-70b-versatile",
+                    messages=[
+                        {
+                            "role": "user",
+                            "content": final_selection_prompt
+                        }
+                    ],
+                    temperature=0.2,
+                    max_tokens=1200
+                )
+                
+                llm_response = completion.choices[0].message.content.strip()
+                
+                # Parse category-wise response
+                current_category = None
+                lines = llm_response.split('\n')
+                
+                for line in lines:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    
+                    # Check if this is a category header (ends with colon)
+                    if line.endswith(':') and not line.startswith(('1.', '2.', '3.', '4.', '5.', '১.', '২.', '৩.', '৪.', '৫.')):
+                        current_category = line.replace(':', '').strip()
+                        category_wise_final[current_category] = []
+                        continue
+                    
+                    # Extract numbered items for current category
+                    if current_category and (line.startswith(('1.', '2.', '3.', '4.', '5.', '১.', '২.', '৩.', '৪.', '৫.'))):
+                        import re
+                        word = re.sub(r'^[১২ৃ৪৫1-5][\.\)]\s*', '', line).strip()
+                        if word and len(word) > 1:
+                            category_wise_final[current_category].append(word)
+                            final_trending_words.append(word)
+                
+                # Store LLM selection statistics
+                llm_selection_stats = {
+                    "total_input_categories": len(category_prompt_sections),
+                    "total_input_words": total_input_words,
+                    "selected_words": len(final_trending_words),
+                    "categories_processed": len(category_wise_final),
+                    "selection_method": "Enhanced category-wise LLM selection (5 per category)",
+                    "llm_response": llm_response
+                }
+                
+                print(f"✅ LLM selected {len(final_trending_words)} words across {len(category_wise_final)} categories")
+                for category, words in category_wise_final.items():
+                    print(f"📊 {category}: {len(words)} words - {', '.join(words[:3])}..." if words else f"📊 {category}: No words")
+        
+        except Exception as e:
+            print(f"⚠️ Could not use LLM for final selection: {e}")
+            # Fallback: Use top words from each category
+            for category, words in category_wise_trending.items():
+                if words:
+                    category_wise_final[category] = words[:5]  # Take top 5 from each
+                    final_trending_words.extend(words[:5])
+            
+            llm_selection_stats = {
+                "selection_method": "Fallback: Top 5 per category without LLM",
+                "selected_words": len(final_trending_words),
+                "categories_processed": len(category_wise_final)
+            }
+
         print(f"🎉 Total trending words extracted: {len(all_trending_words)}")
+        print(f"🎯 Final selected words: {len(final_trending_words)}")
         
         return {
             "message": "Category-wise trending words generated successfully using filtered newspaper scraping and LLM analysis!",
             "scraping_info": results['scraping_info'],
             "category_wise_trending_words": category_wise_trending,
             "all_trending_words": all_trending_words,
+            "category_wise_final": category_wise_final,
+            "final_trending_words": final_trending_words,
+            "llm_selection": llm_selection_stats,
             "statistics": {
                 "total_articles_scraped": results['scraping_info']['total_articles'],
                 "categories_processed": len([c for c in TARGET_CATEGORIES if category_wise_trending[c]]),
                 "total_trending_words": len(all_trending_words),
+                "final_selected_words": len(final_trending_words),
                 "scraping_time_seconds": results['scraping_info']['scraping_time_seconds']
             }
         }
@@ -1299,113 +1434,118 @@ async def hybrid_generate_candidates(
     try:
         async def process_newspaper_data():
             """Process newspaper data with dedicated API key"""
-            try:
-                print("📰 Processing newspaper data...")
-                
-                # Temporarily set newspaper API key
-                original_key = os.environ.get("GROQ_API_KEY")
-                newspaper_key = os.environ.get("GROQ_API_KEY_NEWSPAPER")
-                if newspaper_key:
-                    os.environ["GROQ_API_KEY"] = newspaper_key
-                
-                # Use category-wise newspaper analysis as per user requirements
-                from app.services.filtered_newspaper_service import FilteredNewspaperScraper
-                from app.services.category_llm_analyzer import (
-                    get_জাতীয়_trending_words, get_অর্থনীতি_trending_words, get_রাজনীতি_trending_words,
-                    get_লাইফস্টাইল_trending_words, get_বিনোদন_trending_words, get_খেলাধুলা_trending_words,
-                    get_ধর্ম_trending_words, get_চাকরি_trending_words, get_শিক্ষা_trending_words,
-                    get_স্বাস্থ্য_trending_words, get_মতামত_trending_words, get_বিজ্ঞান_trending_words,
-                    get_আন্তর্জাতিক_trending_words, get_প্রযুক্তি_trending_words
-                )
-                
-                # Target categories
-                TARGET_CATEGORIES = [
-                    'জাতীয়', 'আন্তর্জাতিক', 'অর্থনীতি', 'রাজনীতি', 'লাইফস্টাইল', 'বিনোদন', 
-                    'খেলাধুলা', 'ধর্ম', 'চাকরি', 'শিক্ষা', 'স্বাস্থ্য', 'মতামত', 'বিজ্ঞান', 'প্রযুক্তি'
-                ]
-                
-                print(f"🚀 Starting filtered newspaper scraping for {len(TARGET_CATEGORIES)} categories...")
-                
-                # Initialize filtered newspaper scraper
-                scraper = FilteredNewspaperScraper(TARGET_CATEGORIES)
-                
-                # Scrape all newspapers with category filtering
-                results = scraper.scrape_all_newspapers()
-                
-                print(f"📊 Scraped {results['scraping_info']['total_articles']} articles")
-                
-                # Category-wise LLM trending word extraction
-                category_functions = {
-                    'জাতীয়': get_জাতীয়_trending_words,
-                    'আন্তর্জাতিক': get_আন্তর্জাতিক_trending_words,
-                    'অর্থনীতি': get_অর্থনীতি_trending_words,
-                    'রাজনীতি': get_রাজনীতি_trending_words,
-                    'লাইফস্টাইল': get_লাইফস্টাইল_trending_words,
-                    'বিনোদন': get_বিনোদন_trending_words,
-                    'খেলাধুলা': get_খেলাধুলা_trending_words,
-                    'ধর্ম': get_ধর্ম_trending_words,
-                    'চাকরি': get_চাকরি_trending_words,
-                    'শিক্ষা': get_শিক্ষা_trending_words,
-                    'স্বাস্থ্য': get_স্বাস্থ্য_trending_words,
-                    'মতামত': get_মতামত_trending_words,
-                    'বিজ্ঞান': get_বিজ্ঞান_trending_words,
-                    'প্রযুক্তি': get_প্রযুক্তি_trending_words
-                }
-                
-                # Extract trending words for each category
-                all_trending_words = []
-                category_wise_trending = {}
-                
-                for category in TARGET_CATEGORIES:
-                    articles = results['category_wise_articles'][category]
-                    
-                    if articles:
-                        print(f"🤖 Processing {category} category with {len(articles)} articles...")
-                        
-                        # Get trending words for this category using LLM
-                        trending_words = category_functions[category](articles)
-                        
-                        category_wise_trending[category] = trending_words
-                        all_trending_words.extend(trending_words)
-                        
-                        print(f"✅ {category}: {len(trending_words)} trending words extracted")
-                    else:
-                        print(f"⚠️ {category}: No articles found")
-                        category_wise_trending[category] = []
-                
-                print(f"🎉 Total trending words extracted from newspapers: {len(all_trending_words)}")
-                
-                return {
-                    "status": "success",
-                    "source": "newspaper",
-                    "trending_words": all_trending_words,
-                    "category_wise_trending": category_wise_trending,
-                    "scraping_info": results['scraping_info']
-                }
-            except Exception as e:
-                return {
-                    "status": "failed", 
-                    "source": "newspaper",
-                    "error": str(e),
-                    "trending_words": []
-                }
+            print("📰 Processing newspaper data...")
+            
+            # Temporarily set newspaper API key
+            original_key = os.environ.get("GROQ_API_KEY")
+            newspaper_key = os.environ.get("GROQ_API_KEY_NEWSPAPER")
+            if newspaper_key:
+                os.environ["GROQ_API_KEY"] = newspaper_key
+            
+            # Use category-wise newspaper analysis as per user requirements
+            from app.services.filtered_newspaper_service import FilteredNewspaperScraper
+            from app.services.category_llm_analyzer import (
+                get_জাতীয়_trending_words, get_অর্থনীতি_trending_words, get_রাজনীতি_trending_words,
+                get_লাইফস্টাইল_trending_words, get_বিনোদন_trending_words, get_খেলাধুলা_trending_words,
+                get_ধর্ম_trending_words, get_চাকরি_trending_words, get_শিক্ষা_trending_words,
+                get_স্বাস্থ্য_trending_words, get_মতামত_trending_words, get_বিজ্ঞান_trending_words,
+                get_আন্তর্জাতিক_trending_words, get_প্রযুক্তি_trending_words
+            )
+            
+            # Target categories
+            TARGET_CATEGORIES = [
+                'জাতীয়', 'আন্তর্জাতিক', 'অর্থনীতি', 'রাজনীতি', 'লাইফস্টাইল', 'বিনোদন', 
+                'খেলাধুলা', 'ধর্ম', 'চাকরি', 'শিক্ষা', 'স্বাস্থ্য', 'মতামত', 'বিজ্ঞান', 'প্রযুক্তি'
+            ]
+            
+            print(f"🚀 Starting filtered newspaper scraping for {len(TARGET_CATEGORIES)} categories...")
+            
+            # Initialize filtered newspaper scraper
+            scraper = FilteredNewspaperScraper(TARGET_CATEGORIES)
+            
+            # Scrape all newspapers with category filtering
+            results = scraper.scrape_all_newspapers()
+            
+            print(f"📊 Scraped {results['scraping_info']['total_articles']} articles")
+            
+            # Category-wise LLM trending word extraction
+            category_functions = {
+                'জাতীয়': get_জাতীয়_trending_words,
+                'আন্তর্জাতিক': get_আন্তর্জাতিক_trending_words,
+                'অর্থনীতি': get_অর্থনীতি_trending_words,
+                'রাজনীতি': get_রাজনীতি_trending_words,
+                'লাইফস্টাইল': get_লাইফস্টাইল_trending_words,
+                'বিনোদন': get_বিনোদন_trending_words,
+                'খেলাধুলা': get_খেলাধুলা_trending_words,
+                'ধর্ম': get_ধর্ম_trending_words,
+                'চাকরি': get_চাকরি_trending_words,
+                'শিক্ষা': get_শিক্ষা_trending_words,
+                'স্বাস্থ্য': get_স্বাস্থ্য_trending_words,
+                'মতামত': get_মতামত_trending_words,
+                'বিজ্ঞান': get_বিজ্ঞান_trending_words,
+                'প্রযুক্তি': get_প্রযুক্তি_trending_words
+            }
+            
+            # Extract trending words for each category
+            all_trending_words = []
+            category_wise_trending = {}
+            for category in TARGET_CATEGORIES:
+                articles = results['category_wise_articles'][category]
+                if articles:
+                    print(f"🤖 Processing {category} category with {len(articles)} articles...")
+                    trending_words = category_functions[category](articles)
+                    category_wise_trending[category] = trending_words
+                    all_trending_words.extend(trending_words)
+                    print(f"✅ {category}: {len(trending_words)} trending words extracted")
+                else:
+                    print(f"⚠️ {category}: No articles found")
+                    category_wise_trending[category] = []
 
+            # --- Integrate Reddit LLM trending words for 'আন্তর্জাতিক' ---
+            try:
+                from app.services.reddit_data_scrapping import RedditDataScrapper
+                reddit_scraper = RedditDataScrapper()
+                reddit_results = reddit_scraper.run_comprehensive_analysis(posts_per_subreddit=20)
+                reddit_emerging_words = reddit_results.get('emerging_words', [])
+                reddit_trending_words = [item['emerging_word'] for item in reddit_emerging_words if item.get('emerging_word')]
+                if reddit_trending_words:
+                    print(f"📱 Found {len(reddit_trending_words)} Reddit trending words")
+                    # Combine Reddit trending words with newspaper 'আন্তর্জাতিক' trending words (8 + 8 = 16)
+                    international_newspaper_words = category_wise_trending.get('আন্তর্জাতিক', [])[:8]  # Take only 8 from newspaper
+                    reddit_words_limited = reddit_trending_words[:8]  # Take only 8 from Reddit
+                    
+                    # Combine for আন্তর্জাতিক category
+                    category_wise_trending['আন্তর্জাতিক'] = international_newspaper_words + reddit_words_limited
+                    print(f"🔗 Combined আন্তর্জাতিক: {len(international_newspaper_words)} newspaper + {len(reddit_words_limited)} Reddit = {len(category_wise_trending['আন্তর্জাতিক'])} total")
+                    
+                    # Also update all_trending_words for completeness
+                    all_trending_words.extend([w for w in reddit_words_limited if w not in all_trending_words])
+            except Exception as e:
+                print(f"⚠️ Could not integrate Reddit LLM trending words: {e}")
+
+            # Limit each category to exactly 8 words (except আন্তর্জাতিক which can have 16)
+            for category in category_wise_trending:
+                if category != 'আন্তর্জাতিক':
+                    category_wise_trending[category] = category_wise_trending[category][:8]
+
+            print(f"🎉 Total trending words extracted: {len(all_trending_words)}")
+            return {
+                "message": "Category-wise trending words generated successfully using filtered newspaper scraping and LLM analysis!",
+                "scraping_info": results['scraping_info'],
+                "category_wise_trending_words": category_wise_trending,
+                "all_trending_words": all_trending_words,
+                "statistics": {
+                    "total_articles_scraped": results['scraping_info']['total_articles'],
+                    "categories_processed": len([c for c in TARGET_CATEGORIES if category_wise_trending[c]]),
+                    "total_trending_words": len(all_trending_words),
+                    "scraping_time_seconds": results['scraping_info']['scraping_time_seconds']
+                }
+            }
+        
         async def process_reddit_data():
             """Process Reddit data with dedicated API key"""
             try:
-                print("📡 Processing Reddit data...")
-                
-                # Use the existing Reddit scraper file from project root
-                import sys
-                import os
-                
-                # Add the project root to Python path
-                project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
-                if project_root not in sys.path:
-                    sys.path.insert(0, project_root)
-                
-                # Import from your existing reddit_data_scrapping.py file from app/services
-                from app.services.reddit_data_scrapping import RedditDataScrapper
+                print("📱 Processing Reddit data...")
                 
                 # Temporarily set Reddit API key
                 original_key = os.environ.get("GROQ_API_KEY")
@@ -1413,253 +1553,259 @@ async def hybrid_generate_candidates(
                 if reddit_key:
                     os.environ["GROQ_API_KEY"] = reddit_key
                 
-                # Create a modified version that doesn't depend on the problematic import
-                scraper = RedditDataScrapper()
+                # Initialize Reddit data scrapper
+                from app.services.reddit_data_scrapping import RedditDataScrapper
+                reddit_scraper = RedditDataScrapper()
                 
-                # Use a simpler approach - call the main analysis function directly
-                reddit_results = scraper.run_comprehensive_analysis(posts_per_subreddit=20)
+                # Run comprehensive analysis on Reddit data
+                reddit_results = reddit_scraper.run_comprehensive_analysis(posts_per_subreddit=20)
                 
-                # Restore original key
-                if original_key:
-                    os.environ["GROQ_API_KEY"] = original_key
-                
-                # Extract emerging words from Reddit results
-                emerging_words = reddit_results.get('emerging_words', [])
-                reddit_trending = [item['emerging_word'] for item in emerging_words if item.get('emerging_word')]
-                
-                return {
-                    "status": "success",
-                    "source": "reddit",
-                    "trending_words": reddit_trending,
-                    "subreddit_results": reddit_results.get('subreddit_responses', []),
-                    "summary": reddit_results.get('summary', {})
-                }
+                return reddit_results.get('emerging_words', [])
+            
             except Exception as e:
-                print(f"❌ Reddit processing error: {e}")
-                import traceback
-                traceback.print_exc()
-                return {
-                    "status": "failed",
-                    "source": "reddit", 
-                    "error": str(e),
-                    "trending_words": []
-                }
+                results["errors"]["reddit"] = str(e)
+                return []
         
-        # Process based on mode
-        if mode == "parallel" and len(sources) > 1:
-            print("🔄 Running parallel processing...")
+        # Main processing logic
+        if mode == "sequential":
+            print("🔄 Starting sequential processing: Newspapers first, then Reddit...")
             
-            # Parallel processing
-            tasks = []
-            if "newspaper" in sources:
-                tasks.append(process_newspaper_data())
-            if "reddit" in sources:
-                tasks.append(process_reddit_data())
+            # Sequential processing: Newspapers first, then Reddit
+            newspaper_results = await process_newspaper_data()
+            results["results"]["newspaper"] = newspaper_results
             
-            # Execute tasks in parallel
-            parallel_results = await asyncio.gather(*tasks, return_exceptions=True)
+            # Add newspaper trending words to final list
+            if newspaper_results and "all_trending_words" in newspaper_results:
+                newspaper_words = newspaper_results["all_trending_words"]
+                results["final_trending_words"].extend(newspaper_words)
+                print(f"📰 Added {len(newspaper_words)} newspaper trending words to final list")
+                print(f"📰 Sample newspaper words: {', '.join(newspaper_words[:5])}..." if newspaper_words else "❌ No newspaper words")
             
-            for result in parallel_results:
-                if isinstance(result, Exception):
-                    print(f"❌ Parallel task failed: {result}")
-                    continue
+            # Now process Reddit data
+            print("📱 Starting Reddit data processing...")
+            reddit_emerging_words = await process_reddit_data()
+            
+            # Merge results if Reddit data is available
+            if reddit_emerging_words:
+                results["results"]["reddit"] = reddit_emerging_words
+                reddit_words = []
+                # Combine Reddit trending words with existing newspaper trends
+                for item in reddit_emerging_words:
+                    word = item.get('emerging_word')
+                    if word and word not in results["final_trending_words"]:
+                        results["final_trending_words"].append(word)
+                        reddit_words.append(word)
                 
-                source = result.get("source", "unknown")
-                if result.get("status") == "success":
-                    results["results"][source] = result
-                else:
-                    results["errors"][source] = result
-                    
-        else:
-            print("⏭️ Running sequential processing...")
-            
-            # Sequential processing
-            if "newspaper" in sources:
-                newspaper_result = await process_newspaper_data()
-                source = newspaper_result.get("source", "newspaper")
-                if newspaper_result.get("status") == "success":
-                    results["results"][source] = newspaper_result
-                else:
-                    results["errors"][source] = newspaper_result
-            
-            if "reddit" in sources:
-                reddit_result = await process_reddit_data()
-                source = reddit_result.get("source", "reddit")
-                if reddit_result.get("status") == "success":
-                    results["results"][source] = reddit_result
-                else:
-                    results["errors"][source] = reddit_result
+                print(f"📱 Added {len(reddit_words)} unique Reddit trending words to final list")
+                print(f"📱 Sample Reddit words: {', '.join(reddit_words[:3])}..." if reddit_words else "❌ No Reddit words")
+            else:
+                print("⚠️ No Reddit data obtained")
         
-        # Merge results if both sources were successful
-        if len(results["results"]) > 1:
-            print("🔀 Merging results from multiple sources...")
-            merged_results = await merge_and_generate_final_trending(results["results"], db)
-            results["final_trending_words"] = merged_results["final_trending_words"]
-            results["status"] = merged_results["status"]
-            results["llm_response"] = merged_results.get("llm_response", "")
-            results["merge_prompt"] = merged_results.get("merge_prompt", "")  # Add merge prompt to results
-            results["merge_statistics"] = merged_results.get("merge_statistics", {})
-        elif len(results["results"]) == 1:
-            # Single source result
-            single_result = list(results["results"].values())[0]
-            results["final_trending_words"] = single_result.get("trending_words", [])
-            results["status"] = "single_source"
+        else:
+            print("🔄 Starting parallel processing: Newspapers and Reddit simultaneously...")
+            
+            # Parallel processing: Newspapers and Reddit at the same time
+            newspaper_task = asyncio.create_task(process_newspaper_data())
+            reddit_task = asyncio.create_task(process_reddit_data())
+            
+            # Wait for both tasks to complete
+            newspaper_results, reddit_emerging_words = await asyncio.gather(newspaper_task, reddit_task)
+            
+            # Store newspaper results
+            results["results"]["newspaper"] = newspaper_results
+            if newspaper_results and "all_trending_words" in newspaper_results:
+                newspaper_words = newspaper_results["all_trending_words"]
+                results["final_trending_words"].extend(newspaper_words)
+                print(f"📰 Added {len(newspaper_words)} newspaper trending words to final list")
+                print(f"📰 Sample newspaper words: {', '.join(newspaper_words[:5])}..." if newspaper_words else "❌ No newspaper words")
+            
+            # Merge Reddit results into final trending words
+            if reddit_emerging_words:
+                results["results"]["reddit"] = reddit_emerging_words
+                reddit_words = []
+                for item in reddit_emerging_words:
+                    word = item.get('emerging_word')
+                    if word and word not in results["final_trending_words"]:
+                        results["final_trending_words"].append(word)
+                        reddit_words.append(word)
+                
+                print(f"📱 Added {len(reddit_words)} unique Reddit trending words to final list")
+                print(f"📱 Sample Reddit words: {', '.join(reddit_words[:3])}..." if reddit_words else "❌ No Reddit words")
+            else:
+                print("⚠️ No Reddit data obtained")
+        
+        print(f"🔗 Total combined trending words before LLM selection: {len(results['final_trending_words'])}")
+        print(f"🔗 Combined sample: {', '.join(results['final_trending_words'][:8])}..." if results['final_trending_words'] else "❌ No combined words")
+        
+        # Final response construction
+        results["message"] = "Trending words generated from selected sources"
+        results["total_sources"] = len(sources)
+        
+        # Prepare detailed source information for better LLM analysis
+        source_breakdown = {}
+        category_wise_breakdown = {}
+        
+        if results["results"].get("newspaper"):
+            newspaper_results = results["results"]["newspaper"]
+            newspaper_words = newspaper_results.get("all_trending_words", [])
+            category_wise_words = newspaper_results.get("category_wise_trending_words", {})
+            
+            source_breakdown["newspaper"] = {
+                "count": len(newspaper_words),
+                "words": newspaper_words,
+                "categories": category_wise_words
+            }
+            
+            # Build category-wise breakdown for LLM prompt
+            for category, words in category_wise_words.items():
+                if words:
+                    category_wise_breakdown[category] = words
+        
+        if results["results"].get("reddit"):
+            reddit_words = [item.get('emerging_word') for item in results["results"]["reddit"] if item.get('emerging_word')]
+            source_breakdown["reddit"] = {
+                "count": len(reddit_words),
+                "words": reddit_words
+            }
+        
+        # Use LLM to get final category-wise selection (5 words per category)
+        if category_wise_breakdown:
+            try:
+                print(f"🤖 Generating category-wise final selection from {len(category_wise_breakdown)} categories using LLM...")
+                
+                # Create category-wise prompt format
+                category_prompt_sections = []
+                for category, words in category_wise_breakdown.items():
+                    if words:
+                        words_text = "\n".join([f"  {i}. {word}" for i, word in enumerate(words, 1)])
+                        section = f"{category}:\n{words_text}"
+                        category_prompt_sections.append(section)
+                
+                categories_text = "\n\n".join(category_prompt_sections)
+                
+                from groq import Groq
+                client = Groq()
+
+                final_selection_prompt = f"""আপনাকে নিম্নলিখিত ক্যাটেগরি অনুযায়ী ট্রেন্ডিং শব্দগুলো থেকে প্রতিটি ক্যাটেগরি থেকে সবচেয়ে গুরুত্বপূর্ণ ৫টি করে শব্দ বেছে নিতে হবে। এমন শব্দ/বাক্যাংশ দাও যেটা শুনলে মানুষ বুঝতে পারবে যে এটা কীসের সাথে সম্পর্কিত। যার একটা অর্থ থাকবে, এমন কিছু দেবে না যেটা অর্থহীন এবং যেটা দেখলে কনটেক্সট বোঝা যাবে না।
+ক্যাটেগরি অনুযায়ী ট্রেন্ডিং শব্দ:
+{categories_text}
+নির্বাচনের নিয়মাবলী:
+1. প্রতিটি ক্যাটেগরি থেকে সবচেয়ে প্রাসঙ্গিক ৫টি শব্দ নির্বাচন করুন
+2. প্রতিটি শব্দ/বাক্যাংশ ২-৪ শব্দের মধ্যে এবং স্পষ্ট অর্থবোধক হতে হবে
+3. এক ক্যাটেগরিতে একই টপিক বা অর্থের কাছাকাছি শব্দ থাকবে না, প্রতিটি শব্দ ইউনিক ও প্রসঙ্গভিত্তিক অর্থবহ হতে হবে
+4. response শুধুমাত্র bangla language a deo
+5. ব্যক্তিগত নাম এড়িয়ে চলুন, বিষয়বস্তুর উপর ফোকাস করুন
+6. সাম্প্রতিক ও জনপ্রিয় বিষয়গুলো অগ্রাধিকার দিন
+7. শব্দগুলোর মধ্যে সম্পর্ক ও প্রাসঙ্গিকতা বিবেচনা করুন
+
+আউটপুট ফরম্যাট:
+প্রতিটি ক্যাটেগরির জন্য নিম্নরূপ ফরম্যাটে দিন:
+
+ক্যাটেগরি নাম:
+1. শব্দ১
+2. শব্দ২
+3. শব্দ৩
+4. শব্দ৪
+5. শব্দ৫
+
+অন্য ক্যাটেগরি নাম:
+1. শব্দ১
+2. শব্দ২
+...
+...
+5. শব্দ৫
+
+শুধুমাত্র উপরের ফরম্যাটে উত্তর দিন। অতিরিক্ত ব্যাখ্যা বা মন্তব্য যোগ করবেন না।"""
+                
+                completion = client.chat.completions.create(
+                    model="llama-3.1-8b-instant",
+                    messages=[
+                        {"role": "system", "content": "আপনি একজন বিশেষজ্ঞ বাংলা ভাষা বিশ্লেষক যিনি ক্যাটেগরি অনুযায়ী ট্রেন্ডিং বিষয় নির্বাচন করতে পারেন।"},
+                        {"role": "user", "content": final_selection_prompt}
+                    ],
+                    temperature=0.2,
+                    max_tokens=800
+                )
+                
+                llm_response = completion.choices[0].message.content.strip()
+                
+                # Parse category-wise response
+                category_wise_final = {}
+                all_final_words = []
+                
+                current_category = None
+                lines = llm_response.split('\n')
+                
+                for line in lines:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    
+                    # Check if this is a category header (ends with colon)
+                    if line.endswith(':') and not line.startswith(('1.', '2.', '3.', '4.', '5.', '১.', '২.', '৩.', '৪.', '৫.')):
+                        current_category = line.replace(':', '').strip()
+                        category_wise_final[current_category] = []
+                    
+                    # Check if this is a numbered item
+                    elif current_category and (line.startswith(('1.', '2.', '3.', '4.', '5.')) or line.startswith(('১.', '২.', '৩.', '৪.', '৫.'))):
+                        # Extract word after number
+                        import re
+                        word = re.sub(r'^[১২৩৪৫1-5][\.\)]\s*', '', line).strip()
+                        if word and len(word) > 1:
+                            category_wise_final[current_category].append(word)
+                            all_final_words.append(word)
+                
+                # Store results
+                results["llm_response"] = llm_response
+                results["final_trending_words"] = all_final_words
+                results["category_wise_final"] = category_wise_final
+                results["llm_selection"] = {
+                    "total_input_categories": len(category_wise_breakdown),
+                    "total_input_words": sum(len(words) for words in category_wise_breakdown.values()),
+                    "selected_words": len(all_final_words),
+                    "categories_processed": len(category_wise_final),
+                    "selection_method": "Enhanced category-wise LLM selection",
+                    "source_breakdown": source_breakdown
+                }
+                
+                print(f"✅ LLM selected {len(all_final_words)} words across {len(category_wise_final)} categories")
+                
+                # Print category breakdown
+                for category, words in category_wise_final.items():
+                    print(f"📊 {category}: {len(words)} words - {', '.join(words[:3])}..." if words else f"📊 {category}: No words")
+                
+            except Exception as e:
+                print(f"⚠️ Could not use LLM for category-wise selection, using combined approach: {e}")
+                # Fallback to previous method but organized by category
+                if results["final_trending_words"]:
+                    combined_words = list(set(results["final_trending_words"]))[:70]  # Take reasonable amount
+                    results["final_trending_words"] = combined_words[:70]
+                    
+                    # Organize by category as fallback
+                    category_wise_final = {}
+                    words_per_category = 5
+                    word_index = 0
+                    
+                    for category in category_wise_breakdown.keys():
+                        category_words = []
+                        for _ in range(words_per_category):
+                            if word_index < len(combined_words):
+                                category_words.append(combined_words[word_index])
+                                word_index += 1
+                        category_wise_final[category] = category_words
+                    
+                    results["category_wise_final"] = category_wise_final
+                    results["llm_selection"] = {
+                        "total_input_words": len(combined_words),
+                        "selected_words": len(results["final_trending_words"]),
+                        "selection_method": "Fallback: Category distribution (LLM failed)"
+                    }
         else:
             results["final_trending_words"] = []
-            results["status"] = "no_successful_sources"
-        
-        # Summary
-        results["summary"] = {
-            "successful_sources": len(results["results"]),
-            "failed_sources": len(results["errors"]),
-            "total_trending_words": len(results["final_trending_words"]),
-            "processing_mode": mode
-        }
+            results["category_wise_final"] = {}
+            print("⚠️ No category-wise words found from any source")
         
         return results
-        
+    
     except Exception as e:
-        import traceback
-        error_detail = f"Hybrid analysis failed: {str(e)}\n{traceback.format_exc()}"
-        print(f"❌ {error_detail}")
-        raise HTTPException(status_code=500, detail=error_detail)
-
-
-def parse_trending_words_from_response(response_text: str) -> List[str]:
-    """Parse trending words from LLM response text"""
-    if not response_text:
-        return []
-    
-    words = []
-    lines = response_text.split('\n')
-    
-    for line in lines:
-        line = line.strip()
-        # Look for numbered items (Bengali or English numbers)
-        if any(char in line for char in ['১', '২', '৩', '৪', '৫', '৬', '৭', '৮']) or \
-           line.startswith(('1.', '2.', '3.', '4.', '5.', '6.', '7.', '8.')):
-            # Remove numbering
-            clean_line = line
-            for num in ['১.', '২.', '৩.', '৪.', '৫.', '৬.', '৭.', '৮.', 
-                       '1.', '2.', '3.', '4.', '5.', '6.', '7.', '8.']:
-                clean_line = clean_line.replace(num, '').strip()
-            
-            if clean_line and len(clean_line) > 1:
-                words.append(clean_line)
-    
-    return words[:8]  # Return top 8 from each source
-
-
-async def merge_and_generate_final_trending(source_results: dict, db: Session) -> dict:
-    """Merge results from multiple sources and generate final top 15 trending words"""
-    try:
-        import os
-        from groq import Groq
-
-        # Collect all trending words from sources
-        all_words = []
-        source_summary = []
-        for source, result in source_results.items():
-            words = result.get("trending_words", [])
-            all_words.extend(words)
-            source_summary.append(f"📊 {source}: {len(words)} words")
-            print(f"📊 {source}: {len(words)} words - {words[:5]}...")
-
-        # If only one source, return its top 15 directly (no LLM merge)
-        if len(source_results) == 1:
-            single_source = list(source_results.keys())[0]
-            return {
-                "status": "single_source",
-                "final_trending_words": all_words[:15],
-                "llm_response": "Single source, no merge needed.",
-                "source_summary": source_summary,
-                "merge_prompt": None,
-                "merge_statistics": {
-                    "total_input_words": len(all_words),
-                    "final_output_words": len(all_words[:15]),
-                    "sources_merged": 1
-                }
-            }
-
-        if not all_words:
-            return {
-                "status": "no_words_to_merge",
-                "final_trending_words": [],
-                "llm_response": "No trending words found from any source"
-            }
-
-        print(f"🔀 Merging {len(all_words)} total words from {len(source_results)} sources")
-
-        # Create merge prompt for final LLM selection
-        words_list = '\n'.join([f"{i+1}. {word}" for i, word in enumerate(all_words)])
-        merge_prompt = f"""আপনি একজন বাংলা ভাষার ট্রেন্ডিং শব্দ বিশেষজ্ঞ। নিচের তালিকা থেকে আজকের জন্য সবচেয়ে গুরুত্বপূর্ণ এবং ট্রেন্ডিং ১৫টি শব্দ/বাক্যাংশ নির্বাচন করুন।\n\nসংগৃহীত শব্দ/বাক্যাংশের তালিকা:\n{words_list}\n\nনির্বাচনের নিয়মাবলী:\n1. সবচেয়ে গুরুত্বপূর্ণ এবং আলোচিত বিষয়গুলো প্রাধান্য দিন\n2. একই ধরনের/সমার্থক শব্দের মধ্যে সবচেয়ে ভালোটি নির্বাচন করুন\n3. বিভিন্ন ক্যাটেগরি থেকে সমানভাবে নির্বাচন করুন (রাজনীতি, অর্থনীতি, খেলা, বিনোদন ইত্যাদি)\n4. ব্যক্তির নাম বাদ দিন\n5. সংক্ষিপ্ত ও স্পষ্ট শব্দ/বাক্যাংশ দিন\n6. শুধুমাত্র বাংলা শব্দ ব্যবহার করুন\n\nআউটপুট ফরম্যাট:\nচূড়ান্ত ১৫টি ট্রেন্ডিং শব্দ/বাক্যাংশ:\n১. [শব্দ/বাক্যাংশ]\n২. [শব্দ/বাক্যাংশ]\n৩. [শব্দ/বাক্যাংশ]\n৪. [শব্দ/বাক্যাংশ]\n৫. [শব্দ/বাক্যাংশ]\n৬. [শব্দ/বাক্যাংশ]\n৭. [শব্দ/বাক্যাংশ]\n৮. [শব্দ/বাক্যাংশ]\n৯. [শব্দ/বাক্যাংশ]\n১০. [শব্দ/বাক্যাংশ]\n১১. [শব্দ/বাক্যাংশ]\n১২. [শব্দ/বাক্যাংশ]\n১৩. [শব্দ/বাক্যাংশ]\n১৪. [শব্দ/বাক্যাংশ]\n১৫. [শব্দ/বাক্যাংশ]"""
-
-        # Use combine API key for final merge
-        api_key = os.environ.get("GROQ_API_KEY_COMBINE") or os.environ.get("GROQ_API_KEY_NEWSPAPER") or os.environ.get("GROQ_API_KEY")
-        if not api_key:
-            return {
-                "status": "no_api_key",
-                "final_trending_words": all_words[:15],  # Fallback
-                "llm_response": "API key not found for merging"
-            }
-        try:
-            print("🤖 Calling LLM for final merge...")
-            client = Groq(api_key=api_key)
-            response = client.chat.completions.create(
-                model="llama-3.3-70b-versatile",
-                messages=[
-                    {
-                        "role": "system", 
-                        "content": "তুমি বাংলা ভাষা বিশ্লেষক। response বাংলায় দাও।"
-                    },
-                    {
-                        "role": "user", 
-                        "content": merge_prompt
-                    }
-                ],
-                temperature=0.7,
-                max_tokens=800,
-                top_p=0.9
-            )
-            merge_response = response.choices[0].message.content.strip()
-            final_words = parse_trending_words_from_response(merge_response)
-            print(f"✅ Final merged trending words: {len(final_words)}")
-            for i, word in enumerate(final_words, 1):
-                print(f"   {i}. {word}")
-            return {
-                "status": "success",
-                "final_trending_words": final_words[:15],
-                "llm_response": merge_response,
-                "source_summary": source_summary,
-                "merge_prompt": merge_prompt,  # Show merge prompt in frontend
-                "api_key_used": "GROQ_API_KEY_COMBINE",
-                "merge_statistics": {
-                    "total_input_words": len(all_words),
-                    "final_output_words": len(final_words[:15]),
-                    "sources_merged": len(source_results)
-                }
-            }
-        except Exception as e:
-            print(f"❌ Error in merge process: {e}")
-            # Fallback: just combine and truncate
-            fallback_words = []
-            for source, result in source_results.items():
-                fallback_words.extend(result.get("trending_words", []))
-            return {
-                "status": "merge_failed_fallback",
-                "final_trending_words": fallback_words[:15],
-                "llm_response": f"Merge failed: {str(e)}. Using fallback combination.",
-                "error": str(e)
-            }
-    except Exception as e:
-        print(f"❌ Error in merge process: {e}")
-        # Fallback: just combine and truncate
-        fallback_words = []
-        for source, result in source_results.items():
-            fallback_words.extend(result.get("trending_words", []))
-        return {
-            "status": "merge_failed_fallback",
-            "final_trending_words": fallback_words[:15],
-            "llm_response": f"Merge failed: {str(e)}. Using fallback combination.",
-            "error": str(e)
-        }
+        raise HTTPException(status_code=500, detail=f"Error in hybrid candidate generation: {str(e)}")
