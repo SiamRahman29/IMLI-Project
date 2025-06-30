@@ -1031,10 +1031,15 @@ def scrape_manobkantha():
         if not res:
             return articles
         soup = BeautifulSoup(res.text, "html.parser")
+        seen_urls = set()
         for link in soup.select("h2 a, h3 a, a[href*='/news/'], a[href*='/details/']"):
             url = link.get('href')
             if url and not url.startswith('http'):
                 url = homepage.rstrip('/') + '/' + url.lstrip('/')
+            # Deduplicate by URL before scraping
+            if not url or url in seen_urls:
+                continue
+            seen_urls.add(url)
             article_res = robust_request(url)
             if not article_res:
                 continue

@@ -20,6 +20,11 @@ function GenerateWords() {
   const [hybridResults, setHybridResults] = useState(null);
   const [showMergePrompt, setShowMergePrompt] = useState(false);
   
+  // Category-wise selection states
+  const [categoryWiseWords, setCategoryWiseWords] = useState({});
+  const [selectedCategoryWords, setSelectedCategoryWords] = useState({});
+  const [finalSelectedWords, setFinalSelectedWords] = useState([]);
+  
   // Source selection handlers
   const handleSourceChange = (source) => {
     setSources(prev => 
@@ -48,17 +53,26 @@ function GenerateWords() {
       
       // Debug log to check response structure
       console.log("=== Backend Response Debug ===");
+      console.log("Full response:", response);
+      console.log("Response status:", response.status);
+      console.log("Response data exists:", !!response.data);
       console.log("Full response.data:", response.data);
-      console.log("merge_prompt:", response.data.merge_prompt);
-      console.log("final_llm_response:", response.data.final_llm_response);
-      console.log("merge_statistics:", response.data.merge_statistics);
+      
+      // Safe property access with null checks
+      if (response.data) {
+        console.log("merge_prompt:", response.data.merge_prompt || 'N/A');
+        console.log("final_llm_response:", response.data.final_llm_response || 'N/A');
+        console.log("merge_statistics:", response.data.merge_statistics || 'N/A');
+      } else {
+        console.log("⚠️ response.data is null or undefined!");
+      }
       console.log("=== End Debug ===");
       
       // Create comprehensive response including individual source responses
       let candidatesText = '';
       
-      // Add individual source responses
-      if (response.data.results) {
+      // Add individual source responses with null checks
+      if (response.data && response.data.results) {
         candidatesText += "🔍 উৎস-ভিত্তিক বিশ্লেষণ:\n";
         candidatesText += "=" + "=".repeat(50) + "\n\n";
         
@@ -120,7 +134,7 @@ function GenerateWords() {
       }
       
       // Add final merged analysis with category-wise display
-      if (response.data.category_wise_final && Object.keys(response.data.category_wise_final).length > 0) {
+      if (response.data && response.data.category_wise_final && Object.keys(response.data.category_wise_final).length > 0) {
         candidatesText += "🎯 ক্যাটেগরি অনুযায়ী চূড়ান্ত ট্রেন্ডিং শব্দ (৫টি করে):\n";
         candidatesText += "=" + "=".repeat(50) + "\n\n";
         
@@ -147,14 +161,14 @@ function GenerateWords() {
         });
         
         // Show raw LLM response if available for debugging
-        if (response.data.llm_response) {
+        if (response.data && response.data.llm_response) {
           candidatesText += "\n" + "=".repeat(50) + "\n";
           candidatesText += "🤖 LLM চূড়ান্ত প্রতিক্রিয়া:\n";
           candidatesText += "-".repeat(30) + "\n";
           candidatesText += response.data.llm_response;
         }
         
-      } else if (response.data.final_trending_words && response.data.final_trending_words.length > 0) {
+      } else if (response.data && response.data.final_trending_words && response.data.final_trending_words.length > 0) {
         candidatesText += "🎯 চূড়ান্ত সমন্বিত ট্রেন্ডিং শব্দ:\n";
         candidatesText += "=" + "=".repeat(45) + "\n\n";
         
@@ -165,14 +179,14 @@ function GenerateWords() {
         });
         
         // Show raw LLM response if available for debugging
-        if (response.data.llm_response) {
+        if (response.data && response.data.llm_response) {
           candidatesText += "\n" + "=".repeat(50) + "\n";
           candidatesText += "🤖 LLM চূড়ান্ত প্রতিক্রিয়া:\n";
           candidatesText += "-".repeat(30) + "\n";
           candidatesText += response.data.llm_response;
         }
         
-      } else if (response.data.llm_response) {
+      } else if (response.data && response.data.llm_response) {
         candidatesText += "🎯 চূড়ান্ত LLM প্রতিক্রিয়া:\n";
         candidatesText += "-".repeat(25) + "\n";
         candidatesText += response.data.llm_response;
@@ -181,6 +195,10 @@ function GenerateWords() {
       }
       
       setAiCandidates(candidatesText);
+      
+      // Parse category-wise words for selection
+      const categoryWords = parseCategoryWiseWords(candidatesText);
+      setCategoryWiseWords(categoryWords);
       
     } catch (err) {
       let msg = 'হাইব্রিড বিশ্লেষণ চালাতে ব্যর্থ';
@@ -245,14 +263,35 @@ function GenerateWords() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!selectedWord.trim()) return;
-    const sanitizedWord = cleanCandidate(selectedWord);
+    
+    const finalWords = generateFinalWordsList();
+    
+    if (finalWords.length === 0 && !selectedWord.trim()) {
+      setError('অন্তত একটি শব্দ নির্বাচন করুন');
+      return;
+    }
+    
     try {
       setSubmitting(true);
       setError(null);
       
-      // Use legacy API for setting word of the day
-      await api.setWordOfTheDay(sanitizedWord);
+      // If category words are selected, use them; otherwise use the manual input
+      if (finalWords.length > 0) {
+        // Submit each selected word with category tracking
+        for (const wordInfo of finalWords) {
+          console.log(`Setting word: ${wordInfo.word} from category: ${wordInfo.category}`);
+          // You can extend this to send category info to backend as well
+          await api.setWordOfTheDay(wordInfo.word);
+        }
+        console.log('Selected words with categories:', finalWords);
+        // Store the final words for success display
+        setFinalSelectedWords(finalWords);
+      } else if (selectedWord.trim()) {
+        const sanitizedWord = cleanCandidate(selectedWord);
+        await api.setWordOfTheDay(sanitizedWord);
+        // Create single word info for manual selection
+        setFinalSelectedWords([{ word: sanitizedWord, category: 'ম্যানুয়াল নির্বাচন', originalText: selectedWord }]);
+      }
       
       setSuccess(true);
       setTimeout(() => {
@@ -265,6 +304,96 @@ function GenerateWords() {
     } finally {
       setSubmitting(false);
     }
+  };
+
+  // Parse category-wise words from AI response - prioritize direct dictionary approach
+  const parseCategoryWiseWords = (candidatesText) => {
+    if (!candidatesText) return {};
+    
+    // FIRST PRIORITY: Use direct category_wise_final dictionary from backend (as requested)
+    if (hybridResults && hybridResults.category_wise_final) {
+      console.log("✅ Using category_wise_final dictionary from backend:", hybridResults.category_wise_final);
+      return hybridResults.category_wise_final;
+    }
+    
+    // FALLBACK: Parse from text if dictionary not available
+    console.log("⚠️ Falling back to text parsing...");
+    let categoryWords = {};
+    const lines = candidatesText.split('\n');
+    
+    console.log("=== Parsing Category-wise Words ===");
+    
+    // Look for category-wise final results section
+    let inCategorySection = false;
+    let currentCategory = null;
+    
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+      const trimmed = line.trim();
+      
+      // Look for category-wise section
+      if (trimmed.includes('ক্যাটেগরি অনুযায়ী চূড়ান্ত ট্রেন্ডিং শব্দ')) {
+        inCategorySection = true;
+        console.log("Found category section at line:", i);
+        continue;
+      }
+      
+      // If in category section, look for category headers (🏷️ format)
+      if (inCategorySection && trimmed.includes('🏷️')) {
+        const categoryMatch = trimmed.match(/🏷️\s*(.+?):/);
+        if (categoryMatch) {
+          currentCategory = categoryMatch[1].trim();
+          categoryWords[currentCategory] = [];
+          console.log("Found category:", currentCategory);
+        }
+        continue;
+      }
+      
+      // If in category section and we have a current category, extract numbered items
+      if (inCategorySection && currentCategory && (/^\s*\d+\.\s/.test(trimmed) || /^\s*[১-৯০]+\.\s/.test(trimmed))) {
+        let cleanedLine = trimmed
+          .replace(/^\s*\d+\.\s*/, '') // Remove English numbers
+          .replace(/^\s*[১-৯০]+\.\s*/, '') // Remove Bengali numbers  
+          .replace(/^\[/, '').replace(/\]$/, '') // Remove brackets
+          .trim();
+          
+        if (cleanedLine.length > 1 && /[\u0980-\u09FF]/.test(cleanedLine)) {
+          categoryWords[currentCategory].push(cleanedLine);
+          console.log(`Added to ${currentCategory}:`, cleanedLine);
+        }
+      }
+      
+      // Stop if we hit another major section
+      if (inCategorySection && (trimmed.includes('📊 LLM') || trimmed.includes('🤖 LLM'))) {
+        break;
+      }
+    }
+    
+    console.log("Final category-wise words from text parsing:", categoryWords);
+    console.log("=== End Category Parsing ===");
+    
+    return categoryWords;
+  };
+
+  // Handle category word selection
+  const handleCategoryWordSelect = (category, word) => {
+    setSelectedCategoryWords(prev => ({
+      ...prev,
+      [category]: word
+    }));
+    // Clear manual input when category selection is made
+    setSelectedWord('');
+  };
+
+  // Generate final selected words list with category tracking
+  const generateFinalWordsList = () => {
+    const selectedWords = Object.entries(selectedCategoryWords).map(([category, word]) => ({
+      word: cleanCandidate(word),
+      category: category,
+      originalText: word
+    }));
+    setFinalSelectedWords(selectedWords);
+    return selectedWords;
   };
 
   const parseCandidates = (candidatesText) => {
@@ -399,11 +528,23 @@ function GenerateWords() {
   };
 
   if (success) {
+    const finalWords = finalSelectedWords.length > 0 ? finalSelectedWords : [{ word: selectedWord, category: 'ম্যানুয়াল নির্বাচন' }];
+    
     return (
       <div className="container mx-auto px-4 py-12 bg-white min-h-[calc(100vh-4rem)] flex flex-col justify-center items-center">
-        <div className="bg-green-100 border border-green-300 text-green-800 px-4 py-6 rounded mb-6 text-center max-w-md w-full">
+        <div className="bg-green-100 border border-green-300 text-green-800 px-4 py-6 rounded mb-6 text-center max-w-2xl w-full">
           <h2 className="text-xl font-bold mb-2">সফলভাবে সম্পন্ন!</h2>
-          <p>আজকের শব্দ নির্ধারণ করা হয়েছে: <span className="font-semibold">{selectedWord}</span></p>
+          <p className="mb-3">আজকের শব্দ নির্ধারণ করা হয়েছে:</p>
+          <div className="space-y-2">
+            {finalWords.map((wordInfo, idx) => (
+              <div key={idx} className="bg-white p-3 rounded border border-green-200">
+                <span className="font-semibold text-lg">{wordInfo.word}</span>
+                <div className="text-sm text-gray-600 mt-1">
+                  ক্যাটেগরি: <span className="font-medium">{wordInfo.category}</span>
+                </div>
+              </div>
+            ))}
+          </div>
         </div>
         <svg className="animate-spin h-12 w-12 text-green-500 mx-auto" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"></path></svg>
         <p className="mt-4 text-gray-700">হোম পেজে ফিরে যাচ্ছি...</p>
@@ -412,7 +553,7 @@ function GenerateWords() {
   }
 
   return (
-    <div className={`container mx-auto px-4 py-12 bg-white min-h-[calc(100vh-4rem)] flex flex-col justify-center ${isResizing ? 'no-select' : ''}`}>
+    <div className={`container mx-auto px-4 py-12 bg-white min-h-[calc(100vh-4rem)] flex flex-col justify-center ${isResizing ? 'select-none' : ''}`}>
       <div className="text-center mb-10">
         <h1 className="text-3xl md:text-4xl font-extrabold tracking-tight text-gray-900 mb-2 flex items-center justify-center gap-2">
           <Sparkles className="w-8 h-8 text-pink-500" /> হাইব্রিড ট্রেন্ডিং শব্দ উৎপাদন
@@ -519,114 +660,236 @@ function GenerateWords() {
             </div>
           )}
         </div>
+        
+        {/* Test Button for Category Display */}
+        
+        
         <div className="bg-white shadow-md rounded-lg p-8 flex flex-col justify-between items-center text-center">
           <h2 className="text-xl font-semibold mb-2">২. শব্দ নির্বাচন</h2>
-          <p className="text-gray-600 mb-4">AI দ্বারা প্রস্তাবিত শব্দ থেকে আজকের শব্দ নির্ধারণ করুন</p>
+          <p className="text-gray-600 mb-4">
+            ক্যাটেগরি অনুযায়ী AI প্রস্তাবিত শব্দ নির্বাচন করুন অথবা ম্যানুয়ালি একটি শব্দ টাইপ করুন
+          </p>
+          {Object.keys(selectedCategoryWords).length > 0 && (
+            <div className="bg-green-100 border border-green-300 text-green-800 px-3 py-2 rounded mb-4 text-center w-full text-sm">
+              ✅ {Object.keys(selectedCategoryWords).length}টি ক্যাটেগরি থেকে শব্দ নির্বাচিত
+            </div>
+          )}
           <form onSubmit={handleSubmit} className="w-full">
             <input
               type="text"
               className="w-full border border-gray-300 rounded px-4 py-2 mb-2 focus:outline-none focus:ring-2 focus:ring-pink-400"
-              placeholder="একটি শব্দ টাইপ করুন..."
+              placeholder="অথবা ম্যানুয়ালি একটি শব্দ টাইপ করুন..."
               value={selectedWord}
-              onChange={e => setSelectedWord(e.target.value)}
+              onChange={e => {
+                setSelectedWord(e.target.value);
+                // Clear category selections if manual input is used
+                if (e.target.value.trim()) {
+                  setSelectedCategoryWords({});
+                }
+              }}
               disabled={submitting}
             />
             <button
               type="submit"
-              className={`w-full flex items-center justify-center gap-2 px-6 py-2 rounded font-semibold text-white transition ${!selectedWord.trim() || submitting ? 'bg-gray-400' : 'bg-pink-600 hover:bg-pink-700'} shadow`}
-              disabled={!selectedWord.trim() || submitting}
+              className={`w-full flex items-center justify-center gap-2 px-6 py-2 rounded font-semibold text-white transition ${
+                (Object.keys(selectedCategoryWords).length === 0 && !selectedWord.trim()) || submitting 
+                  ? 'bg-gray-400' 
+                  : 'bg-pink-600 hover:bg-pink-700'
+              } shadow`}
+              disabled={(Object.keys(selectedCategoryWords).length === 0 && !selectedWord.trim()) || submitting}
             >
               {submitting ? (
                 <svg className="animate-spin h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"></path></svg>
               ) : (
                 <Check className="w-5 h-5" />
               )}
-              {submitting ? 'সেট করা হচ্ছে...' : 'আজকের শব্দ নির্ধারণ করুন'}
+              {submitting ? 'সেট করা হচ্ছে...' : 
+                Object.keys(selectedCategoryWords).length > 0 
+                  ? `নির্বাচিত শব্দ সেট করুন (${Object.keys(selectedCategoryWords).length}টি)`
+                  : 'আজকের শব্দ নির্ধারণ করুন'
+              }
             </button>
           </form>
         </div>
       </div>
 
       {analysisComplete && aiCandidates && (
-        <div 
-          ref={resizeRef}
-          className="bg-white shadow-lg rounded-lg mt-10 p-6 max-w-5xl mx-auto relative border-2 border-gray-200"
-          style={{ minHeight: `${candidateHeight}px` }}
-        >
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="text-2xl font-bold flex items-center gap-2">
-              <Sparkles className="w-6 h-6 text-yellow-500" />
-              AI প্রার্থীর তালিকা
-            </h2>
-            <div className="text-sm text-gray-500 bg-gray-100 px-3 py-1 rounded-full">
-              উচ্চতা: {candidateHeight}px
-            </div>
-          </div>
-          
-          <hr className="mb-6 border-gray-300" />
-          
-          {parseCandidates(aiCandidates).length > 0 ? (
-            <div className="mb-6">
-              <p className="text-gray-700 mb-3 font-medium">দ্রুত নির্বাচনের জন্য প্রস্তাবিত শব্দসমূহ ({parseCandidates(aiCandidates).length}টি):</p>
-              <div className="flex flex-wrap gap-2 mb-6">
-                {parseCandidates(aiCandidates).map((candidate, idx) => (
-                  <button
-                    key={idx}
-                    type="button"
-                    className={`px-4 py-2 rounded-full border text-sm font-medium transition-all duration-200 ${selectedWord === cleanCandidate(candidate) ? 'bg-blue-600 text-white border-blue-600 shadow-md' : 'bg-gray-100 text-gray-700 border-gray-300 hover:bg-blue-50 hover:border-blue-300'}`}
-                    onClick={() => setSelectedWord(cleanCandidate(candidate))}
-                  >
-                    {candidate}
-                  </button>
+        <div className="mt-10 max-w-6xl mx-auto">
+          {/* Category-wise word selection */}
+          {Object.keys(categoryWiseWords).length > 0 ? (
+            <div className="bg-white shadow-lg rounded-lg p-6 mb-6 border-2 border-gray-200">
+              <div className="flex items-center justify-between mb-6">
+                <h2 className="text-2xl font-bold flex items-center gap-2">
+                  <Sparkles className="w-6 h-6 text-yellow-500" />
+                  দ্রুত শব্দ নির্বাচন - প্রতি ক্যাটেগরি থেকে ৫টি শব্দ
+                </h2>
+                <div className="text-sm text-gray-500 bg-green-100 px-3 py-1 rounded-full">
+                  নির্বাচিত: {Object.keys(selectedCategoryWords).length}/{Object.keys(categoryWiseWords).length}
+                </div>
+              </div>
+              
+              <div className="mb-4 p-4 bg-blue-50 border-l-4 border-blue-400 rounded">
+                <p className="text-blue-800 font-medium text-sm">
+                  📋 প্রতিটি ক্যাটেগরি থেকে একটি করে শব্দ নির্বাচন করুন (প্রতি কলামে ৫টি শব্দ থেকে নির্বাচন)
+                </p>
+                <p className="text-blue-600 text-xs mt-1">
+                  💡 নির্বাচিত শব্দগুলো ক্যাটেগরি তথ্যসহ সংরক্ষিত হবে
+                </p>
+              </div>
+
+              {/* Category columns - Each category in separate column with 5 words */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-6">
+                {Object.entries(categoryWiseWords).map(([category, words]) => (
+                  <div key={category} className="bg-gradient-to-b from-gray-50 to-gray-100 rounded-lg p-4 border-2 border-gray-200 shadow-lg hover:shadow-xl transition-all duration-200">
+                    {/* Category Header */}
+                    <div className="text-center mb-4 pb-3 border-b-2 border-blue-300">
+                      <h3 className="font-bold text-lg text-gray-800">{category}</h3>
+                      <span className="text-xs text-blue-600 bg-blue-100 px-2 py-1 rounded-full">৫টি শব্দ</span>
+                    </div>
+                    
+                    {/* 5 Words for this category */}
+                    <div className="space-y-3">
+                      {words.slice(0, 5).map((word, idx) => (
+                        <button
+                          key={idx}
+                          type="button"
+                          className={`w-full text-left px-4 py-3 rounded-lg border-2 text-sm transition-all duration-300 transform ${
+                            selectedCategoryWords[category] === word
+                              ? 'bg-blue-600 text-white border-blue-600 shadow-lg scale-105'
+                              : 'bg-white text-gray-700 border-gray-300 hover:bg-blue-50 hover:border-blue-400 hover:scale-102'
+                          }`}
+                          onClick={() => handleCategoryWordSelect(category, word)}
+                          title={`"${category}" ক্যাটেগরি থেকে "${cleanCandidate(word)}" নির্বাচন করুন`}
+                        >
+                          <div className="flex items-center gap-2">
+                            <span className="text-xs font-bold bg-gray-200 text-gray-600 w-6 h-6 rounded-full flex items-center justify-center">
+                              {idx + 1}
+                            </span>
+                            <span className="font-medium flex-1">{cleanCandidate(word)}</span>
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+                    
+                    {/* Selection status */}
+                    <div className="mt-4 text-center">
+                      {selectedCategoryWords[category] ? (
+                        <div className="bg-green-100 border border-green-300 rounded-lg p-2">
+                          <span className="text-xs bg-green-200 text-green-700 px-2 py-1 rounded-full font-medium">
+                            ✓ নির্বাচিত
+                          </span>
+                          <div className="text-xs text-green-800 mt-1 font-semibold">
+                            {cleanCandidate(selectedCategoryWords[category])}
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="text-xs text-gray-500 bg-gray-100 px-2 py-1 rounded-full">
+                          একটি শব্দ নির্বাচন করুন
+                        </div>
+                      )}
+                    </div>
+                  </div>
                 ))}
               </div>
-              <hr className="mb-4 border-gray-200" />
-              <div className="bg-blue-50 border-l-4 border-blue-400 p-4 mb-4">
-                <p className="text-blue-800 font-medium text-sm">📋 সম্পূর্ণ AI প্রার্থিতালিকা</p>
-                {/* <p className="text-blue-600 text-xs mt-1">💡 নিচের নীল resize bar টি টেনে area বড় করে সব content দেখুন</p> */}
-              </div>
+
+              {/* Selected words summary */}
+              {Object.keys(selectedCategoryWords).length > 0 && (
+                <div className="mt-6 p-4 bg-green-50 border border-green-300 rounded-lg">
+                  <div className="flex items-center justify-between mb-3">
+                    <h4 className="font-semibold text-green-800">✅ নির্বাচিত শব্দসমূহ:</h4>
+                    <button
+                      type="button"
+                      onClick={() => setSelectedCategoryWords({})}
+                      className="text-sm text-red-600 hover:text-red-800 border border-red-300 hover:border-red-500 px-3 py-1 rounded transition"
+                    >
+                      🗑️ সব মুছুন
+                    </button>
+                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                    {Object.entries(selectedCategoryWords).map(([category, word]) => (
+                      <div key={category} className="bg-white p-3 rounded border border-green-200">
+                        <div className="text-sm text-gray-600 font-medium">{category}</div>
+                        <div className="text-lg font-semibold text-gray-800">{word}</div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
           ) : (
-            <div className="mb-6">
-              <div className="bg-yellow-50 border-l-4 border-yellow-400 p-4 mb-4">
-                <p className="text-yellow-800 font-medium text-sm">⚠️ কোনো নির্বাচনযোগ্য শব্দ পাওয়া যায়নি</p>
-                <p className="text-yellow-600 text-xs mt-1">💡 সম্পূর্ণ AI প্রার্থিতালিকা নিচে দেখুন</p>
+            /* Fallback: Original quick selection if no categories found */
+            parseCandidates(aiCandidates).length > 0 && (
+              <div className="bg-white shadow-lg rounded-lg p-6 mb-6 border-2 border-gray-200">
+                <h2 className="text-2xl font-bold flex items-center gap-2 mb-4">
+                  <Sparkles className="w-6 h-6 text-yellow-500" />
+                  দ্রুত শব্দ নির্বাচন
+                </h2>
+                <p className="text-gray-700 mb-3 font-medium">প্রস্তাবিত শব্দসমূহ ({parseCandidates(aiCandidates).length}টি):</p>
+                <div className="flex flex-wrap gap-2 mb-4">
+                  {parseCandidates(aiCandidates).map((candidate, idx) => (
+                    <button
+                      key={idx}
+                      type="button"
+                      className={`px-4 py-2 rounded-full border text-sm font-medium transition-all duration-200 ${selectedWord === cleanCandidate(candidate) ? 'bg-blue-600 text-white border-blue-600 shadow-md' : 'bg-gray-100 text-gray-700 border-gray-300 hover:bg-blue-50 hover:border-blue-300'}`}
+                      onClick={() => setSelectedWord(cleanCandidate(candidate))}
+                    >
+                      {candidate}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )
+          )}
+
+          {/* Full AI response - resizable */}
+          <div 
+            ref={resizeRef}
+            className="bg-white shadow-lg rounded-lg p-6 relative border-2 border-gray-200"
+            style={{ minHeight: `${candidateHeight}px` }}
+          >
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-2xl font-bold flex items-center gap-2">
+                <Sparkles className="w-6 h-6 text-yellow-500" />
+                সম্পূর্ণ AI বিশ্লেষণ রিপোর্ট
+              </h2>
+              <div className="text-sm text-gray-500 bg-gray-100 px-3 py-1 rounded-full">
+                উচ্চতা: {candidateHeight}px
               </div>
             </div>
-          )}
-          
-          {/* Resizable content area with better styling */}
-          <div 
-            className="bg-gray-50 rounded-lg border-2 border-gray-200 overflow-auto candidate-content shadow-inner"
-            style={{ 
-              height: `${candidateHeight - 220}px`, // More space for content
-              minHeight: '250px'
-            }}
-          >
-            <div className="p-6">
-              <pre className="text-gray-800 whitespace-pre-wrap text-sm leading-relaxed font-mono bg-white p-4 rounded border shadow-sm">{aiCandidates}</pre>
+            
+            <hr className="mb-6 border-gray-300" />
+            
+            <div 
+              className="bg-gray-50 rounded-lg border-2 border-gray-200 overflow-auto candidate-content shadow-inner"
+              style={{ 
+                height: `${candidateHeight - 140}px`,
+                minHeight: '300px'
+              }}
+            >
+              <div className="p-6">
+                <pre className="text-gray-800 whitespace-pre-wrap text-sm leading-relaxed font-mono bg-white p-4 rounded border shadow-sm">{aiCandidates}</pre>
+              </div>
             </div>
+            
+            {/* Resize handle */}
+            <div 
+              className={`resize-handle absolute bottom-0 left-0 right-0 h-6 bg-gradient-to-r from-blue-100 to-indigo-100 border-t-2 border-blue-300 rounded-b-lg cursor-ns-resize flex items-center justify-center transition-all duration-200 ${isResizing ? 'bg-gradient-to-r from-blue-200 to-indigo-200 shadow-lg' : 'hover:from-blue-150 hover:to-indigo-150'}`}
+              onMouseDown={handleMouseDown}
+              title="Drag to resize - টেনে আকার পরিবর্তন করুন"
+            >
+              <div className="flex items-center gap-1">
+                <GripVertical className="w-4 h-4 text-blue-600" />
+                <span className="text-xs text-blue-600 font-medium">Resize</span>
+                <GripVertical className="w-4 h-4 text-blue-600" />
+              </div>
+            </div>
+            
+            {isResizing && (
+              <div className="absolute top-4 right-4 bg-blue-600 text-white text-sm px-4 py-2 rounded-lg shadow-lg border-2 border-blue-700 font-mono">
+                📏 {candidateHeight}px
+              </div>
+            )}
           </div>
-          
-          {/* Enhanced resize handle */}
-          <div 
-            className={`resize-handle absolute bottom-0 left-0 right-0 h-6 bg-gradient-to-r from-blue-100 to-indigo-100 border-t-2 border-blue-300 rounded-b-lg cursor-ns-resize flex items-center justify-center transition-all duration-200 ${isResizing ? 'bg-gradient-to-r from-blue-200 to-indigo-200 shadow-lg' : 'hover:from-blue-150 hover:to-indigo-150'}`}
-            onMouseDown={handleMouseDown}
-            title="Drag to resize - টেনে আকার পরিবর্তন করুন"
-          >
-            <div className="flex items-center gap-1">
-              <GripVertical className="w-4 h-4 text-blue-600" />
-              <span className="text-xs text-blue-600 font-medium">Resize</span>
-              <GripVertical className="w-4 h-4 text-blue-600" />
-            </div>
-          </div>
-          
-          {/* Enhanced size indicator during resize */}
-          {isResizing && (
-            <div className="absolute top-4 right-4 bg-blue-600 text-white text-sm px-4 py-2 rounded-lg shadow-lg border-2 border-blue-700 font-mono">
-              📏 {candidateHeight}px
-            </div>
-          )}
         </div>
       )}
 

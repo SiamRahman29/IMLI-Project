@@ -77,6 +77,17 @@ export const apiV2 = {
     return apiV2Client.get(`/monthly-trending${params}`);
   },
   
+  // Set word of the day (enhanced with category support)
+  setWordOfTheDay: (word) => {
+    const params = new URLSearchParams({ word });
+    return apiV2Client.post(`/set_word_of_the_day?${params.toString()}`);
+  },
+
+  // Set category words with full category information
+  setCategoryWords: (words) => {
+    return apiV2Client.post('/set_category_words', { words });
+  },
+
   // Run trending analysis
   runAnalysis: () => apiV2Client.post('/analyze'),
   
