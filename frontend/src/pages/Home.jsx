@@ -5,6 +5,7 @@ import { TrendingUp, Sparkles } from 'lucide-react';
 
 function Home() {
   const [word, setWord] = useState('');
+  const [selectedWords, setSelectedWords] = useState([]);
   const [date, setDate] = useState('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -20,6 +21,7 @@ function Home() {
       if (response.data.words) {
         setWord(response.data.words);
         setDate(response.data.date);
+        setSelectedWords(response.data.selected_words || []);
       }
     } catch (err) {
       setError('আজকের শব্দ এখনো নির্ধারণ করা হয়নি');
@@ -50,20 +52,50 @@ function Home() {
           {error}
         </div>
       ) : (
-        <div className="bg-white shadow-lg rounded-lg mb-10 p-8 text-center">
-          <h2 className="text-2xl font-bold mb-2">আজকের শব্দ</h2>
-          {word ? (
+        <div className="bg-white shadow-lg rounded-lg mb-10 p-8">
+          <h2 className="text-2xl font-bold mb-4 text-center">আজকের শব্দ</h2>
+          {(word || (selectedWords && selectedWords.length > 0)) ? (
             <>
               {date && (
-                <div className="text-gray-500 mb-2">{new Date(date).toLocaleDateString('bn-BD')}</div>
+                <div className="text-gray-500 mb-4 text-center">{new Date(date).toLocaleDateString('bn-BD')}</div>
               )}
-              <div className="text-3xl font-extrabold text-blue-600 mt-2">{word}</div>
+              
+              {/* Display selected words if available */}
+              {selectedWords && selectedWords.length > 0 ? (
+                <div className="space-y-6">
+                  {/* Group words by category */}
+                  {Object.entries(
+                    selectedWords.reduce((acc, wordObj) => {
+                      const category = wordObj.category || 'অন্যান্য';
+                      if (!acc[category]) acc[category] = [];
+                      acc[category].push(wordObj);
+                      return acc;
+                    }, {})
+                  ).map(([category, words]) => (
+                    <div key={category} className="border-l-4 border-blue-500 pl-4">
+                      <h3 className="text-lg font-semibold text-gray-700 mb-2">{category}</h3>
+                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                        {words.map((wordObj, index) => (
+                          <div key={index} className="bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-lg p-3 text-center">
+                            <div className="text-lg font-bold text-blue-800">{wordObj.word}</div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : word ? (
+                // Fallback to showing just the main word if no selected words
+                <div className="text-center">
+                  <div className="text-3xl font-extrabold text-blue-600 mt-2">{word}</div>
+                </div>
+              ) : null}
             </>
           ) : (
-            <>
+            <div className="text-center">
               <div className="text-gray-400 text-lg mb-4 font-semibold">আজকের জন্য কোনো শব্দ নির্ধারণ করা হয়নি।</div>
               <div className="text-gray-600 text-base">নির্বাচন করতে নিচের <span className='font-bold text-pink-600'>শব্দ উৎপাদন করুন</span> বাটনে ক্লিক করুন।</div>
-            </>
+            </div>
           )}
         </div>
       )}

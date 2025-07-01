@@ -1,4 +1,4 @@
-from sqlalchemy import Column, String, Date, Float, Integer, Text, DateTime
+from sqlalchemy import Column, String, Date, Float, Integer, Text, DateTime, JSON
 from app.db.database import Base
 from sqlalchemy import Sequence
 from datetime import datetime
@@ -7,7 +7,8 @@ class Word(Base):
     __tablename__ = "words"
 
     date = Column(Date, primary_key=True, index=True)
-    word = Column(String, nullable=False)
+    word = Column(String, nullable=False)  # Main/primary word
+    selected_words = Column(JSON, nullable=True)  # Array of all selected words with categories
 
 class TrendingPhrase(Base):
     __tablename__ = "trending_phrases"

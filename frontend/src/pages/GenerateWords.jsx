@@ -277,14 +277,10 @@ function GenerateWords() {
       
       // If category words are selected, use them; otherwise use the manual input
       if (finalWords.length > 0) {
-        // Submit each selected word with category tracking
-        for (const wordInfo of finalWords) {
-          console.log(`Setting word: ${wordInfo.word} from category: ${wordInfo.category}`);
-          // You can extend this to send category info to backend as well
-          await api.setWordOfTheDay(wordInfo.word);
-        }
-        console.log('Selected words with categories:', finalWords);
-        // Store the final words for success display
+        // Use the existing setCategoryWords method
+        const response = await apiV2.setCategoryWords(finalWords);
+        
+        console.log('Category words saved successfully:', response.data);
         setFinalSelectedWords(finalWords);
       } else if (selectedWord.trim()) {
         const sanitizedWord = cleanCandidate(selectedWord);
@@ -375,23 +371,57 @@ function GenerateWords() {
     return categoryWords;
   };
 
-  // Handle category word selection
+  // Helper to count total selected words
+  const getTotalSelectedWords = () => {
+    return Object.values(selectedCategoryWords).reduce((total, words) => {
+      return total + (Array.isArray(words) ? words.length : (words ? 1 : 0));
+    }, 0);
+  };
+
+  // Helper to count selected categories
+  const getSelectedCategoriesCount = () => {
+    return Object.keys(selectedCategoryWords).filter(category => {
+      const words = selectedCategoryWords[category];
+      return Array.isArray(words) ? words.length > 0 : !!words;
+    }).length;
+  };
+
+  // Handle category word selection - supports multiple words per category
   const handleCategoryWordSelect = (category, word) => {
-    setSelectedCategoryWords(prev => ({
-      ...prev,
-      [category]: word
-    }));
+    setSelectedCategoryWords(prev => {
+      const currentWords = prev[category] || [];
+      
+      // If word is already selected, remove it (toggle off)
+      if (currentWords.includes(word)) {
+        const updatedWords = currentWords.filter(w => w !== word);
+        if (updatedWords.length === 0) {
+          const { [category]: _, ...rest } = prev;
+          return rest;
+        }
+        return { ...prev, [category]: updatedWords };
+      } else {
+        // Add word to category (toggle on)
+        return { ...prev, [category]: [...currentWords, word] };
+      }
+    });
     // Clear manual input when category selection is made
     setSelectedWord('');
   };
 
-  // Generate final selected words list with category tracking
+  // Generate final selected words list with category tracking - supports multiple words
   const generateFinalWordsList = () => {
-    const selectedWords = Object.entries(selectedCategoryWords).map(([category, word]) => ({
-      word: cleanCandidate(word),
-      category: category,
-      originalText: word
-    }));
+    const selectedWords = [];
+    Object.entries(selectedCategoryWords).forEach(([category, words]) => {
+      // Handle both single word and array of words
+      const wordArray = Array.isArray(words) ? words : [words];
+      wordArray.forEach(word => {
+        selectedWords.push({
+          word: cleanCandidate(word),
+          category: category,
+          originalText: word
+        });
+      });
+    });
     setFinalSelectedWords(selectedWords);
     return selectedWords;
   };
@@ -606,9 +636,9 @@ function GenerateWords() {
           <p className="text-gray-600 mb-4">
             ক্যাটেগরি অনুযায়ী শব্দ নির্বাচন করুন অথবা ম্যানুয়ালি একটি শব্দ টাইপ করুন
           </p>
-          {Object.keys(selectedCategoryWords).length > 0 && (
+          {getTotalSelectedWords() > 0 && (
             <div className="bg-green-100 border border-green-300 text-green-800 px-3 py-2 rounded mb-4 text-center w-full text-sm">
-              ✅ {Object.keys(selectedCategoryWords).length}টি ক্যাটেগরি থেকে শব্দ নির্বাচিত
+              ✅ {getSelectedCategoriesCount()}টি ক্যাটেগরি থেকে মোট {getTotalSelectedWords()}টি শব্দ নির্বাচিত
             </div>
           )}
           <form onSubmit={handleSubmit} className="w-full">
@@ -629,11 +659,11 @@ function GenerateWords() {
             <button
               type="submit"
               className={`w-full flex items-center justify-center gap-2 px-6 py-2 rounded font-semibold text-white transition ${
-                (Object.keys(selectedCategoryWords).length === 0 && !selectedWord.trim()) || submitting 
+                (getTotalSelectedWords() === 0 && !selectedWord.trim()) || submitting 
                   ? 'bg-gray-400' 
                   : 'bg-pink-600 hover:bg-pink-700'
               } shadow`}
-              disabled={(Object.keys(selectedCategoryWords).length === 0 && !selectedWord.trim()) || submitting}
+              disabled={(getTotalSelectedWords() === 0 && !selectedWord.trim()) || submitting}
             >
               {submitting ? (
                 <svg className="animate-spin h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"></path></svg>
@@ -641,8 +671,8 @@ function GenerateWords() {
                 <Check className="w-5 h-5" />
               )}
               {submitting ? 'সেট করা হচ্ছে...' : 
-                Object.keys(selectedCategoryWords).length > 0 
-                  ? `নির্বাচিত শব্দ সেট করুন (${Object.keys(selectedCategoryWords).length}টি)`
+                getTotalSelectedWords() > 0 
+                  ? `নির্বাচিত শব্দ সেট করুন (${getTotalSelectedWords()}টি)`
                   : 'আজকের শব্দ নির্ধারণ করুন'
               }
             </button>
@@ -661,7 +691,7 @@ function GenerateWords() {
                   দ্রুত শব্দ নির্বাচন - প্রতি ক্যাটেগরি থেকে ৫টি শব্দ
                 </h2>
                 <div className="text-sm text-gray-500 bg-green-100 px-3 py-1 rounded-full">
-                  নির্বাচিত: {Object.keys(selectedCategoryWords).length}/{Object.keys(categoryWiseWords).length}
+                  নির্বাচিত: {getSelectedCategoriesCount()}/{Object.keys(categoryWiseWords).length} (মোট {getTotalSelectedWords()}টি শব্দ)
                 </div>
               </div>
               
@@ -685,43 +715,58 @@ function GenerateWords() {
                     </div>
                     
                     {/* 5 Words for this category */}
-                    <div className="space-y-3">
-                      {words.slice(0, 5).map((word, idx) => (
-                        <button
-                          key={idx}
-                          type="button"
-                          className={`w-full text-left px-4 py-3 rounded-lg border-2 text-sm transition-all duration-300 transform ${
-                            selectedCategoryWords[category] === word
-                              ? 'bg-blue-600 text-white border-blue-600 shadow-lg scale-105'
-                              : 'bg-white text-gray-700 border-gray-300 hover:bg-blue-50 hover:border-blue-400 hover:scale-102'
-                          }`}
-                          onClick={() => handleCategoryWordSelect(category, word)}
-                          title={`"${category}" ক্যাটেগরি থেকে "${cleanCandidate(word)}" নির্বাচন করুন`}
-                        >
-                          <div className="flex items-center gap-2">
-                            <span className="text-xs font-bold bg-gray-200 text-gray-600 w-6 h-6 rounded-full flex items-center justify-center">
-                              {idx + 1}
-                            </span>
-                            <span className="font-medium flex-1">{cleanCandidate(word)}</span>
-                          </div>
-                        </button>
-                      ))}
+                    <div className="space-y-3">                        {words.slice(0, 5).map((word, idx) => {
+                          const isSelected = selectedCategoryWords[category] && 
+                            (Array.isArray(selectedCategoryWords[category]) 
+                              ? selectedCategoryWords[category].includes(word)
+                              : selectedCategoryWords[category] === word);
+                          
+                          return (
+                            <button
+                              key={idx}
+                              type="button"
+                              className={`w-full text-left px-4 py-3 rounded-lg border-2 text-sm transition-all duration-300 transform ${
+                                isSelected
+                                  ? 'bg-blue-600 text-white border-blue-600 shadow-lg scale-105'
+                                  : 'bg-white text-gray-700 border-gray-300 hover:bg-blue-50 hover:border-blue-400 hover:scale-102'
+                              }`}
+                              onClick={() => handleCategoryWordSelect(category, word)}
+                              title={`"${category}" ক্যাটেগরি থেকে "${cleanCandidate(word)}" ${isSelected ? 'অপসারণ' : 'নির্বাচন'} করুন`}
+                            >
+                              <div className="flex items-center gap-2">
+                                <span className={`text-xs font-bold w-6 h-6 rounded-full flex items-center justify-center ${
+                                  isSelected ? 'bg-white text-blue-600' : 'bg-gray-200 text-gray-600'
+                                }`}>
+                                  {isSelected ? '✓' : idx + 1}
+                                </span>
+                                <span className="font-medium flex-1">{cleanCandidate(word)}</span>
+                              </div>
+                            </button>
+                          );
+                        })}
                     </div>
                     
                     {/* Selection status */}
                     <div className="mt-4 text-center">
-                      {selectedCategoryWords[category] ? (
+                      {selectedCategoryWords[category] && 
+                       ((Array.isArray(selectedCategoryWords[category]) && selectedCategoryWords[category].length > 0) ||
+                        (!Array.isArray(selectedCategoryWords[category]) && selectedCategoryWords[category])) ? (
                         <div className="bg-green-100 border border-green-300 rounded-lg p-2">
                           <span className="text-xs bg-green-200 text-green-700 px-2 py-1 rounded-full font-medium">
-                            ✓ নির্বাচিত
+                            ✓ নির্বাচিত ({Array.isArray(selectedCategoryWords[category]) 
+                              ? selectedCategoryWords[category].length 
+                              : 1})
                           </span>
-                          <div className="text-xs text-green-800 mt-1 font-semibold">
-                            {cleanCandidate(selectedCategoryWords[category])}
+                          <div className="text-xs text-green-800 mt-1 font-semibold max-h-16 overflow-y-auto">
+                            {Array.isArray(selectedCategoryWords[category]) 
+                              ? selectedCategoryWords[category].map(word => cleanCandidate(word)).join(', ')
+                              : cleanCandidate(selectedCategoryWords[category])
+                            }
                           </div>
                         </div>
                       ) : (
                         <div className="text-xs text-gray-500 bg-gray-100 px-2 py-1 rounded-full">
-                          একটি শব্দ নির্বাচন করুন
+                          একাধিক শব্দ নির্বাচন করুন
                         </div>
                       )}
                     </div>
@@ -730,7 +775,7 @@ function GenerateWords() {
               </div>
 
               {/* Selected words summary */}
-              {Object.keys(selectedCategoryWords).length > 0 && (
+              {getTotalSelectedWords() > 0 && (
                 <div className="mt-6 p-4 bg-green-50 border border-green-300 rounded-lg">
                   <div className="flex items-center justify-between mb-3">
                     <h4 className="font-semibold text-green-800">✅ নির্বাচিত শব্দসমূহ:</h4>
@@ -743,12 +788,17 @@ function GenerateWords() {
                     </button>
                   </div>
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-                    {Object.entries(selectedCategoryWords).map(([category, word]) => (
-                      <div key={category} className="bg-white p-3 rounded border border-green-200">
-                        <div className="text-sm text-gray-600 font-medium">{category}</div>
-                        <div className="text-lg font-semibold text-gray-800">{word}</div>
-                      </div>
-                    ))}
+                    {Object.entries(selectedCategoryWords).map(([category, words]) => {
+                      const wordArray = Array.isArray(words) ? words : [words];
+                      return (
+                        <div key={category} className="bg-white p-3 rounded border border-green-200">
+                          <div className="text-sm text-gray-600 font-medium">{category} ({wordArray.length}টি)</div>
+                          <div className="text-sm font-medium text-gray-800 max-h-20 overflow-y-auto">
+                            {wordArray.map(word => cleanCandidate(word)).join(', ')}
+                          </div>
+                        </div>
+                      );
+                    })}
                   </div>
                 </div>
               )}

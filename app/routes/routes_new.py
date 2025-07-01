@@ -42,20 +42,22 @@ def get_db():
 
 @router.get("/", summary="Get today's word of the day")
 def get_word_of_the_day(db: Session = Depends(get_db)):
-    """Get the word of the day for today"""
+    """Get the word of the day for today with all selected words"""
     today = date.today()
     word_entry = db.query(Word).filter(Word.date == today).first()
     
     if word_entry:
         return TrendingWordsResponse(
             date=str(word_entry.date),
-            words=word_entry.word
+            words=word_entry.word,
+            selected_words=word_entry.selected_words
         )
     else:
         # Instead of raising 404, return a default response
         return {
             "date": str(today),
             "words": None,
+            "selected_words": None,
             "message": "Today's word is not yet set"
         }
 
@@ -2042,7 +2044,14 @@ JSON আউটপুট ফরম্যাট:
                 # Parse JSON response
                 import json
                 try:
-                    category_wise_final = json.loads(llm_response)
+                    # Strip markdown code blocks if present
+                    json_text = llm_response
+                    if "```json" in json_text:
+                        json_text = json_text.split("```json")[1].split("```")[0].strip()
+                    elif "```" in json_text:
+                        json_text = json_text.split("```")[1].split("```")[0].strip()
+                    
+                    category_wise_final = json.loads(json_text)
                     print(f"✅ Successfully parsed JSON response with {len(category_wise_final)} categories")
                     
                     # Validate that each category has exactly 5 words
@@ -2139,8 +2148,8 @@ def set_word_of_the_day(word: str, db: Session = Depends(get_db)):
 
 @router.post("/set_category_words", summary="Set today's words with category information")
 def set_category_words(request: dict, db: Session = Depends(get_db)):
-    """Set words of the day with category information"""
-    from app.models.word import CategoryTrendingPhrase
+    """Set words of the day with category information - supports multiple words per category"""
+    from app.models.word import CategoryTrendingPhrase, TrendingPhrase
     
     today = date.today()
     selected_words = request.get('words', [])
@@ -2149,16 +2158,20 @@ def set_category_words(request: dict, db: Session = Depends(get_db)):
         raise HTTPException(status_code=400, detail="No words provided")
     
     try:
-        # Clear existing category trending phrases for today
+        # Clear existing data for today
         db.query(CategoryTrendingPhrase).filter(CategoryTrendingPhrase.date == today).delete()
+        db.query(TrendingPhrase).filter(TrendingPhrase.date == today).delete()
         
         # Save category-wise selected words
         saved_count = 0
+        all_words = []
+        
         for word_info in selected_words:
             word = word_info.get('word', '').strip()
             category = word_info.get('category', 'অজানা').strip()
             
             if word and category:
+                # Save to CategoryTrendingPhrase table
                 category_phrase = CategoryTrendingPhrase(
                     date=today,
                     category=category,
@@ -2169,26 +2182,56 @@ def set_category_words(request: dict, db: Session = Depends(get_db)):
                     source='user_selection'
                 )
                 db.add(category_phrase)
+                
+                # Save to TrendingPhrase table for trending analysis
+                trending_phrase = TrendingPhrase(
+                    date=today,
+                    phrase=word,
+                    score=100.0,
+                    frequency=1,
+                    phrase_type='selected',
+                    source='user_selection'
+                )
+                db.add(trending_phrase)
+                
                 saved_count += 1
+                all_words.append(word)
         
-        # Also set the first word as main word of the day
+        # Save all selected words as today's words in words table
         if selected_words:
             main_word = selected_words[0].get('word', '')
+            
+            # Prepare selected words data for JSON storage
+            words_data = []
+            for word_info in selected_words:
+                words_data.append({
+                    'word': word_info.get('word', ''),
+                    'category': word_info.get('category', ''),
+                    'originalText': word_info.get('originalText', '')
+                })
+            
             existing_word = db.query(Word).filter(Word.date == today).first()
             
             if existing_word:
                 existing_word.word = main_word
+                existing_word.selected_words = words_data
             else:
-                new_word = Word(date=today, word=main_word)
+                new_word = Word(
+                    date=today, 
+                    word=main_word,
+                    selected_words=words_data
+                )
                 db.add(new_word)
         
-        db.commit();
+        db.commit()
         
         return {
             "message": f"Successfully saved {saved_count} category words for today!",
             "date": str(today),
             "saved_words": saved_count,
-            "words": selected_words
+            "words": selected_words,
+            "all_selected_words": all_words,
+            "main_word_of_day": selected_words[0].get('word', '') if selected_words else None
         }
         
     except Exception as e:
