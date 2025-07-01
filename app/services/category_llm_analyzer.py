@@ -245,9 +245,9 @@ def get_রাজনীতি_trending_words(articles: List[Dict]) -> List[str]:
     """Get trending words for রাজনীতি category"""
     return get_category_trending_words('রাজনীতি', articles)
 
-def get_লাইফস্টাইল_trending_words(articles: List[Dict]) -> List[str]:
-    """Get trending words for লাইফস্টাইল category"""
-    return get_category_trending_words('লাইফস্টাইল', articles)
+# def get_লাইফস্টাইল_trending_words(articles: List[Dict]) -> List[str]:
+#     """Get trending words for লাইফস্টাইল category"""
+#     return get_category_trending_words('লাইফস্টাইল', articles)
 
 def get_বিনোদন_trending_words(articles: List[Dict]) -> List[str]:
     """Get trending words for বিনোদন category"""
@@ -257,13 +257,13 @@ def get_খেলাধুলা_trending_words(articles: List[Dict]) -> List[st
     """Get trending words for খেলাধুলা category"""
     return get_category_trending_words('খেলাধুলা', articles)
 
-def get_ধর্ম_trending_words(articles: List[Dict]) -> List[str]:
-    """Get trending words for ধর্ম category"""
-    return get_category_trending_words('ধর্ম', articles)
+# def get_ধর্ম_trending_words(articles: List[Dict]) -> List[str]:
+#     """Get trending words for ধর্ম category"""
+#     return get_category_trending_words('ধর্ম', articles)
 
-def get_চাকরি_trending_words(articles: List[Dict]) -> List[str]:
-    """Get trending words for চাকরি category"""
-    return get_category_trending_words('চাকরি', articles)
+# def get_চাকরি_trending_words(articles: List[Dict]) -> List[str]:
+#     """Get trending words for চাকরি category"""
+#     return get_category_trending_words('চাকরি', articles)
 
 def get_শিক্ষা_trending_words(articles: List[Dict]) -> List[str]:
     """Get trending words for শিক্ষা category"""
@@ -273,9 +273,9 @@ def get_স্বাস্থ্য_trending_words(articles: List[Dict]) -> List
     """Get trending words for স্বাস্থ্য category"""
     return get_category_trending_words('স্বাস্থ্য', articles)
 
-def get_মতামত_trending_words(articles: List[Dict]) -> List[str]:
-    """Get trending words for মতামত category"""
-    return get_category_trending_words('মতামত', articles)
+# def get_মতামত_trending_words(articles: List[Dict]) -> List[str]:
+#     """Get trending words for মতামত category"""
+#     return get_category_trending_words('মতামত', articles)
 
 def get_বিজ্ঞান_trending_words(articles: List[Dict]) -> List[str]:
     """Get trending words for বিজ্ঞান category"""

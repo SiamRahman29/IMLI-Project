@@ -201,7 +201,7 @@ function GenerateWords() {
       setCategoryWiseWords(categoryWords);
       
     } catch (err) {
-      let msg = 'হাইব্রিড বিশ্লেষণ চালাতে ব্যর্থ';
+      let msg = 'বিশ্লেষণ চালাতে ব্যর্থ';
       if (err.response && err.response.data && err.response.data.detail) {
         msg += `: ${err.response.data.detail}`;
       }
@@ -556,74 +556,11 @@ function GenerateWords() {
     <div className={`container mx-auto px-4 py-12 bg-white min-h-[calc(100vh-4rem)] flex flex-col justify-center ${isResizing ? 'select-none' : ''}`}>
       <div className="text-center mb-10">
         <h1 className="text-3xl md:text-4xl font-extrabold tracking-tight text-gray-900 mb-2 flex items-center justify-center gap-2">
-          <Sparkles className="w-8 h-8 text-pink-500" /> হাইব্রিড ট্রেন্ডিং শব্দ উৎপাদন
+          <Sparkles className="w-8 h-8 text-pink-500" /> ট্রেন্ডিং শব্দ উৎপাদন
         </h1>
-        <p className="text-lg text-gray-600">সংবাদ ও Reddit থেকে AI ও NLP বিশ্লেষণ ব্যবহার করে বর্তমান ট্রেন্ডিং শব্দ খুঁজে বের করুন</p>
       </div>
 
-      {/* Source and Mode Selection */}
-      <div className="max-w-4xl mx-auto mb-8">
-        <div className="bg-white shadow-md rounded-lg p-6">
-          <h2 className="text-xl font-semibold mb-4 text-center">বিশ্লেষণ কনফিগারেশন</h2>
-          
-          {/* Source Selection */}
-          <div className="mb-6">
-            <label className="block text-sm font-medium text-gray-700 mb-3">ডেটা সোর্স নির্বাচন করুন:</label>
-            <div className="flex flex-wrap gap-4 justify-center">
-              <label className="flex items-center">
-                <input
-                  type="checkbox"
-                  checked={sources.includes('newspaper')}
-                  onChange={() => handleSourceChange('newspaper')}
-                  className="mr-2 h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
-                />
-                <span className="text-sm font-medium text-gray-700">📰 সংবাদপত্র</span>
-              </label>
-              <label className="flex items-center">
-                <input
-                  type="checkbox"
-                  checked={sources.includes('reddit')}
-                  onChange={() => handleSourceChange('reddit')}
-                  className="mr-2 h-4 w-4 text-red-600 focus:ring-red-500 border-gray-300 rounded"
-                />
-                <span className="text-sm font-medium text-gray-700">📡 Reddit</span>
-              </label>
-            </div>
-          </div>
-
-          {/* Mode Selection */}
-          <div className="mb-4">
-            <label className="block text-sm font-medium text-gray-700 mb-3">প্রক্রিয়াকরণ মোড:</label>
-            <div className="flex gap-4 justify-center">
-              <label className="flex items-center">
-                <input
-                  type="radio"
-                  name="mode"
-                  value="sequential"
-                  checked={mode === 'sequential'}
-                  onChange={(e) => setMode(e.target.value)}
-                  className="mr-2 h-4 w-4 text-green-600 focus:ring-green-500"
-                />
-                <span className="text-sm font-medium text-gray-700">⏭️ ক্রমানুসারে (Sequential)</span>
-              </label>
-              <label className="flex items-center">
-                <input
-                  type="radio"
-                  name="mode"
-                  value="parallel"
-                  checked={mode === 'parallel'}
-                  onChange={(e) => setMode(e.target.value)}
-                  className="mr-2 h-4 w-4 text-purple-600 focus:ring-purple-500"
-                />
-                <span className="text-sm font-medium text-gray-700">🔄 সমান্তরাল (Parallel)</span>
-              </label>
-            </div>
-            <p className="text-xs text-gray-500 text-center mt-2">
-              ক্রমানুসারে: একে একে প্রক্রিয়া (ডিফল্ট) | সমান্তরাল: একসাথে প্রক্রিয়া (দ্রুততর)
-            </p>
-          </div>
-        </div>
-      </div>
+     
 
       {error && (
         <div className="bg-red-100 border border-red-300 text-red-800 px-4 py-3 rounded mb-6 text-center max-w-md mx-auto">
@@ -633,9 +570,9 @@ function GenerateWords() {
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-8 max-w-3xl mx-auto">
         <div className="bg-white shadow-md rounded-lg p-8 flex flex-col justify-between items-center text-center">
-          <h2 className="text-xl font-semibold mb-2">১. হাইব্রিড বিশ্লেষণ চালান</h2>
+          <h2 className="text-xl font-semibold mb-2">১. বিশ্লেষণ চালান</h2>
           <p className="text-gray-600 mb-4">
-            নির্বাচিত সোর্স ({sources.join(', ')}) থেকে {mode === 'sequential' ? 'ক্রমানুসারে' : 'সমান্তরালে'} ট্রেন্ডিং শব্দ বিশ্লেষণ করুন
+            Newspaper এবং Social Media থেকে ট্রেন্ডিং শব্দ বিশ্লেষণ করুন
           </p>
           <button
             className={`w-full flex items-center justify-center gap-2 px-6 py-2 rounded font-semibold text-white transition ${loading || sources.length === 0 ? 'bg-gray-400' : 'bg-blue-600 hover:bg-blue-700'} shadow`}
@@ -647,7 +584,7 @@ function GenerateWords() {
             ) : (
               <RefreshCw className="w-5 h-5" />
             )}
-            {loading ? 'বিশ্লেষণ চলছে...' : 'হাইব্রিড বিশ্লেষণ শুরু করুন'}
+            {loading ? 'বিশ্লেষণ চলছে...' : 'বিশ্লেষণ শুরু করুন'}
           </button>
           {sources.length === 0 && (
             <div className="bg-yellow-100 border border-yellow-300 text-yellow-800 px-4 py-2 rounded mt-4 text-center w-full">
@@ -656,7 +593,7 @@ function GenerateWords() {
           )}
           {analysisComplete && (
             <div className="bg-green-100 border border-green-300 text-green-800 px-4 py-2 rounded mt-4 text-center w-full">
-              <span className="mr-2">✅</span> হাইব্রিড বিশ্লেষণ সম্পূর্ণ! ফাইনাল ট্রেন্ডিং শব্দ তৈরি হয়েছে।
+              <span className="mr-2">✅</span> ফাইনাল ট্রেন্ডিং শব্দ তৈরি হয়েছে।
             </div>
           )}
         </div>
@@ -667,7 +604,7 @@ function GenerateWords() {
         <div className="bg-white shadow-md rounded-lg p-8 flex flex-col justify-between items-center text-center">
           <h2 className="text-xl font-semibold mb-2">২. শব্দ নির্বাচন</h2>
           <p className="text-gray-600 mb-4">
-            ক্যাটেগরি অনুযায়ী AI প্রস্তাবিত শব্দ নির্বাচন করুন অথবা ম্যানুয়ালি একটি শব্দ টাইপ করুন
+            ক্যাটেগরি অনুযায়ী শব্দ নির্বাচন করুন অথবা ম্যানুয়ালি একটি শব্দ টাইপ করুন
           </p>
           {Object.keys(selectedCategoryWords).length > 0 && (
             <div className="bg-green-100 border border-green-300 text-green-800 px-3 py-2 rounded mb-4 text-center w-full text-sm">

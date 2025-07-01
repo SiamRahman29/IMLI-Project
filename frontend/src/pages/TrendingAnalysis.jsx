@@ -161,43 +161,6 @@ function TrendingAnalysis() {
     }
   };
 
-  const runNewAnalysis = async () => {
-    console.log('=== 🚀 Starting new progressive analysis ===');
-    setLoading(false); // Progressive analysis should NOT trigger main loading indicator
-    setShowProgressiveAnalysis(true);
-    setProgressiveAnalysisCompleted(false);
-    setPreventModalClose(false);
-  };
-
-  const handleProgressiveAnalysisComplete = async (analysisResult) => {
-    console.log('=== 🎯 handleProgressiveAnalysisComplete called ===');
-    console.log('Current showProgressiveAnalysis state:', showProgressiveAnalysis);
-    console.log('Analysis result received:', analysisResult);
-    
-    // Mark analysis as completed and prevent modal closure
-    setProgressiveAnalysisCompleted(true);
-    setPreventModalClose(true); // Prevent any accidental closure
-    
-    // IMPORTANT: Stop the main loading indicator
-    setLoading(false);
-    
-    // DON'T refresh data immediately - just show success toast
-    // The data refresh will happen when user manually closes the modal
-    showToast('প্রগ্রেসিভ বিশ্লেষণ সফলভাবে সম্পন্ন হয়েছে! এখন steps এ click করে details দেখুন।', 'success');
-    
-    // Modal stays open so user can click on completed steps
-    console.log('=== 🎉 MODAL SHOULD REMAIN OPEN FOR STEP EXPLORATION ===');
-  };
-
-  const handleProgressiveAnalysisClose = async () => {
-    console.log('=== 🚪 User manually closing progressive analysis ===');
-    setShowProgressiveAnalysis(false);
-    setProgressiveAnalysisCompleted(false); // Reset completion state
-    setPreventModalClose(false); // Reset protection flag
-    // Refresh data when progressive analysis is closed
-    await fetchAllData();
-  };
-
   const runSimpleAnalysis = async () => {
     try {
       setLoading(true);
@@ -365,40 +328,11 @@ function TrendingAnalysis() {
           </div>
           <span className="font-black text-gray-900 text-lg tracking-tight">ফিল্টার অপশন</span>
         </div>
-        
-        {/* New Analysis Button - Top Right */}
-        <div className="flex gap-2">
-          <button 
-            onClick={() => setShowProgressiveAnalysis(true)} 
-            disabled={loading} 
-            className={`flex items-center gap-2 px-6 py-3 rounded-xl font-bold transition-all duration-300 shadow-lg focus:outline-none focus:ring-4 focus:ring-offset-2 transform hover:scale-105 active:scale-95 ${
-              loading 
-                ? 'bg-gradient-to-r from-gray-400 to-gray-500 text-gray-200 cursor-not-allowed' 
-                : 'bg-gradient-to-r from-purple-600 to-purple-700 hover:from-purple-700 hover:to-purple-800 text-white focus:ring-purple-400 hover:shadow-xl'
-            }`}
-          >
-            <Zap className={`w-4 h-4 ${loading ? '' : 'animate-pulse'}`} /> 
-            <span className="text-sm tracking-wide">প্রগ্রেসিভ বিশ্লেষণ</span>
-          </button>
-          
-          <button 
-            onClick={runSimpleAnalysis} 
-            disabled={loading} 
-            className={`flex items-center gap-2 px-6 py-3 rounded-xl font-bold transition-all duration-300 shadow-lg focus:outline-none focus:ring-4 focus:ring-offset-2 transform hover:scale-105 active:scale-95 ${
-              loading 
-                ? 'bg-gradient-to-r from-gray-400 to-gray-500 text-gray-200 cursor-not-allowed' 
-                : 'bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white focus:ring-blue-400 hover:shadow-xl'
-            }`}
-          >
-            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} /> 
-            <span className="text-sm tracking-wide">{loading ? 'বিশ্লেষণ চলছে...' : 'সাধারণ বিশ্লেষণ'}</span>
-          </button>
-        </div>
       </div>
 
       {/* Search at the top */}
       <div className="mb-6">
-        <label className="block text-sm font-bold text-gray-800 mb-3 tracking-wide">ফ্রেজ খুঁজুন</label>
+        <label className="block text-sm font-bold text-gray-800 mb-3 tracking-wide">ট্রেন্ডিং শব্দ খুঁজুন</label>
         <div className="relative">
           <input 
             type="text" 
@@ -614,24 +548,6 @@ function TrendingAnalysis() {
             ))}
           </div>
         </div>
-        <div className="flex flex-col gap-8">
-          <div className="bg-gradient-to-br from-white to-blue-50 shadow-2xl rounded-2xl p-6 border border-blue-200">
-            <h3 className="font-black mb-4 flex items-center gap-3 text-gray-900"><Globe className="w-6 h-6 text-blue-600" /> ধরণ অনুযায়ী</h3>
-            <div className="flex flex-wrap gap-3">
-              {Object.entries(phrasesByType).map(([type, phrases]) => (
-                <span key={type} className="inline-block border-2 border-blue-400 text-blue-800 bg-gradient-to-r from-blue-50 to-blue-100 px-4 py-2 rounded-full text-sm font-bold shadow-lg hover:shadow-xl transition-all duration-200">{type}: {phrases.length}</span>
-              ))}
-            </div>
-          </div>
-          <div className="bg-gradient-to-br from-white to-pink-50 shadow-2xl rounded-2xl p-6 border border-pink-200">
-            <h3 className="font-black mb-4 flex items-center gap-3 text-gray-900"><Newspaper className="w-6 h-6 text-pink-600" /> উৎস অনুযায়ী</h3>
-            <div className="flex flex-wrap gap-3">
-              {Object.entries(phrasesBySource).map(([source, phrases]) => (
-                <span key={source} className="inline-block border-2 border-pink-400 text-pink-800 bg-gradient-to-r from-pink-50 to-pink-100 px-4 py-2 rounded-full text-sm font-bold shadow-lg hover:shadow-xl transition-all duration-200">{source}: {phrases.length}</span>
-              ))}
-            </div>
-          </div>
-        </div>
       </div>
     );
   };
@@ -663,24 +579,7 @@ function TrendingAnalysis() {
             ))}
           </ul>
         </div>
-        <div className="flex flex-col gap-6">
-          <div className="bg-white shadow rounded-lg p-6">
-            <h3 className="font-semibold mb-2">উৎস অনুযায়ী</h3>
-            <div className="flex flex-wrap gap-2">
-              {Object.entries(dailyData.by_source).map(([source, phrases]) => (
-                <span key={source} className="inline-block border border-pink-300 text-pink-700 px-3 py-1 rounded-full text-xs font-medium">{source}: {phrases.length}</span>
-              ))}
-            </div>
-          </div>
-          <div className="bg-white shadow rounded-lg p-6">
-            <h3 className="font-semibold mb-2">ধরণ অনুযায়ী</h3>
-            <div className="flex flex-wrap gap-2">
-              {Object.entries(dailyData.by_phrase_type).map(([type, phrases]) => (
-                <span key={type} className="inline-block border border-blue-300 text-blue-700 px-3 py-1 rounded-full text-xs font-medium">{type}: {phrases.length}</span>
-              ))}
-            </div>
-          </div>
-        </div>
+      
       </div>
     );
   };
@@ -775,17 +674,6 @@ function TrendingAnalysis() {
           <div className="text-2xl font-bold text-pink-600 mt-4">{stats.recent_phrases_7_days}</div>
           <div className="text-gray-500">গত ৭ দিনের ফ্রেজ</div>
         </div>
-        <div className="bg-white shadow rounded-lg p-6">
-          <h3 className="font-semibold mb-2">উৎস অনুযায়ী পরিসংখ্যান</h3>
-          <ul className="divide-y divide-gray-200">
-            {stats.by_source.map((sourceStat, idx) => (
-              <li key={idx} className="py-2">
-                <div className="font-medium">{sourceStat.source}</div>
-                <div className="text-xs text-gray-500">সংখ্যা: {sourceStat.count} | গড় স্কোর: {sourceStat.avg_score}</div>
-              </li>
-            ))}
-          </ul>
-        </div>
         <div className="md:col-span-2 bg-white shadow rounded-lg p-6">
           <h3 className="font-semibold mb-2">ধরণ অনুযায়ী পরিসংখ্যান</h3>
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
@@ -822,7 +710,7 @@ function TrendingAnalysis() {
           </div>
           ট্রেন্ডিং বিশ্লেষণ
         </h1>
-        <p className="text-sm text-gray-600 font-medium">বাংলা সংবাদ ও সোশ্যাল মিডিয়া থেকে ট্রেন্ডিং শব্দ ও বাক্যাংশ</p>
+        {/* <p className="text-sm text-gray-600 font-medium">বাংলা সংবাদ ও সোশ্যাল মিডিয়া থেকে ট্রেন্ডিং শব্দ ও বাক্যাংশ</p> */}
       </div>
       {error && (
         <div className="bg-gradient-to-r from-red-50 to-red-100 border-2 border-red-300 text-red-800 px-6 py-4 rounded-2xl mb-6 shadow-lg">
