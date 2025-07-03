@@ -15,7 +15,7 @@ function Navigation() {
               className="text-white text-xl font-bold tracking-wide hover:text-blue-200 transition-colors duration-200 cursor-pointer hover:scale-105 transform"
               title="হোম পেজে যান"
             >
-              BARTA - IMLI
+              BARTA - IML
             </Link>
           </div>
           <div className="flex space-x-2">
