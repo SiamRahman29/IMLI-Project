@@ -14,6 +14,34 @@ const apiV2Client = axios.create({
   timeout: 2 * 60 * 60 * 1000, // 2 hours
 });
 
+// Add auth interceptor to include JWT token
+apiV2Client.interceptors.request.use(
+  (config) => {
+    const token = localStorage.getItem('access_token');
+    if (token) {
+      config.headers.Authorization = `Bearer ${token}`;
+    }
+    return config;
+  },
+  (error) => {
+    return Promise.reject(error);
+  }
+);
+
+// Add response interceptor to handle token expiration
+apiV2Client.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    if (error.response?.status === 401) {
+      // Token expired or invalid
+      localStorage.removeItem('access_token');
+      localStorage.removeItem('user_data');
+      window.location.href = '/login';
+    }
+    return Promise.reject(error);
+  }
+);
+
 // API functions for legacy endpoints
 export const api = {
   // Legacy word of the day
@@ -53,6 +81,7 @@ export const apiV2 = {
     if (params.start_date) queryParams.append('start_date', params.start_date);
     if (params.end_date) queryParams.append('end_date', params.end_date);
     if (params.limit) queryParams.append('limit', params.limit);
+    if (params.offset) queryParams.append('offset', params.offset);
     if (params.source) queryParams.append('source', params.source);
     if (params.phrase_type) queryParams.append('phrase_type', params.phrase_type);
     
@@ -96,6 +125,16 @@ export const apiV2 = {
   
   // Get statistics
   getStats: () => apiV2Client.get('/stats'),
+  
+  // Authentication endpoints
+  login: (credentials) => apiV2Client.post('/auth/login', credentials),
+  getCurrentUser: () => apiV2Client.get('/auth/me'),
+  inviteUser: (inviteData) => apiV2Client.post('/auth/invite', inviteData),
+  getUsers: () => apiV2Client.get('/auth/users'),
+  deactivateUser: (userId) => apiV2Client.post(`/auth/users/${userId}/deactivate`),
+  activateUser: (userId) => apiV2Client.post(`/auth/users/${userId}/activate`),
+  updateProfile: (profileData) => apiV2Client.put('/auth/profile', profileData),
+  deleteUser: (userId) => apiV2Client.delete(`/auth/users/${userId}`),
 };
 
 // Helper functions
@@ -130,4 +169,32 @@ export const groupPhrasesBySource = (phrases) => {
   }, {});
 };
 
-export default { api, apiV2 };
+export default { api, apiV2};
+
+// Auth helper functions
+export const authUtils = {
+  isAuthenticated: () => {
+    return !!localStorage.getItem('access_token');
+  },
+  
+  getUser: () => {
+    const userData = localStorage.getItem('user_data');
+    return userData ? JSON.parse(userData) : null;
+  },
+  
+  logout: () => {
+    localStorage.removeItem('access_token');
+    localStorage.removeItem('user_data');
+    window.location.href = '/login';
+  },
+  
+  hasPermission: (permission) => {
+    const user = authUtils.getUser();
+    return user?.permissions?.includes(permission) || user?.role === 'admin';
+  },
+  
+  isAdmin: () => {
+    const user = authUtils.getUser();
+    return user?.role === 'admin';
+  }
+};

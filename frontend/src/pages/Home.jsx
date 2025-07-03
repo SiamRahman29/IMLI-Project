@@ -1,9 +1,11 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
+import { useAuth } from '../contexts/AuthContext';
 import { apiV2 } from '../api';
 import { TrendingUp, Sparkles } from 'lucide-react';
 
 function Home() {
+  const { isAuthenticated, isAdmin } = useAuth();
   const [word, setWord] = useState('');
   const [selectedWords, setSelectedWords] = useState([]);
   const [date, setDate] = useState('');
@@ -43,8 +45,8 @@ function Home() {
   return (
     <div className="container mx-auto px-4 py-12 bg-white min-h-[calc(100vh-4rem)] flex flex-col justify-center">
       <div className="text-center mb-10">
-        <h1 className="text-4xl md:text-5xl font-extrabold tracking-tight text-gray-900 mb-2">BARTA - IML</h1>
-        <p className="text-xl text-gray-600 mb-2">বাংলা ট্রেন্ডিং শব্দ বিশ্লেষণ সিস্টেম</p>
+        <h1 className="text-4xl md:text-3xl font-extrabold tracking-tight text-gray-900 mb-2">BARTA - IML</h1>
+        <p className="text-1xl text-gray-600 mb-2">বাংলা ট্রেন্ডিং শব্দ বিশ্লেষণ সিস্টেম</p>
       </div>
 
       {error ? (
@@ -100,19 +102,21 @@ function Home() {
         </div>
       )}
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-8 max-w-3xl mx-auto">
+      <div className={`grid grid-cols-1 ${isAuthenticated && isAdmin ? 'md:grid-cols-2' : ''} gap-8 max-w-3xl mx-auto`}>
         <div className="bg-white shadow-md rounded-lg h-full flex flex-col items-center p-8 text-center">
           <TrendingUp className="w-14 h-14 text-blue-500 mb-3" />
           <h3 className="text-xl font-semibold mb-2">ট্রেন্ডিং বিশ্লেষণ</h3>
           <p className="text-gray-600 mb-4">সংবাদ ও সোশ্যাল মিডিয়া থেকে বর্তমান ট্রেন্ডিং শব্দ ও বাক্যাংশ দেখুন</p>
           <Link to="/trending" className="inline-block bg-blue-600 hover:bg-blue-700 text-white font-semibold px-6 py-2 rounded-lg transition mt-2 shadow focus:outline-none focus:ring-2 focus:ring-blue-400 focus:ring-offset-2">বিশ্লেষণ দেখুন</Link>
         </div>
-        <div className="bg-white shadow-md rounded-lg h-full flex flex-col items-center p-8 text-center">
-          <Sparkles className="w-14 h-14 text-pink-500 mb-3" />
-          <h3 className="text-xl font-semibold mb-2">শব্দ উৎপাদন</h3>
-          <p className="text-gray-600 mb-4">নতুন ট্রেন্ডিং শব্দের প্রার্থী তৈরি করুন</p>
-          <Link to="/generate" className="inline-block border border-pink-500 text-pink-600 hover:bg-pink-500 hover:text-white font-semibold px-6 py-2 rounded-lg transition mt-2 shadow focus:outline-none focus:ring-2 focus:ring-pink-400 focus:ring-offset-2">শব্দ তৈরি করুন</Link>
-        </div>
+        {isAuthenticated && isAdmin && (
+          <div className="bg-white shadow-md rounded-lg h-full flex flex-col items-center p-8 text-center">
+            <Sparkles className="w-14 h-14 text-pink-500 mb-3" />
+            <h3 className="text-xl font-semibold mb-2">শব্দ উৎপাদন</h3>
+            <p className="text-gray-600 mb-4">নতুন ট্রেন্ডিং শব্দের প্রার্থী তৈরি করুন</p>
+            <Link to="/generate-words" className="inline-block border border-pink-500 text-pink-600 hover:bg-pink-500 hover:text-white font-semibold px-6 py-2 rounded-lg transition mt-2 shadow focus:outline-none focus:ring-2 focus:ring-pink-400 focus:ring-offset-2">শব্দ তৈরি করুন</Link>
+          </div>
+        )}
       </div>
 
       <div className="text-center mt-16 py-6">

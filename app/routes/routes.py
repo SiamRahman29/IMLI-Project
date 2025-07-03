@@ -79,7 +79,8 @@ def get_trending_phrases(
     end_date: Optional[str] = Query(None, description="End date (YYYY-MM-DD)"),
     phrase_type: Optional[str] = Query(None, description="unigram, bigram, or trigram"),
     source: Optional[str] = Query(None, description="news or social_media"),
-    limit: int = Query(10, description="Number of results to return"),
+    limit: int = Query(50, description="Number of results to return (default: 50)"),
+    offset: int = Query(0, description="Number of results to skip for pagination (default: 0)"),
     db: Session = Depends(get_db)
 ):
     """Get trending phrases with optional filtering"""
@@ -112,8 +113,9 @@ def get_trending_phrases(
             raise HTTPException(status_code=400, detail="source must be news or social_media")
         query = query.filter(TrendingPhrase.source == source)
     
-    # Order by score and limit
-    trending_phrases = query.order_by(desc(TrendingPhrase.score)).limit(limit).all()
+    # Order by score and apply pagination
+    total_count = query.count()
+    trending_phrases = query.order_by(desc(TrendingPhrase.score)).offset(offset).limit(limit).all()
     
     if not trending_phrases:
         raise HTTPException(status_code=404, detail="No trending phrases found")
@@ -128,6 +130,17 @@ def get_trending_phrases(
             phrase_type=phrase.phrase_type,
             source=phrase.source
         ))
+    
+    return {
+        "phrases": phrase_responses,
+        "pagination": {
+            "total": total_count,
+            "limit": limit,
+            "offset": offset,
+            "has_next": (offset + limit) < total_count,
+            "has_prev": offset > 0
+        }
+    }
     
     return {
         "trending_phrases": phrase_responses,

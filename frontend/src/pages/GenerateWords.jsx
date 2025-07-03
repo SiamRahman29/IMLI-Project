@@ -828,55 +828,7 @@ function GenerateWords() {
             )
           )}
 
-          {/* Full AI response - resizable */}
-          <div 
-            ref={resizeRef}
-            className="bg-white shadow-lg rounded-lg p-6 relative border-2 border-gray-200"
-            style={{ minHeight: `${candidateHeight}px` }}
-          >
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="text-2xl font-bold flex items-center gap-2">
-                <Sparkles className="w-6 h-6 text-yellow-500" />
-                সম্পূর্ণ AI বিশ্লেষণ রিপোর্ট
-              </h2>
-              <div className="text-sm text-gray-500 bg-gray-100 px-3 py-1 rounded-full">
-                উচ্চতা: {candidateHeight}px
-              </div>
-            </div>
-            
-            <hr className="mb-6 border-gray-300" />
-            
-            <div 
-              className="bg-gray-50 rounded-lg border-2 border-gray-200 overflow-auto candidate-content shadow-inner"
-              style={{ 
-                height: `${candidateHeight - 140}px`,
-                minHeight: '300px'
-              }}
-            >
-              <div className="p-6">
-                <pre className="text-gray-800 whitespace-pre-wrap text-sm leading-relaxed font-mono bg-white p-4 rounded border shadow-sm">{aiCandidates}</pre>
-              </div>
-            </div>
-            
-            {/* Resize handle */}
-            <div 
-              className={`resize-handle absolute bottom-0 left-0 right-0 h-6 bg-gradient-to-r from-blue-100 to-indigo-100 border-t-2 border-blue-300 rounded-b-lg cursor-ns-resize flex items-center justify-center transition-all duration-200 ${isResizing ? 'bg-gradient-to-r from-blue-200 to-indigo-200 shadow-lg' : 'hover:from-blue-150 hover:to-indigo-150'}`}
-              onMouseDown={handleMouseDown}
-              title="Drag to resize - টেনে আকার পরিবর্তন করুন"
-            >
-              <div className="flex items-center gap-1">
-                <GripVertical className="w-4 h-4 text-blue-600" />
-                <span className="text-xs text-blue-600 font-medium">Resize</span>
-                <GripVertical className="w-4 h-4 text-blue-600" />
-              </div>
-            </div>
-            
-            {isResizing && (
-              <div className="absolute top-4 right-4 bg-blue-600 text-white text-sm px-4 py-2 rounded-lg shadow-lg border-2 border-blue-700 font-mono">
-                📏 {candidateHeight}px
-              </div>
-            )}
-          </div>
+          
         </div>
       )}
 

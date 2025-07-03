@@ -26,8 +26,10 @@ import random
 
 from app.db.database import SessionLocal
 from app.models.word import Word, TrendingPhrase
+from app.models.user import User
 from app.routes.helpers import get_trending_words
 from app.dto.dtos import TrendingWordsResponse, TrendingPhraseResponse, DailyTrendingResponse, TrendingPhrasesRequest
+from app.auth.dependencies import get_current_admin_user, get_optional_current_user
 # from app.services.social_media_scraper import print_scraped_posts_pretty, scrape_social_media_content
 
 router = APIRouter()
@@ -62,8 +64,11 @@ def get_word_of_the_day(db: Session = Depends(get_db)):
         }
 
 @router.post("/generate_candidates", summary="Generate category-wise trending words from newspapers using LLM")
-async def generate_candidates(db: Session = Depends(get_db)):
-    """Generate trending word candidates using saved newspaper data and category-wise LLM analysis"""
+async def generate_candidates(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_admin_user)
+):
+    """Generate trending word candidates using saved newspaper data and category-wise LLM analysis (Admin only)"""
     import json
     import os
     import re
@@ -485,7 +490,8 @@ Reddit Content from r/{subreddit}:
 def get_trending_phrases(
     start_date: Optional[str] = Query(None, description="Start date in YYYY-MM-DD format"),
     end_date: Optional[str] = Query(None, description="End date in YYYY-MM-DD format"),
-    limit: int = Query(50, description="Maximum number of phrases to return"),
+    limit: int = Query(30, description="Maximum number of phrases to return (default: 30)"),
+    offset: int = Query(0, description="Number of results to skip for pagination (default: 0)"),
     source: Optional[str] = Query(None, description="Filter by source (news, social_media, etc.)"),
     phrase_type: Optional[str] = Query(None, description="Filter by phrase type"),
     db: Session = Depends(get_db)
@@ -518,8 +524,11 @@ def get_trending_phrases(
     if phrase_type:
         query = query.filter(TrendingPhrase.phrase_type == phrase_type)
     
-    # Order by score descending and limit
-    phrases = query.order_by(desc(TrendingPhrase.score)).limit(limit).all()
+    # Get total count for pagination
+    total_count = query.count()
+    
+    # Order by score descending and apply pagination
+    phrases = query.order_by(desc(TrendingPhrase.score)).offset(offset).limit(limit).all()
     
     # Convert to response format
     trending_phrases = []
@@ -536,8 +545,14 @@ def get_trending_phrases(
     return {
         "start_date": start_date,
         "end_date": end_date,
-        "total_count": len(trending_phrases),
-        "phrases": trending_phrases
+        "phrases": trending_phrases,
+        "pagination": {
+            "total": total_count,
+            "limit": limit,
+            "offset": offset,
+            "has_next": (offset + limit) < total_count,
+            "has_prev": offset > 0
+        }
     }
 
 @router.get("/daily-trending", summary="Get daily trending summary")
@@ -2147,8 +2162,12 @@ def set_word_of_the_day(word: str, db: Session = Depends(get_db)):
     }
 
 @router.post("/set_category_words", summary="Set today's words with category information")
-def set_category_words(request: dict, db: Session = Depends(get_db)):
-    """Set words of the day with category information - supports multiple words per category"""
+def set_category_words(
+    request: dict, 
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_admin_user)
+):
+    """Set words of the day with category information - supports multiple words per category (Admin only)"""
     from app.models.word import CategoryTrendingPhrase, TrendingPhrase
     
     today = date.today()

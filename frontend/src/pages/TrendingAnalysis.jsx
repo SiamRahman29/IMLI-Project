@@ -2,8 +2,10 @@ import { useEffect, useState } from 'react';
 import { apiV2, formatDate, getScoreColor, groupPhrasesByType, groupPhrasesBySource } from '../api';
 import { TrendingUp, Globe, Newspaper, Users, RefreshCw, Filter, Zap, Calendar } from 'lucide-react';
 import ProgressiveAnalysis from '../components/ProgressiveAnalysis';
+import { useLanguage } from '../hooks/useLanguage';
 
 function TrendingAnalysis() {
+  const { isBengali, translate } = useLanguage();
   const [trendingData, setTrendingData] = useState(null);
   const [dailyData, setDailyData] = useState(null);
   const [weeklyData, setWeeklyData] = useState(null);
@@ -18,7 +20,7 @@ function TrendingAnalysis() {
     end_date: formatDate(new Date()),
     source: '',
     phrase_type: '',
-    limit: 50,
+    limit: 30,
     search: ''
   });
   const [searchInput, setSearchInput] = useState('');
@@ -326,13 +328,13 @@ function TrendingAnalysis() {
           <div className="p-2 bg-gradient-to-br from-blue-500 to-blue-600 rounded-xl shadow-lg">
             <Filter className="w-5 h-5 text-white" />
           </div>
-          <span className="font-black text-gray-900 text-lg tracking-tight">ফিল্টার অপশন</span>
+          <span className="font-black text-gray-900 text-lg tracking-tight">{translate('ফিল্টার অপশন')}</span>
         </div>
       </div>
 
       {/* Search at the top */}
       <div className="mb-6">
-        <label className="block text-sm font-bold text-gray-800 mb-3 tracking-wide">ট্রেন্ডিং শব্দ খুঁজুন</label>
+        <label className="block text-sm font-bold text-gray-800 mb-3 tracking-wide">{translate('ট্রেন্ডিং শব্দ খুঁজুন')}</label>
         <div className="relative">
           <input 
             type="text" 
@@ -356,10 +358,10 @@ function TrendingAnalysis() {
                   : 'bg-gray-200 text-gray-400 cursor-not-allowed'
               }`}
             >
-              খুঁজুন
+              {translate('খুঁজুন')}
             </button>
             <kbd className="hidden sm:inline-block px-2 py-1 text-xs font-semibold text-gray-500 bg-gray-100 border border-gray-300 rounded">
-              Enter
+              {translate('Enter')}
             </kbd>
           </div>
         </div>
@@ -381,32 +383,32 @@ function TrendingAnalysis() {
       
       {/* Quick Date Selection above date inputs */}
       <div className="mb-6">
-        <label className="block text-sm font-bold text-gray-800 mb-3 tracking-wide">দ্রুত তারিখ নির্বাচন</label>
+        <label className="block text-sm font-bold text-gray-800 mb-3 tracking-wide">{translate('সর্ব তারিখ নির্বাচন')}</label>
         <div className="flex flex-wrap gap-2">
           <button 
             onClick={() => setDateRange(1)} 
             className="px-4 py-2 bg-gradient-to-r from-blue-500 to-blue-600 text-white rounded-lg text-sm font-semibold shadow-md hover:shadow-lg transition-all hover:scale-105"
           >
-            আজ
+            {translate('আজ')}
           </button>
           <button 
             onClick={() => setDateRange(7)} 
             className="px-4 py-2 bg-gradient-to-r from-green-500 to-green-600 text-white rounded-lg text-sm font-semibold shadow-md hover:shadow-lg transition-all hover:scale-105"
           >
-            গত ৭ দিন
+            {translate('গত ৭ দিন')}
           </button>
           <button 
             onClick={() => setDateRange(30)} 
             className="px-4 py-2 bg-gradient-to-r from-purple-500 to-purple-600 text-white rounded-lg text-sm font-semibold shadow-md hover:shadow-lg transition-all hover:scale-105"
           >
-            গত ৩০ দিন
+            {translate('গত ৩০ দিন')}
           </button>
         </div>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-5 gap-6">
         <div className="relative">
-          <label className="block text-sm font-bold text-gray-800 mb-3 tracking-wide">শুরুর তারিখ</label>
+          <label className="block text-sm font-bold text-gray-800 mb-3 tracking-wide">{translate('ভর তারিখ')}</label>
           <input 
             type="date" 
             value={filters.start_date} 
@@ -416,7 +418,7 @@ function TrendingAnalysis() {
           />
         </div>
         <div className="relative">
-          <label className="block text-sm font-bold text-gray-800 mb-3 tracking-wide">শেষ তারিখ</label>
+          <label className="block text-sm font-bold text-gray-800 mb-3 tracking-wide">{translate('শেষ তারিখ')}</label>
           <input 
             type="date" 
             value={filters.end_date} 
@@ -427,29 +429,29 @@ function TrendingAnalysis() {
           />
         </div>
         <div>
-          <label className="block text-sm font-bold text-gray-800 mb-3 tracking-wide">উৎস</label>
+          <label className="block text-sm font-bold text-gray-800 mb-3 tracking-wide">{translate('উৎস')}</label>
           <select 
             value={filters.source} 
             onChange={e => handleFilterChange('source', e.target.value)} 
             className="w-full border-2 border-gray-300 rounded-xl px-4 py-3 focus:outline-none focus:ring-4 focus:ring-blue-400/50 focus:border-blue-500 transition-all duration-300 bg-white text-slate-800 shadow-lg hover:shadow-xl font-medium cursor-pointer"
           >
-            <option value="" className="text-slate-600 font-medium">সব</option>
+            <option value="" className="text-slate-600 font-medium">{translate('সব')}</option>
             {sources.sources.map(source => <option key={source} value={source} className="text-slate-800 font-medium">{source}</option>)}
           </select>
         </div>
         <div>
-          <label className="block text-sm font-bold text-gray-800 mb-3 tracking-wide">ধরণ</label>
+          <label className="block text-sm font-bold text-gray-800 mb-3 tracking-wide">{translate('ধরন')}</label>
           <select 
             value={filters.phrase_type} 
             onChange={e => handleFilterChange('phrase_type', e.target.value)} 
             className="w-full border-2 border-gray-300 rounded-xl px-4 py-3 focus:outline-none focus:ring-4 focus:ring-blue-400/50 focus:border-blue-500 transition-all duration-300 bg-white text-slate-800 shadow-lg hover:shadow-xl font-medium cursor-pointer"
           >
-            <option value="" className="text-slate-600 font-medium">সব</option>
+            <option value="" className="text-slate-600 font-medium">{translate('সব')}</option>
             {sources.phrase_types.map(type => <option key={type} value={type} className="text-slate-800 font-medium">{type}</option>)}
           </select>
         </div>
         <div>
-          <label className="block text-sm font-bold text-gray-800 mb-3 tracking-wide">সীমা</label>
+          <label className="block text-sm font-bold text-gray-800 mb-3 tracking-wide">{translate('সীমা')}</label>
           <input 
             type="number" 
             min={10} 
@@ -509,7 +511,7 @@ function TrendingAnalysis() {
       <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
         <div className="md:col-span-2 bg-gradient-to-br from-white to-gray-50 shadow-2xl rounded-2xl p-8 border border-gray-200">
           <div className="flex items-center justify-between mb-4">
-            <h2 className="text-2xl font-black text-gray-900 tracking-tight">শীর্ষ ট্রেন্ডিং ফ্রেজ</h2>
+            <h2 className="text-2xl font-black text-gray-900 tracking-tight">{translate('শীর্ষ ট্রেন্ডিং ক্রেজ')}</h2>
             <button
               onClick={exportData}
               disabled={!filteredPhrases.length || loading}
@@ -522,7 +524,7 @@ function TrendingAnalysis() {
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
               </svg>
-              <span>Export CSV</span>
+              <span>{translate('Export CSV')}</span>
             </button>
           </div>
           <div className="text-slate-600 mb-4 font-semibold">
@@ -708,7 +710,7 @@ function TrendingAnalysis() {
           <div className="p-2 bg-gradient-to-br from-blue-600 to-blue-700 rounded-xl shadow-lg">
             <TrendingUp className="w-6 h-6 text-white" />
           </div>
-          ট্রেন্ডিং বিশ্লেষণ
+          {translate('ট্রেন্ডিং বিশ্লেষণ')}
         </h1>
         {/* <p className="text-sm text-gray-600 font-medium">বাংলা সংবাদ ও সোশ্যাল মিডিয়া থেকে ট্রেন্ডিং শব্দ ও বাক্যাংশ</p> */}
       </div>
@@ -737,10 +739,10 @@ function TrendingAnalysis() {
       )}
       <div className="flex border border-gray-200 mb-8 max-w-5xl mx-auto bg-white rounded-2xl shadow-lg overflow-hidden backdrop-blur-sm">
         {[
-          { label: "ট্রেন্ডিং ফ্রেজ", icon: TrendingUp },
-          { label: "দৈনিক সারসংক্ষেপ", icon: Globe },
-          { label: "সাপ্তাহিক সারসংক্ষেপ", icon: Calendar },
-          { label: "পরিসংখ্যান", icon: Users }
+          { label: translate("ট্রেন্ডিং ক্রেজ"), icon: TrendingUp },
+          { label: translate("দৈনিক সারসংক্ষেপ"), icon: Globe },
+          { label: translate("সাপ্তাহিক সারসংক্ষেপ"), icon: Calendar },
+          { label: translate("পরিসংখ্যান"), icon: Users }
         ].map(({ label, icon: Icon }, idx) => (
           <button
             key={idx}
