@@ -128,6 +128,8 @@ export const apiV2 = {
   
   // Authentication endpoints
   login: (credentials) => apiV2Client.post('/auth/login', credentials),
+  forgotPassword: (email) => apiV2Client.post('/auth/forgot-password', { email }),
+  resetPassword: (resetData) => apiV2Client.post('/auth/reset-password', resetData),
   getCurrentUser: () => apiV2Client.get('/auth/me'),
   inviteUser: (inviteData) => apiV2Client.post('/auth/invite', inviteData),
   getUsers: () => apiV2Client.get('/auth/users'),
@@ -135,6 +137,9 @@ export const apiV2 = {
   activateUser: (userId) => apiV2Client.post(`/auth/users/${userId}/activate`),
   updateProfile: (profileData) => apiV2Client.put('/auth/profile', profileData),
   deleteUser: (userId) => apiV2Client.delete(`/auth/users/${userId}`),
+  
+  // Trending phrases management
+  deleteTrendingPhrase: (phraseId) => apiV2Client.delete(`/trending-phrases/${phraseId}`),
 };
 
 // Helper functions
@@ -170,6 +175,12 @@ export const groupPhrasesBySource = (phrases) => {
 };
 
 export default { api, apiV2};
+
+// Named exports for commonly used functions
+export const login = apiV2.login;
+export const forgotPassword = apiV2.forgotPassword;
+export const resetPassword = apiV2.resetPassword;
+export const getCurrentUser = apiV2.getCurrentUser;
 
 // Auth helper functions
 export const authUtils = {

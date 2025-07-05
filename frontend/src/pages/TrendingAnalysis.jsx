@@ -1,11 +1,31 @@
 import { useEffect, useState } from 'react';
-import { apiV2, formatDate, getScoreColor, groupPhrasesByType, groupPhrasesBySource } from '../api';
-import { TrendingUp, Globe, Newspaper, Users, RefreshCw, Filter, Zap, Calendar } from 'lucide-react';
+import { apiV2, formatDate, getScoreColor, groupPhrasesByType, groupPhrasesBySource, authUtils } from '../api';
+import { TrendingUp, Globe, Newspaper, Users, RefreshCw, Filter, Zap, Calendar, Trash2 } from 'lucide-react';
 import ProgressiveAnalysis from '../components/ProgressiveAnalysis';
+import ConfirmationModal from '../components/ConfirmationModal';
 import { useLanguage } from '../hooks/useLanguage';
 
 function TrendingAnalysis() {
   const { isBengali, translate } = useLanguage();
+
+  // Translation function for phrase types and sources
+  const translateLabel = (label) => {
+    const translations = {
+      // Phrase types
+      'selected': 'নির্বাচিত',
+      'unigram': 'একক শব্দ',
+      'bigram': 'দ্বিত্ব শব্দ',
+      'trigram': 'ত্রিগুণ শব্দ',
+      // Sources
+      'user_selection': 'ব্যবহারকারী নির্বাচন',
+      'news': 'সংবাদ',
+      'social_media': 'সামাজিক মাধ্যম',
+      'newspaper': 'সংবাদপত্র',
+      'reddit': 'রেডিট',
+    };
+    return translations[label] || label;
+  };
+
   const [trendingData, setTrendingData] = useState(null);
   const [dailyData, setDailyData] = useState(null);
   const [weeklyData, setWeeklyData] = useState(null);
@@ -20,7 +40,7 @@ function TrendingAnalysis() {
     end_date: formatDate(new Date()),
     source: '',
     phrase_type: '',
-    limit: 30,
+    limit: 10,
     search: ''
   });
   const [searchInput, setSearchInput] = useState('');
@@ -28,6 +48,12 @@ function TrendingAnalysis() {
   const [showProgressiveAnalysis, setShowProgressiveAnalysis] = useState(false);
   const [progressiveAnalysisCompleted, setProgressiveAnalysisCompleted] = useState(false);
   const [preventModalClose, setPreventModalClose] = useState(false); // Add protection flag
+  const [deleteModal, setDeleteModal] = useState({ isOpen: false, phraseId: null, phraseName: '' });
+  const [currentPage, setCurrentPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
+
+  // Check if user is admin
+  const isAdmin = authUtils.isAdmin();
 
   // Add debugging for modal state changes
   useEffect(() => {
@@ -37,6 +63,27 @@ function TrendingAnalysis() {
   const showToast = (message, type = 'success') => {
     setToast({ message, type });
     setTimeout(() => setToast(null), 3000);
+  };
+
+  const handleDeletePhrase = async (phraseId) => {
+    try {
+      await apiV2.deleteTrendingPhrase(phraseId);
+      showToast('ট্রেন্ডিং ফ্রেজ সফলভাবে মুছে ফেলা হয়েছে', 'success');
+      setDeleteModal({ isOpen: false, phraseId: null, phraseName: '' });
+      // Refresh the data
+      fetchTrendingData();
+    } catch (error) {
+      showToast('ফ্রেজ মুছতে সমস্যা হয়েছে', 'error');
+      console.error('Error deleting phrase:', error);
+    }
+  };
+
+  const openDeleteModal = (phraseId, phraseName) => {
+    setDeleteModal({ isOpen: true, phraseId, phraseName });
+  };
+
+  const closeDeleteModal = () => {
+    setDeleteModal({ isOpen: false, phraseId: null, phraseName: '' });
   };
 
   useEffect(() => {
@@ -66,6 +113,18 @@ function TrendingAnalysis() {
   }, [searchInput]);
 
   useEffect(() => {
+    // Reset to page 1 when filters change
+    setCurrentPage(1);
+  }, [filters]);
+
+  useEffect(() => {
+    // Fetch data when page changes
+    if (tabValue === 0) {
+      fetchTrendingData();
+    }
+  }, [currentPage]);
+
+  useEffect(() => {
     if (tabValue === 0) {
       fetchTrendingData();
     } else if (tabValue === 1) {
@@ -89,8 +148,16 @@ function TrendingAnalysis() {
   const fetchTrendingData = async () => {
     try {
       setLoading(true);
-      const response = await apiV2.getTrendingPhrases(filters);
+      const offset = (currentPage - 1) * filters.limit;
+      const requestFilters = { ...filters, offset };
+      const response = await apiV2.getTrendingPhrases(requestFilters);
       setTrendingData(response.data);
+      
+      // Calculate total pages
+      if (response.data.pagination) {
+        const pages = Math.ceil(response.data.pagination.total / filters.limit);
+        setTotalPages(pages);
+      }
     } catch (err) {
       let msg = 'ট্রেন্ডিং ডেটা লোড করতে ব্যর্থ';
       if (err.response && err.response.data && err.response.data.detail) {
@@ -192,6 +259,17 @@ function TrendingAnalysis() {
     } else if (tabValue === 3) {
       await fetchStats();
     }
+  };
+
+  const handleProgressiveAnalysisComplete = () => {
+    setShowProgressiveAnalysis(false);
+    setProgressiveAnalysisCompleted(true);
+    fetchAllData(); // Refresh all data after analysis
+    showToast('বিশ্লেষণ সফলভাবে সম্পন্ন হয়েছে!', 'success');
+  };
+
+  const handleProgressiveAnalysisClose = () => {
+    setShowProgressiveAnalysis(false);
   };
 
   const exportData = () => {
@@ -529,13 +607,13 @@ function TrendingAnalysis() {
           </div>
           <div className="text-slate-600 mb-4 font-semibold">
             {trendingData.start_date} থেকে {trendingData.end_date} | 
-            মোট: {trendingData.total_count}টি | 
+            মোট: {trendingData.pagination?.total || 0}টি | 
             {filters.search && (
               <span className="text-blue-600">ফিল্টার করা: {filteredPhrases.length}টি</span>
             )}
           </div>
           <div className="space-y-0">
-            {filteredPhrases.slice(0, 20).map((phrase, idx) => (
+            {filteredPhrases.map((phrase, idx) => (
               <div key={idx} className="phrase-separator py-5 px-4 flex flex-col gap-3 hover:bg-gradient-to-r hover:from-blue-50 hover:to-indigo-50 rounded-xl transition-all duration-300 group hover:shadow-lg hover:scale-[1.01] hover:z-10 relative">
                 <div className="flex items-center gap-3">
                   <span className="text-xl font-bold text-gray-900 group-hover:text-blue-900 transition-colors">{phrase.phrase}</span>
@@ -543,12 +621,57 @@ function TrendingAnalysis() {
                 </div>
                 <div className="flex flex-wrap gap-2 mt-1">
                   <span className="inline-block bg-gradient-to-r from-gray-100 to-gray-200 text-gray-800 px-3 py-1 rounded-full text-sm font-semibold shadow-md hover:shadow-lg transition-all group-hover:scale-105">ফ্রিকোয়েন্সি: {phrase.frequency}</span>
-                  <span className="inline-block bg-gradient-to-r from-blue-100 to-blue-200 text-blue-800 px-3 py-1 rounded-full text-sm font-semibold shadow-md hover:shadow-lg transition-all group-hover:scale-105">{phrase.phrase_type}</span>
-                  <span className="inline-block bg-gradient-to-r from-pink-100 to-pink-200 text-pink-800 px-3 py-1 rounded-full text-sm font-semibold shadow-md hover:shadow-lg transition-all group-hover:scale-105">{phrase.source}</span>
                 </div>
+                {/* Admin delete button */}
+                {isAdmin && (
+                  <button
+                    onClick={() => openDeleteModal(phrase.id, phrase.phrase)}
+                    className="absolute top-3 right-3 p-2 rounded-full bg-red-500 text-white shadow-md hover:bg-red-600 transition-all duration-300"
+                    title="মুছে ফেলুন"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                )}
               </div>
             ))}
           </div>
+          
+          {/* Pagination Controls */}
+          {trendingData?.pagination && totalPages > 1 && (
+            <div className="flex justify-center items-center gap-4 mt-8 p-4">
+              <button
+                onClick={() => {
+                  setCurrentPage(prev => Math.max(1, prev - 1));
+                }}
+                disabled={currentPage === 1}
+                className={`px-4 py-2 rounded-lg font-semibold transition-all ${
+                  currentPage === 1 
+                    ? 'bg-gray-200 text-gray-400 cursor-not-allowed' 
+                    : 'bg-blue-600 text-white hover:bg-blue-700 shadow-md hover:shadow-lg'
+                }`}
+              >
+                পূর্ববর্তী
+              </button>
+              
+              <span className="text-gray-700 font-semibold">
+                পৃষ্ঠা {currentPage} / {totalPages} (মোট {trendingData.pagination.total}টি)
+              </span>
+              
+              <button
+                onClick={() => {
+                  setCurrentPage(prev => Math.min(totalPages, prev + 1));
+                }}
+                disabled={currentPage === totalPages}
+                className={`px-4 py-2 rounded-lg font-semibold transition-all ${
+                  currentPage === totalPages 
+                    ? 'bg-gray-200 text-gray-400 cursor-not-allowed' 
+                    : 'bg-blue-600 text-white hover:bg-blue-700 shadow-md hover:shadow-lg'
+                }`}
+              >
+                পরবর্তী
+              </button>
+            </div>
+          )}
         </div>
       </div>
     );
@@ -798,6 +921,43 @@ function TrendingAnalysis() {
           key="progressive-analysis-modal" // Add stable key to prevent remounting
           onAnalysisComplete={handleProgressiveAnalysisComplete}
           onClose={handleProgressiveAnalysisClose}
+        />
+      )}
+
+      {/* Delete Confirmation Modal */}
+      {deleteModal.isOpen && (
+        <ConfirmationModal
+          isOpen={deleteModal.isOpen}
+          title="ফ্রেজ মুছে ফেলুন"
+          message={`আপনি কি নিশ্চিত যে "${deleteModal.phraseName}" ফ্রেজটি মুছে ফেলতে চান? এই কাজটি আর পূর্বাবস্থায় ফিরিয়ে আনা যাবে না।`}
+          confirmText="হ্যাঁ, মুছে ফেলুন"
+          cancelText="বাতিল"
+          type="danger"
+          onClose={() => setDeleteModal({ isOpen: false, phraseId: null, phraseName: '' })}
+          onConfirm={async () => {
+            // Handle delete action
+            try {
+              setLoading(true);
+              await apiV2.deleteTrendingPhrase(deleteModal.phraseId);
+              showToast(`'${deleteModal.phraseName}' সফলভাবে মুছে ফেলা হয়েছে`, 'success');
+              setDeleteModal({ isOpen: false, phraseId: null, phraseName: '' });
+              // Refetch data
+              if (tabValue === 0) {
+                await fetchTrendingData();
+              } else if (tabValue === 1) {
+                await fetchDailyData();
+              } else if (tabValue === 2) {
+                await fetchWeeklyData();
+              } else if (tabValue === 3) {
+                await fetchStats();
+              }
+            } catch (err) {
+              console.error('Delete phrase error:', err);
+              showToast('ফ্রেজ মুছে ফেলতে ব্যর্থ', 'error');
+            } finally {
+              setLoading(false);
+            }
+          }}
         />
       )}
     </div>

@@ -7,6 +7,7 @@ import GenerateWords from './pages/GenerateWords';
 import TrendingAnalysis from './pages/TrendingAnalysis';
 import Login from './pages/Login';
 import ForgotPassword from './pages/ForgotPassword';
+import ResetPassword from './pages/ResetPassword';
 import UserManagement from './pages/UserManagement';
 import UserProfile from './pages/UserProfile';
 
@@ -22,6 +23,8 @@ function App() {
             <Route path="/trending" element={<TrendingAnalysis />} />
             <Route path="/login" element={<Login />} />
             <Route path="/forgot-password" element={<ForgotPassword />} />
+            <Route path="/reset-password" element={<ResetPassword />} />
+            <Route path="/reset-password" element={<ResetPassword />} />
             
             {/* Protected routes - All authenticated users */}
             <Route 

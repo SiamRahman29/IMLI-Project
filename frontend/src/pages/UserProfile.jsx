@@ -29,14 +29,24 @@ const UserProfile = () => {
 
     try {
       const response = await apiV2.updateProfile(formData);
-      setUser(response.data.user);
+      
+      // Debug: log the response
+      console.log('Profile update response:', response);
+      
+      // Update user context with the new data
+      const updatedUser = response.data.user;
+      setUser(updatedUser);
       setSuccess('Profile updated successfully!');
       setIsEditing(false);
       
       // Update localStorage with new user data
-      localStorage.setItem('user_data', JSON.stringify(response.data.user));
+      localStorage.setItem('user_data', JSON.stringify(updatedUser));
+      
+      // Clear any error messages after successful update
+      setTimeout(() => setSuccess(''), 3000);
     } catch (err) {
-      setError(err.response?.data?.detail || 'Failed to update profile');
+      console.error('Profile update error:', err);
+      setError(err.response?.data?.detail || err.message || 'Failed to update profile');
     } finally {
       setLoading(false);
     }

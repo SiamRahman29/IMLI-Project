@@ -56,3 +56,18 @@ class UpdateUserProfileRequest(BaseModel):
 class UpdateUserProfileResponse(BaseModel):
     message: str
     user: UserResponse
+
+class ForgotPasswordRequest(BaseModel):
+    email: EmailStr
+
+class ForgotPasswordResponse(BaseModel):
+    message: str
+    email: str
+
+class ResetPasswordRequest(BaseModel):
+    email: EmailStr
+    otp: str
+    new_password: str
+
+class ResetPasswordResponse(BaseModel):
+    message: str

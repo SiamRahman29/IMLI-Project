@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 from sqlalchemy import desc, and_
 from datetime import date, datetime, timedelta
@@ -6,8 +6,10 @@ from typing import Optional, List
 
 from app.db.database import SessionLocal
 from app.models.word import Word, TrendingPhrase
+from app.models.user import User
 from app.routes.helpers import get_trending_words
 from app.dto.dtos import TrendingWordsResponse, TrendingPhraseResponse, DailyTrendingResponse, TrendingPhrasesRequest
+from app.auth.dependencies import get_current_admin_user
 
 router = APIRouter()
 
@@ -40,12 +42,8 @@ def generate_candidates(db: Session = Depends(get_db)):
         # Run full trending analysis
         get_trending_words(db)
         
-        # Also generate AI candidates with database save
-        ai_candidates = generate_trending_word_candidates_realtime_with_save(db, limit=15, sources=['newspaper', 'reddit'])
-        
         return {
             "message": "Trending analysis completed!",
-            "ai_candidates": ai_candidates,
             "note": "Check /trending-phrases endpoint for detailed analysis"
         }
     except Exception as e:
@@ -124,6 +122,8 @@ def get_trending_phrases(
     phrase_responses = []
     for phrase in trending_phrases:
         phrase_responses.append(TrendingPhraseResponse(
+            id=phrase.id,
+            date=str(phrase.date),
             phrase=phrase.phrase,
             score=phrase.score,
             frequency=phrase.frequency,
@@ -141,18 +141,25 @@ def get_trending_phrases(
             "has_prev": offset > 0
         }
     }
+
+@router.delete("/trending-phrases/{phrase_id}")
+def delete_trending_phrase(
+    phrase_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_admin_user)
+):
+    """Delete a trending phrase (Admin only)"""
+    phrase = db.query(TrendingPhrase).filter(TrendingPhrase.id == phrase_id).first()
+    if not phrase:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Trending phrase not found"
+        )
     
-    return {
-        "trending_phrases": phrase_responses,
-        "total_count": len(phrase_responses),
-        "filters_applied": {
-            "start_date": start_date,
-            "end_date": end_date,
-            "phrase_type": phrase_type,
-            "source": source,
-            "limit": limit
-        }
-    }
+    db.delete(phrase)
+    db.commit()
+    
+    return {"message": "Trending phrase deleted successfully"}
 
 @router.get("/daily-trending/{target_date}", summary="Get trending phrases for a specific date")
 def get_daily_trending(target_date: str, db: Session = Depends(get_db)):
@@ -179,6 +186,8 @@ def get_daily_trending(target_date: str, db: Session = Depends(get_db)):
     
     for phrase in trending_phrases:
         phrase_response = TrendingPhraseResponse(
+            id=phrase.id,
+            date=str(phrase.date),
             phrase=phrase.phrase,
             score=phrase.score,
             frequency=phrase.frequency,
@@ -234,6 +243,8 @@ def get_top_phrases(
     phrase_responses = []
     for phrase in top_phrases:
         phrase_responses.append(TrendingPhraseResponse(
+            id=phrase.id,
+            date=str(phrase.date),
             phrase=phrase.phrase,
             score=phrase.score,
             frequency=phrase.frequency,

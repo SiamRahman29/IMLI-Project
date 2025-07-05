@@ -11,6 +11,7 @@ from app.auth.auth_utils import (
     get_password_hash,
     generate_invitation_token,
     generate_one_time_password,
+    generate_reset_otp,
     get_user_permissions
 )
 from app.auth.dependencies import get_current_admin_user, get_current_active_user
@@ -22,7 +23,11 @@ from app.dto.auth_dtos import (
     InviteUserResponse,
     UserListResponse,
     UpdateUserProfileRequest,
-    UpdateUserProfileResponse
+    UpdateUserProfileResponse,
+    ForgotPasswordRequest,
+    ForgotPasswordResponse,
+    ResetPasswordRequest,
+    ResetPasswordResponse
 )
 from app.services.email_service import EmailService
 
@@ -255,3 +260,87 @@ async def delete_user(
     db.commit()
     
     return {"message": "User deleted successfully"}
+
+@router.post("/forgot-password", response_model=ForgotPasswordResponse)
+async def forgot_password(
+    request: ForgotPasswordRequest,
+    db: Session = Depends(get_db)
+):
+    """Send password reset OTP to user's email"""
+    # Check if user exists
+    user = db.query(User).filter(User.email == request.email).first()
+    if not user:
+        # For security, return success even if user doesn't exist
+        return ForgotPasswordResponse(
+            message="If the email exists in our system, you will receive a password reset OTP",
+            email=request.email
+        )
+    
+    # Generate 6-digit OTP
+    otp = generate_reset_otp()
+    
+    # Set OTP and expiration (15 minutes)
+    user.reset_otp = otp
+    user.reset_otp_expires = datetime.utcnow() + timedelta(minutes=15)
+    db.commit()
+    
+    # Send OTP email
+    try:
+        email_service = EmailService()
+        await email_service.send_password_reset_otp(
+            email=request.email,
+            name=user.full_name,
+            otp=otp
+        )
+    except Exception as e:
+        # Log error but don't fail the request for security
+        print(f"Failed to send OTP email: {e}")
+    
+    return ForgotPasswordResponse(
+        message="If the email exists in our system, you will receive a password reset OTP",
+        email=request.email
+    )
+
+@router.post("/reset-password", response_model=ResetPasswordResponse)
+async def reset_password(
+    request: ResetPasswordRequest,
+    db: Session = Depends(get_db)
+):
+    """Reset password using OTP"""
+    # Find user by email
+    user = db.query(User).filter(User.email == request.email).first()
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User not found"
+        )
+    
+    # Check if OTP exists and is not expired
+    if not user.reset_otp or not user.reset_otp_expires:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="No password reset request found for this email"
+        )
+    
+    if datetime.utcnow() > user.reset_otp_expires:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="OTP has expired. Please request a new password reset"
+        )
+    
+    # Verify OTP
+    if user.reset_otp != request.otp:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid OTP"
+        )
+    
+    # Reset password
+    user.hashed_password = get_password_hash(request.new_password)
+    user.reset_otp = None
+    user.reset_otp_expires = None
+    db.commit()
+    
+    return ResetPasswordResponse(
+        message="Password reset successfully"
+    )

@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import JSONResponse, StreamingResponse
 from sqlalchemy.orm import Session
 from sqlalchemy import desc, and_
@@ -490,7 +490,7 @@ Reddit Content from r/{subreddit}:
 def get_trending_phrases(
     start_date: Optional[str] = Query(None, description="Start date in YYYY-MM-DD format"),
     end_date: Optional[str] = Query(None, description="End date in YYYY-MM-DD format"),
-    limit: int = Query(10, description="Maximum number of phrases to return (default: 10)"),
+    limit: int = Query(30, description="Maximum number of phrases to return (default: 30)"),
     offset: int = Query(0, description="Number of results to skip for pagination (default: 0)"),
     source: Optional[str] = Query(None, description="Filter by source (news, social_media, etc.)"),
     phrase_type: Optional[str] = Query(None, description="Filter by phrase type"),
@@ -534,7 +534,6 @@ def get_trending_phrases(
     trending_phrases = []
     for phrase in phrases:
         trending_phrases.append(TrendingPhraseResponse(
-            id=phrase.id,
             date=str(phrase.date),
             phrase=phrase.phrase,
             score=phrase.score,
@@ -555,25 +554,6 @@ def get_trending_phrases(
             "has_prev": offset > 0
         }
     }
-
-@router.delete("/trending-phrases/{phrase_id}")
-def delete_trending_phrase(
-    phrase_id: int,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_admin_user)
-):
-    """Delete a trending phrase (Admin only)"""
-    phrase = db.query(TrendingPhrase).filter(TrendingPhrase.id == phrase_id).first()
-    if not phrase:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Trending phrase not found"
-        )
-    
-    db.delete(phrase)
-    db.commit()
-    
-    return {"message": "Trending phrase deleted successfully"}
 
 @router.get("/daily-trending", summary="Get daily trending summary")
 def get_daily_trending(

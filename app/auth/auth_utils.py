@@ -7,6 +7,7 @@ from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
 from app.models.user import User, UserRole
 import os
+import random
 
 # Configuration
 SECRET_KEY = os.getenv("SECRET_KEY", secrets.token_urlsafe(32))
@@ -79,3 +80,7 @@ def get_user_permissions(role: UserRole) -> list:
     elif role == UserRole.USER:
         return ["read"]
     return []
+
+def generate_reset_otp() -> str:
+    """Generate a 6-digit OTP for password reset"""
+    return f"{random.randint(100000, 999999)}"

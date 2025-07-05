@@ -25,6 +25,10 @@ class User(Base):
     invitation_token = Column(String, nullable=True)
     invitation_expires = Column(DateTime, nullable=True)
     is_invitation_used = Column(Boolean, default=False)
+    
+    # Password reset fields
+    reset_otp = Column(String, nullable=True)
+    reset_otp_expires = Column(DateTime, nullable=True)
 
 class UserSession(Base):
     __tablename__ = "user_sessions"
