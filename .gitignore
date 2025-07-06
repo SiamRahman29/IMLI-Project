@@ -3,3 +3,11 @@
 __pycache__/
 
 words.db
+settings.json
+*.pyc
+fb_*.html
+*.log
+**/*.log
+demo_*.py
+test_*.py
+**/*.json

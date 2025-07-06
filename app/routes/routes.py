@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 from sqlalchemy import desc, and_
 from datetime import date, datetime, timedelta
@@ -6,8 +6,10 @@ from typing import Optional, List
 
 from app.db.database import SessionLocal
 from app.models.word import Word, TrendingPhrase
-from app.routes.helpers import get_trending_words, generate_trending_word_candidates
+from app.models.user import User
+from app.routes.helpers import get_trending_words
 from app.dto.dtos import TrendingWordsResponse, TrendingPhraseResponse, DailyTrendingResponse, TrendingPhrasesRequest
+from app.auth.dependencies import get_current_admin_user
 
 router = APIRouter()
 
@@ -40,12 +42,8 @@ def generate_candidates(db: Session = Depends(get_db)):
         # Run full trending analysis
         get_trending_words(db)
         
-        # Also generate AI candidates
-        ai_candidates = generate_trending_word_candidates(db, limit=15)
-        
         return {
             "message": "Trending analysis completed!",
-            "ai_candidates": ai_candidates,
             "note": "Check /trending-phrases endpoint for detailed analysis"
         }
     except Exception as e:
@@ -79,7 +77,8 @@ def get_trending_phrases(
     end_date: Optional[str] = Query(None, description="End date (YYYY-MM-DD)"),
     phrase_type: Optional[str] = Query(None, description="unigram, bigram, or trigram"),
     source: Optional[str] = Query(None, description="news or social_media"),
-    limit: int = Query(10, description="Number of results to return"),
+    limit: int = Query(50, description="Number of results to return (default: 50)"),
+    offset: int = Query(0, description="Number of results to skip for pagination (default: 0)"),
     db: Session = Depends(get_db)
 ):
     """Get trending phrases with optional filtering"""
@@ -112,8 +111,9 @@ def get_trending_phrases(
             raise HTTPException(status_code=400, detail="source must be news or social_media")
         query = query.filter(TrendingPhrase.source == source)
     
-    # Order by score and limit
-    trending_phrases = query.order_by(desc(TrendingPhrase.score)).limit(limit).all()
+    # Order by score and apply pagination
+    total_count = query.count()
+    trending_phrases = query.order_by(desc(TrendingPhrase.score)).offset(offset).limit(limit).all()
     
     if not trending_phrases:
         raise HTTPException(status_code=404, detail="No trending phrases found")
@@ -122,6 +122,8 @@ def get_trending_phrases(
     phrase_responses = []
     for phrase in trending_phrases:
         phrase_responses.append(TrendingPhraseResponse(
+            id=phrase.id,
+            date=str(phrase.date),
             phrase=phrase.phrase,
             score=phrase.score,
             frequency=phrase.frequency,
@@ -130,16 +132,34 @@ def get_trending_phrases(
         ))
     
     return {
-        "trending_phrases": phrase_responses,
-        "total_count": len(phrase_responses),
-        "filters_applied": {
-            "start_date": start_date,
-            "end_date": end_date,
-            "phrase_type": phrase_type,
-            "source": source,
-            "limit": limit
+        "phrases": phrase_responses,
+        "pagination": {
+            "total": total_count,
+            "limit": limit,
+            "offset": offset,
+            "has_next": (offset + limit) < total_count,
+            "has_prev": offset > 0
         }
     }
+
+@router.delete("/trending-phrases/{phrase_id}")
+def delete_trending_phrase(
+    phrase_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_admin_user)
+):
+    """Delete a trending phrase (Admin only)"""
+    phrase = db.query(TrendingPhrase).filter(TrendingPhrase.id == phrase_id).first()
+    if not phrase:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Trending phrase not found"
+        )
+    
+    db.delete(phrase)
+    db.commit()
+    
+    return {"message": "Trending phrase deleted successfully"}
 
 @router.get("/daily-trending/{target_date}", summary="Get trending phrases for a specific date")
 def get_daily_trending(target_date: str, db: Session = Depends(get_db)):
@@ -166,6 +186,8 @@ def get_daily_trending(target_date: str, db: Session = Depends(get_db)):
     
     for phrase in trending_phrases:
         phrase_response = TrendingPhraseResponse(
+            id=phrase.id,
+            date=str(phrase.date),
             phrase=phrase.phrase,
             score=phrase.score,
             frequency=phrase.frequency,
@@ -221,6 +243,8 @@ def get_top_phrases(
     phrase_responses = []
     for phrase in top_phrases:
         phrase_responses.append(TrendingPhraseResponse(
+            id=phrase.id,
+            date=str(phrase.date),
             phrase=phrase.phrase,
             score=phrase.score,
             frequency=phrase.frequency,
@@ -234,3 +258,201 @@ def get_top_phrases(
         "date_range": f"{start_date} to {end_date}",
         "total_count": len(phrase_responses)
     }
+
+# Category-based trending analysis endpoints
+@router.get("/categories/trending", summary="Get trending phrases by category")
+def get_category_trending_phrases(
+    category: str = Query(..., description="Category name in Bengali (e.g., রাজনীতি, খেলাধুলা)"),
+    days: int = Query(7, description="Number of days to analyze"),
+    limit: int = Query(20, description="Maximum number of phrases to return"),
+    db: Session = Depends(get_db)
+):
+    """Get trending phrases for a specific category"""
+    try:
+        from app.services.category_service import CategoryTrendingService
+        from app.models.word import CategoryTrendingPhrase
+        
+        service = CategoryTrendingService(db)
+        
+        # Calculate date range
+        end_date = date.today()
+        start_date = end_date - timedelta(days=days)
+        
+        # Get category phrases
+        phrases = service.get_category_trending_phrases(
+            category=category,
+            start_date=start_date,
+            end_date=end_date,
+            limit=limit
+        )
+        
+        return {
+            "category": category,
+            "phrases": phrases,
+            "period": f"Last {days} days",
+            "date_range": f"{start_date} to {end_date}",
+            "total_count": len(phrases)
+        }
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error getting category phrases: {str(e)}")
+
+@router.get("/categories/activity", summary="Get top categories by trending activity")
+def get_top_categories_activity(
+    days: int = Query(7, description="Number of days to analyze"),
+    limit: int = Query(10, description="Number of top categories to return"),
+    db: Session = Depends(get_db)
+):
+    """Get top categories ranked by trending phrase activity"""
+    try:
+        from app.services.category_service import CategoryTrendingService
+        
+        service = CategoryTrendingService(db)
+        
+        # Get today's activity (or specify date range)
+        top_categories = service.get_top_categories_by_activity(
+            analysis_date=date.today(),
+            limit=limit
+        )
+        
+        return {
+            "top_categories": top_categories,
+            "analysis_date": str(date.today()),
+            "total_categories": len(top_categories)
+        }
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error getting category activity: {str(e)}")
+
+@router.get("/categories/trends", summary="Get category trend comparison")
+def get_category_trends_comparison(
+    days: int = Query(7, description="Number of days to analyze trends"),
+    db: Session = Depends(get_db)
+):
+    """Compare trending activity across categories over time"""
+    try:
+        from app.services.category_service import CategoryTrendingService
+        
+        service = CategoryTrendingService(db)
+        
+        # Get trend comparison
+        trends = service.get_category_trends_comparison(days=days)
+        
+        return {
+            "category_trends": trends,
+            "analysis_period": f"Last {days} days",
+            "categories_analyzed": len(trends)
+        }
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error getting category trends: {str(e)}")
+
+@router.get("/categories/distribution", summary="Get article distribution by category")
+def get_category_distribution(
+    days: int = Query(30, description="Number of days to analyze"),
+    db: Session = Depends(get_db)
+):
+    """Get distribution of articles across categories"""
+    try:
+        from app.services.category_service import CategoryTrendingService
+        
+        service = CategoryTrendingService(db)
+        
+        # Calculate date range
+        end_date = date.today()
+        start_date = end_date - timedelta(days=days)
+        
+        # Get distribution
+        distribution = service.get_category_distribution(
+            start_date=start_date,
+            end_date=end_date
+        )
+        
+        return {
+            "category_distribution": distribution,
+            "period": f"Last {days} days",
+            "date_range": f"{start_date} to {end_date}",
+            "total_articles": sum(distribution.values()) if distribution else 0
+        }
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error getting category distribution: {str(e)}")
+
+@router.post("/categories/analyze", summary="Analyze articles and extract category-wise trending phrases")
+def analyze_category_phrases(
+    request: TrendingPhrasesRequest,
+    db: Session = Depends(get_db)
+):
+    """Analyze provided articles to extract category-wise trending phrases"""
+    try:
+        from app.services.category_service import CategoryTrendingService
+        from app.routes.helpers import detect_category_from_url
+        
+        service = CategoryTrendingService(db)
+        
+        # Convert request data to articles list
+        articles = []
+        for i, text in enumerate(request.texts):
+            articles.append({
+                'title': f"Article {i+1}",
+                'content': text,
+                'url': f"https://example.com/article{i+1}"
+            })
+        
+        # Analyze category phrases
+        category_phrases = service.analyze_category_phrases_by_content(
+            articles=articles,
+            min_phrase_length=3,
+            max_phrases_per_category=20
+        )
+        
+        # Save to database if requested
+        if hasattr(request, 'save_to_db') and request.save_to_db:
+            saved_count = service.save_category_trending_phrases(
+                category_phrases,
+                date.today(),
+                source="api_analysis"
+            )
+            
+            return {
+                "category_phrases": category_phrases,
+                "analysis_date": str(date.today()),
+                "categories_found": len(category_phrases),
+                "total_phrases": sum(len(phrases) for phrases in category_phrases.values()),
+                "saved_to_db": saved_count
+            }
+        else:
+            return {
+                "category_phrases": category_phrases,
+                "analysis_date": str(date.today()),
+                "categories_found": len(category_phrases),
+                "total_phrases": sum(len(phrases) for phrases in category_phrases.values())
+            }
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error analyzing category phrases: {str(e)}")
+
+@router.get("/categories/detect", summary="Test category detection for a URL")
+def test_category_detection(
+    url: str = Query(..., description="URL to analyze"),
+    title: str = Query("", description="Article title (optional)"),
+    content: str = Query("", description="Article content (optional)"),
+):
+    """Test the enhanced category detection system"""
+    try:
+        from app.routes.helpers import detect_category_from_url
+        
+        # Detect category
+        detected_category = detect_category_from_url(url, title, content)
+        
+        return {
+            "url": url,
+            "title": title[:100] + "..." if len(title) > 100 else title,
+            "content_preview": content[:100] + "..." if len(content) > 100 else content,
+            "detected_category": detected_category,
+            "detection_method": "URL pattern + Content analysis",
+            "timestamp": datetime.now().isoformat()
+        }
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error detecting category: {str(e)}")

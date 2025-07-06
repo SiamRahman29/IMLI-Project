@@ -1,55 +1,90 @@
 import { useEffect, useState } from 'react';
-import {
-  Box,
-  Card,
-  CardContent,
-  Typography,
-  Grid,
-  Chip,
-  CircularProgress,
-  Alert,
-  Tabs,
-  Tab,
-  List,
-  ListItem,
-  ListItemText,
-  Badge,
-  Container,
-  Paper,
-  Divider,
-  Button,
-  TextField,
-  FormControl,
-  InputLabel,
-  Select,
-  MenuItem,
-  IconButton
-} from '@mui/material';
-import TrendingUpIcon from '@mui/icons-material/TrendingUp';
-import LanguageIcon from '@mui/icons-material/Language';
-import NewspaperIcon from '@mui/icons-material/Newspaper';
-import GroupIcon from '@mui/icons-material/Group';
-import RefreshIcon from '@mui/icons-material/Refresh';
-import FilterListIcon from '@mui/icons-material/FilterList';
-import { apiV2, formatDate, getScoreColor, groupPhrasesByType, groupPhrasesBySource } from '../api';
+import { apiV2, formatDate, getScoreColor, groupPhrasesByType, groupPhrasesBySource, authUtils } from '../api';
+import { TrendingUp, Globe, Newspaper, Users, RefreshCw, Filter, Zap, Calendar, Trash2 } from 'lucide-react';
+import ProgressiveAnalysis from '../components/ProgressiveAnalysis';
+import ConfirmationModal from '../components/ConfirmationModal';
+import { useLanguage } from '../hooks/useLanguage';
 
 function TrendingAnalysis() {
+  const { isBengali, translate } = useLanguage();
+
+  // Translation function for phrase types and sources
+  const translateLabel = (label) => {
+    const translations = {
+      // Phrase types
+      'selected': 'নির্বাচিত',
+      'unigram': 'একক শব্দ',
+      'bigram': 'দ্বিত্ব শব্দ',
+      'trigram': 'ত্রিগুণ শব্দ',
+      // Sources
+      'user_selection': 'ব্যবহারকারী নির্বাচন',
+      'news': 'সংবাদ',
+      'social_media': 'সামাজিক মাধ্যম',
+      'newspaper': 'সংবাদপত্র',
+      'reddit': 'রেডিট',
+    };
+    return translations[label] || label;
+  };
+
   const [trendingData, setTrendingData] = useState(null);
   const [dailyData, setDailyData] = useState(null);
+  const [weeklyData, setWeeklyData] = useState(null);
   const [stats, setStats] = useState(null);
   const [sources, setSources] = useState({ sources: [], phrase_types: [] });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [retryCount, setRetryCount] = useState(0);
   const [tabValue, setTabValue] = useState(0);
-  
-  // Filter states
   const [filters, setFilters] = useState({
-    start_date: formatDate(new Date(Date.now() - 7 * 24 * 60 * 60 * 1000)), // 7 days ago
+    start_date: formatDate(new Date(Date.now() - 7 * 24 * 60 * 60 * 1000)),
     end_date: formatDate(new Date()),
     source: '',
     phrase_type: '',
-    limit: 50
+    limit: 10,
+    search: ''
   });
+  const [searchInput, setSearchInput] = useState('');
+  const [toast, setToast] = useState(null);
+  const [showProgressiveAnalysis, setShowProgressiveAnalysis] = useState(false);
+  const [progressiveAnalysisCompleted, setProgressiveAnalysisCompleted] = useState(false);
+  const [preventModalClose, setPreventModalClose] = useState(false); // Add protection flag
+  const [deleteModal, setDeleteModal] = useState({ isOpen: false, phraseId: null, phraseName: '' });
+  const [currentPage, setCurrentPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
+
+  // Check if user is admin
+  const isAdmin = authUtils.isAdmin();
+
+  // Add debugging for modal state changes
+  useEffect(() => {
+    console.log('=== 📊 showProgressiveAnalysis state changed:', showProgressiveAnalysis);
+  }, [showProgressiveAnalysis]);
+
+  const showToast = (message, type = 'success') => {
+    setToast({ message, type });
+    setTimeout(() => setToast(null), 3000);
+  };
+
+  const handleDeletePhrase = async (phraseId) => {
+    try {
+      await apiV2.deleteTrendingPhrase(phraseId);
+      showToast('ট্রেন্ডিং ফ্রেজ সফলভাবে মুছে ফেলা হয়েছে', 'success');
+      setDeleteModal({ isOpen: false, phraseId: null, phraseName: '' });
+      // Refresh the data
+      fetchTrendingData();
+    } catch (error) {
+      showToast('ফ্রেজ মুছতে সমস্যা হয়েছে', 'error');
+      console.error('Error deleting phrase:', error);
+    }
+  };
+
+  const openDeleteModal = (phraseId, phraseName) => {
+    setDeleteModal({ isOpen: true, phraseId, phraseName });
+  };
+
+  const closeDeleteModal = () => {
+    setDeleteModal({ isOpen: false, phraseId: null, phraseName: '' });
+  };
 
   useEffect(() => {
     fetchAllData();
@@ -57,11 +92,46 @@ function TrendingAnalysis() {
   }, []);
 
   useEffect(() => {
+    const handleKeyDown = (event) => {
+      // Ctrl/Cmd + K to focus search
+      if ((event.ctrlKey || event.metaKey) && event.key === 'k') {
+        event.preventDefault();
+        const searchInput = document.querySelector('input[placeholder*="ফ্রেজ বা শব্দ দিয়ে খুঁজুন"]');
+        if (searchInput) {
+          searchInput.focus();
+        }
+      }
+      // Enter key to trigger search
+      if (event.key === 'Enter' && document.activeElement.placeholder?.includes('ফ্রেজ বা শব্দ দিয়ে খুঁজুন')) {
+        event.preventDefault();
+        handleSearchSubmit();
+      }
+    };
+
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [searchInput]);
+
+  useEffect(() => {
+    // Reset to page 1 when filters change
+    setCurrentPage(1);
+  }, [filters]);
+
+  useEffect(() => {
+    // Fetch data when page changes
+    if (tabValue === 0) {
+      fetchTrendingData();
+    }
+  }, [currentPage]);
+
+  useEffect(() => {
     if (tabValue === 0) {
       fetchTrendingData();
     } else if (tabValue === 1) {
       fetchDailyData();
     } else if (tabValue === 2) {
+      fetchWeeklyData();
+    } else if (tabValue === 3) {
       fetchStats();
     }
   }, [filters, tabValue]);
@@ -70,6 +140,7 @@ function TrendingAnalysis() {
     await Promise.all([
       fetchTrendingData(),
       fetchDailyData(),
+      fetchWeeklyData(),
       fetchStats()
     ]);
   };
@@ -77,10 +148,22 @@ function TrendingAnalysis() {
   const fetchTrendingData = async () => {
     try {
       setLoading(true);
-      const response = await apiV2.getTrendingPhrases(filters);
+      const offset = (currentPage - 1) * filters.limit;
+      const requestFilters = { ...filters, offset };
+      const response = await apiV2.getTrendingPhrases(requestFilters);
       setTrendingData(response.data);
+      
+      // Calculate total pages
+      if (response.data.pagination) {
+        const pages = Math.ceil(response.data.pagination.total / filters.limit);
+        setTotalPages(pages);
+      }
     } catch (err) {
-      setError('ট্রেন্ডিং ডেটা লোড করতে ব্যর্থ');
+      let msg = 'ট্রেন্ডিং ডেটা লোড করতে ব্যর্থ';
+      if (err.response && err.response.data && err.response.data.detail) {
+        msg += `: ${err.response.data.detail}`;
+      }
+      setError(msg);
       console.error('Trending data error:', err);
     } finally {
       setLoading(false);
@@ -93,8 +176,29 @@ function TrendingAnalysis() {
       const response = await apiV2.getDailyTrending(filters.end_date);
       setDailyData(response.data);
     } catch (err) {
-      setError('দৈনিক ডেটা লোড করতে ব্যর্থ');
+      let msg = 'দৈনিক ডেটা লোড করতে ব্যর্থ';
+      if (err.response && err.response.data && err.response.data.detail) {
+        msg += `: ${err.response.data.detail}`;
+      }
+      setError(msg);
       console.error('Daily data error:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const fetchWeeklyData = async () => {
+    try {
+      setLoading(true);
+      const response = await apiV2.getWeeklyTrending();
+      setWeeklyData(response.data);
+    } catch (err) {
+      let msg = 'সাপ্তাহিক ডেটা লোড করতে ব্যর্থ';
+      if (err.response && err.response.data && err.response.data.detail) {
+        msg += `: ${err.response.data.detail}`;
+      }
+      setError(msg);
+      console.error('Weekly data error:', err);
     } finally {
       setLoading(false);
     }
@@ -106,7 +210,11 @@ function TrendingAnalysis() {
       const response = await apiV2.getStats();
       setStats(response.data);
     } catch (err) {
-      setError('পরিসংখ্যান লোড করতে ব্যর্থ');
+      let msg = 'পরিসংখ্যান লোড করতে ব্যর্থ';
+      if (err.response && err.response.data && err.response.data.detail) {
+        msg += `: ${err.response.data.detail}`;
+      }
+      setError(msg);
       console.error('Stats error:', err);
     } finally {
       setLoading(false);
@@ -122,440 +230,737 @@ function TrendingAnalysis() {
     }
   };
 
-  const runNewAnalysis = async () => {
+  const runSimpleAnalysis = async () => {
     try {
       setLoading(true);
+      setError(null);
       await apiV2.runAnalysis();
       await fetchAllData();
-      setError(null);
+      setRetryCount(0);
+      showToast('বিশ্লেষণ সফলভাবে সম্পন্ন হয়েছে!', 'success');
     } catch (err) {
-      setError('নতুন বিশ্লেষণ চালাতে ব্যর্থ');
+      const errorMessage = 'নতুন বিশ্লেষণ চালাতে ব্যর্থ';
+      setError(errorMessage);
+      setRetryCount(prev => prev + 1);
+      showToast(errorMessage, 'error');
       console.error('Analysis error:', err);
     } finally {
       setLoading(false);
     }
   };
 
-  const handleTabChange = (event, newValue) => {
-    setTabValue(newValue);
+  const retryAction = async () => {
+    if (tabValue === 0) {
+      await fetchTrendingData();
+    } else if (tabValue === 1) {
+      await fetchDailyData();
+    } else if (tabValue === 2) {
+      await fetchWeeklyData();
+    } else if (tabValue === 3) {
+      await fetchStats();
+    }
+  };
+
+  const handleProgressiveAnalysisComplete = () => {
+    setShowProgressiveAnalysis(false);
+    setProgressiveAnalysisCompleted(true);
+    fetchAllData(); // Refresh all data after analysis
+    showToast('বিশ্লেষণ সফলভাবে সম্পন্ন হয়েছে!', 'success');
+  };
+
+  const handleProgressiveAnalysisClose = () => {
+    setShowProgressiveAnalysis(false);
+  };
+
+  const exportData = () => {
+    let dataToExport = [];
+    let filename = '';
+    
+    if (tabValue === 0 && trendingData?.phrases) {
+      dataToExport = trendingData.phrases.map(phrase => ({
+        'ফ্রেজ': phrase.phrase,
+        'স্কোর': phrase.score,
+        'ফ্রিকোয়েন্সি': phrase.frequency,
+        'ধরণ': phrase.phrase_type,
+        'উৎস': phrase.source,
+        'তারিখ': phrase.date
+      }));
+      filename = `trending-phrases-${filters.start_date}-to-${filters.end_date}.csv`;
+    } else if (tabValue === 1 && dailyData?.top_phrases) {
+      dataToExport = dailyData.top_phrases.map(phrase => ({
+        'ফ্রেজ': phrase.phrase,
+        'স্কোর': phrase.score,
+        'ফ্রিকোয়েন্সি': phrase.frequency,
+        'ধরণ': phrase.phrase_type,
+        'উৎস': phrase.source
+      }));
+      filename = `daily-summary-${dailyData.date}.csv`;
+    } else if (tabValue === 2 && weeklyData?.top_weekly_phrases) {
+      dataToExport = weeklyData.top_weekly_phrases.map(phrase => ({
+        'ফ্রেজ': phrase.phrase,
+        'স্কোর': phrase.score,
+        'ফ্রিকোয়েন্সি': phrase.frequency,
+        'ধরণ': phrase.phrase_type,
+        'উৎস': phrase.source,
+        'তারিখ': phrase.date
+      }));
+      filename = `weekly-summary-${weeklyData.week_start}-to-${weeklyData.week_end}.csv`;
+    }
+    
+    if (dataToExport.length === 0) {
+      showToast('কোনো ডেটা রপ্তানি করার জন্য উপলব্ধ নেই', 'error');
+      return;
+    }
+    
+    // Convert to CSV
+    const headers = Object.keys(dataToExport[0]).join(',');
+    const csvContent = dataToExport.map(row => 
+      Object.values(row).map(value => 
+        typeof value === 'string' ? `"${value.replace(/"/g, '""')}"` : value
+      ).join(',')
+    ).join('\n');
+    
+    const csv = headers + '\n' + csvContent;
+    
+    // Download
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.download = filename;
+    link.click();
+    
+    showToast(`${dataToExport.length}টি রেকর্ড সফলভাবে রপ্তানি করা হয়েছে`, 'success');
+  };
+
+  const handleTabChange = (idx) => {
+    setTabValue(idx);
     setError(null);
   };
 
   const handleFilterChange = (field, value) => {
+    const newFilters = { ...filters, [field]: value };
+    
+    // Date validation
+    if (field === 'start_date' || field === 'end_date') {
+      const startDate = new Date(field === 'start_date' ? value : filters.start_date);
+      const endDate = new Date(field === 'end_date' ? value : filters.end_date);
+      
+      // Ensure start date is not after end date
+      if (startDate > endDate) {
+        if (field === 'start_date') {
+          newFilters.end_date = value;
+        } else {
+          newFilters.start_date = value;
+        }
+      }
+      
+      // Ensure dates are not in the future
+      const today = new Date();
+      today.setHours(23, 59, 59, 999); // End of today
+      
+      if (startDate > today) {
+        newFilters.start_date = formatDate(today);
+      }
+      if (endDate > today) {
+        newFilters.end_date = formatDate(today);
+      }
+    }
+    
+    setFilters(newFilters);
+  };
+
+  const setDateRange = (days) => {
+    const endDate = new Date();
+    const startDate = new Date();
+    startDate.setDate(endDate.getDate() - days);
+    
     setFilters(prev => ({
       ...prev,
-      [field]: value
+      start_date: formatDate(startDate),
+      end_date: formatDate(endDate)
     }));
   };
 
+  const handleSearchSubmit = () => {
+    setFilters(prev => ({
+      ...prev,
+      search: searchInput
+    }));
+  };
+
+  const handleSearchInputChange = (value) => {
+    setSearchInput(value);
+    // Clear search if input is empty
+    if (value === '') {
+      setFilters(prev => ({
+        ...prev,
+        search: ''
+      }));
+    }
+  };
+
   const renderFilters = () => (
-    <Card sx={{ mb: 3 }}>
-      <CardContent>
-        <Typography variant="h6" gutterBottom>
-          <FilterListIcon sx={{ mr: 1 }} />
-          ফিল্টার অপশন
-        </Typography>
-        <Grid container spacing={2} alignItems="center">
-          <Grid item xs={12} sm={6} md={2}>
-            <TextField
-              fullWidth
-              label="শুরুর তারিখ"
-              type="date"
-              value={filters.start_date}
-              onChange={(e) => handleFilterChange('start_date', e.target.value)}
-              InputLabelProps={{ shrink: true }}
-              size="small"
-            />
-          </Grid>
-          <Grid item xs={12} sm={6} md={2}>
-            <TextField
-              fullWidth
-              label="শেষ তারিখ"
-              type="date"
-              value={filters.end_date}
-              onChange={(e) => handleFilterChange('end_date', e.target.value)}
-              InputLabelProps={{ shrink: true }}
-              size="small"
-            />
-          </Grid>
-          <Grid item xs={12} sm={6} md={2}>
-            <FormControl fullWidth size="small">
-              <InputLabel>উৎস</InputLabel>
-              <Select
-                value={filters.source}
-                label="উৎস"
-                onChange={(e) => handleFilterChange('source', e.target.value)}
-              >
-                <MenuItem value="">সব</MenuItem>
-                {sources.sources.map((source) => (
-                  <MenuItem key={source} value={source}>{source}</MenuItem>
-                ))}
-              </Select>
-            </FormControl>
-          </Grid>
-          <Grid item xs={12} sm={6} md={2}>
-            <FormControl fullWidth size="small">
-              <InputLabel>ধরন</InputLabel>
-              <Select
-                value={filters.phrase_type}
-                label="ধরন"
-                onChange={(e) => handleFilterChange('phrase_type', e.target.value)}
-              >
-                <MenuItem value="">সব</MenuItem>
-                {sources.phrase_types.map((type) => (
-                  <MenuItem key={type} value={type}>{type}</MenuItem>
-                ))}
-              </Select>
-            </FormControl>
-          </Grid>
-          <Grid item xs={12} sm={6} md={2}>
-            <TextField
-              fullWidth
-              label="সীমা"
-              type="number"
-              value={filters.limit}
-              onChange={(e) => handleFilterChange('limit', parseInt(e.target.value))}
-              size="small"
-              inputProps={{ min: 10, max: 200 }}
-            />
-          </Grid>
-          <Grid item xs={12} sm={6} md={2}>
-            <Button
-              variant="outlined"
-              onClick={runNewAnalysis}
-              disabled={loading}
-              startIcon={<RefreshIcon />}
-              fullWidth
+    <div className="bg-gradient-to-br from-white to-gray-50 shadow-2xl rounded-2xl mb-8 p-6 border border-gray-200 backdrop-blur-lg">
+      <div className="flex items-center justify-between mb-6">
+        <div className="flex items-center gap-3">
+          <div className="p-2 bg-gradient-to-br from-blue-500 to-blue-600 rounded-xl shadow-lg">
+            <Filter className="w-5 h-5 text-white" />
+          </div>
+          <span className="font-black text-gray-900 text-lg tracking-tight">{translate('ফিল্টার অপশন')}</span>
+        </div>
+      </div>
+
+      {/* Search at the top */}
+      <div className="mb-6">
+        <label className="block text-sm font-bold text-gray-800 mb-3 tracking-wide">{translate('ট্রেন্ডিং শব্দ খুঁজুন')}</label>
+        <div className="relative">
+          <input 
+            type="text" 
+            placeholder="ফ্রেজ বা শব্দ দিয়ে খুঁজুন... (Ctrl+K চেপে খুঁজুন)" 
+            value={searchInput} 
+            onChange={e => handleSearchInputChange(e.target.value)} 
+            className="w-full border-2 border-gray-300 rounded-xl px-4 py-3 pl-12 pr-32 focus:outline-none focus:ring-4 focus:ring-blue-400/50 focus:border-blue-500 transition-all duration-300 bg-white text-slate-800 shadow-lg hover:shadow-xl font-medium"
+          />
+          <div className="absolute inset-y-0 left-0 flex items-center pl-4 pointer-events-none">
+            <svg className="w-5 h-5 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+            </svg>
+          </div>
+          <div className="absolute inset-y-0 right-0 flex items-center pr-3 gap-2">
+            <button
+              onClick={handleSearchSubmit}
+              disabled={!searchInput.trim()}
+              className={`px-3 py-1 rounded-lg text-xs font-semibold transition-all ${
+                searchInput.trim() 
+                  ? 'bg-blue-600 text-white hover:bg-blue-700 shadow-md hover:shadow-lg' 
+                  : 'bg-gray-200 text-gray-400 cursor-not-allowed'
+              }`}
             >
-              নতুন বিশ্লেষণ
-            </Button>
-          </Grid>
-        </Grid>
-      </CardContent>
-    </Card>
+              {translate('খুঁজুন')}
+            </button>
+            <kbd className="hidden sm:inline-block px-2 py-1 text-xs font-semibold text-gray-500 bg-gray-100 border border-gray-300 rounded">
+              {translate('Enter')}
+            </kbd>
+          </div>
+        </div>
+        {filters.search && (
+          <div className="mt-2 flex items-center gap-2">
+            <span className="text-sm text-blue-600 font-medium">খুঁজছেন: "{filters.search}"</span>
+            <button
+              onClick={() => {
+                setSearchInput('');
+                setFilters(prev => ({ ...prev, search: '' }));
+              }}
+              className="text-xs text-red-600 hover:text-red-800 underline"
+            >
+              মুছে ফেলুন
+            </button>
+          </div>
+        )}
+      </div>
+      
+      {/* Quick Date Selection above date inputs */}
+      <div className="mb-6">
+        <label className="block text-sm font-bold text-gray-800 mb-3 tracking-wide">{translate('সর্ব তারিখ নির্বাচন')}</label>
+        <div className="flex flex-wrap gap-2">
+          <button 
+            onClick={() => setDateRange(1)} 
+            className="px-4 py-2 bg-gradient-to-r from-blue-500 to-blue-600 text-white rounded-lg text-sm font-semibold shadow-md hover:shadow-lg transition-all hover:scale-105"
+          >
+            {translate('আজ')}
+          </button>
+          <button 
+            onClick={() => setDateRange(7)} 
+            className="px-4 py-2 bg-gradient-to-r from-green-500 to-green-600 text-white rounded-lg text-sm font-semibold shadow-md hover:shadow-lg transition-all hover:scale-105"
+          >
+            {translate('গত ৭ দিন')}
+          </button>
+          <button 
+            onClick={() => setDateRange(30)} 
+            className="px-4 py-2 bg-gradient-to-r from-purple-500 to-purple-600 text-white rounded-lg text-sm font-semibold shadow-md hover:shadow-lg transition-all hover:scale-105"
+          >
+            {translate('গত ৩০ দিন')}
+          </button>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-5 gap-6">
+        <div className="relative">
+          <label className="block text-sm font-bold text-gray-800 mb-3 tracking-wide">{translate('ভর তারিখ')}</label>
+          <input 
+            type="date" 
+            value={filters.start_date} 
+            onChange={e => handleFilterChange('start_date', e.target.value)} 
+            max={filters.end_date || formatDate(new Date())}
+            className="w-full border-2 border-gray-300 rounded-xl px-4 py-3 focus:outline-none focus:ring-4 focus:ring-blue-400/50 focus:border-blue-500 transition-all duration-300 bg-white text-slate-800 shadow-lg hover:shadow-xl font-medium"
+          />
+        </div>
+        <div className="relative">
+          <label className="block text-sm font-bold text-gray-800 mb-3 tracking-wide">{translate('শেষ তারিখ')}</label>
+          <input 
+            type="date" 
+            value={filters.end_date} 
+            onChange={e => handleFilterChange('end_date', e.target.value)} 
+            min={filters.start_date}
+            max={formatDate(new Date())}
+            className="w-full border-2 border-gray-300 rounded-xl px-4 py-3 focus:outline-none focus:ring-4 focus:ring-blue-400/50 focus:border-blue-500 transition-all duration-300 bg-white text-slate-800 shadow-lg hover:shadow-xl font-medium"
+          />
+        </div>
+        <div>
+          <label className="block text-sm font-bold text-gray-800 mb-3 tracking-wide">{translate('উৎস')}</label>
+          <select 
+            value={filters.source} 
+            onChange={e => handleFilterChange('source', e.target.value)} 
+            className="w-full border-2 border-gray-300 rounded-xl px-4 py-3 focus:outline-none focus:ring-4 focus:ring-blue-400/50 focus:border-blue-500 transition-all duration-300 bg-white text-slate-800 shadow-lg hover:shadow-xl font-medium cursor-pointer"
+          >
+            <option value="" className="text-slate-600 font-medium">{translate('সব')}</option>
+            {sources.sources.map(source => <option key={source} value={source} className="text-slate-800 font-medium">{source}</option>)}
+          </select>
+        </div>
+        <div>
+          <label className="block text-sm font-bold text-gray-800 mb-3 tracking-wide">{translate('ধরন')}</label>
+          <select 
+            value={filters.phrase_type} 
+            onChange={e => handleFilterChange('phrase_type', e.target.value)} 
+            className="w-full border-2 border-gray-300 rounded-xl px-4 py-3 focus:outline-none focus:ring-4 focus:ring-blue-400/50 focus:border-blue-500 transition-all duration-300 bg-white text-slate-800 shadow-lg hover:shadow-xl font-medium cursor-pointer"
+          >
+            <option value="" className="text-slate-600 font-medium">{translate('সব')}</option>
+            {sources.phrase_types.map(type => <option key={type} value={type} className="text-slate-800 font-medium">{type}</option>)}
+          </select>
+        </div>
+        <div>
+          <label className="block text-sm font-bold text-gray-800 mb-3 tracking-wide">{translate('সীমা')}</label>
+          <input 
+            type="number" 
+            min={10} 
+            max={200} 
+            value={filters.limit} 
+            onChange={e => handleFilterChange('limit', parseInt(e.target.value))} 
+            className="w-full border-2 border-gray-300 rounded-xl px-4 py-3 focus:outline-none focus:ring-4 focus:ring-blue-400/50 focus:border-blue-500 transition-all duration-300 bg-white text-slate-800 shadow-lg hover:shadow-xl font-medium" 
+          />
+        </div>
+      </div>
+    </div>
+  );
+
+  const LoadingSkeleton = () => (
+    <div className="space-y-4 animate-pulse">
+      {[...Array(5)].map((_, idx) => (
+        <div key={idx} className="bg-gradient-to-r from-gray-200 to-gray-300 rounded-xl p-4">
+          <div className="flex items-center gap-3 mb-2">
+            <div className="h-6 bg-gray-300 rounded-md w-2/3"></div>
+            <div className="h-6 bg-blue-300 rounded-full w-16"></div>
+          </div>
+          <div className="flex gap-2">
+            <div className="h-4 bg-gray-200 rounded-full w-20"></div>
+            <div className="h-4 bg-blue-200 rounded-full w-16"></div>
+            <div className="h-4 bg-pink-200 rounded-full w-18"></div>
+          </div>
+        </div>
+      ))}
+    </div>
   );
 
   const renderTrendingTab = () => {
-    if (!trendingData || !trendingData.phrases) {
-      return (
-        <Alert severity="info">
-          কোনো ট্রেন্ডিং ডেটা পাওয়া যায়নি। প্রথমে বিশ্লেষণ চালান।
-        </Alert>
-      );
+    if (loading && (!trendingData || !trendingData.phrases)) {
+      return <LoadingSkeleton />;
     }
-
+    
+    if (!trendingData || !trendingData.phrases) {
+      return <div className="bg-gradient-to-r from-blue-100 to-blue-200 border-2 border-blue-300 text-blue-900 px-8 py-6 rounded-2xl text-center shadow-2xl">
+        <div className="flex items-center justify-center gap-3">
+          <TrendingUp className="w-6 h-6 drop-shadow-sm" />
+          <span className="font-bold text-lg">কোনো ট্রেন্ডিং ডেটা পাওয়া যায়নি। প্রথমে বিশ্লেষণ চালান।</span>
+        </div>
+      </div>;
+    }
     const phrasesByType = groupPhrasesByType(trendingData.phrases);
     const phrasesBySource = groupPhrasesBySource(trendingData.phrases);
-
+    
+    // Filter phrases based on search term
+    const filteredPhrases = trendingData.phrases.filter(phrase => 
+      filters.search === '' || 
+      phrase.phrase.toLowerCase().includes(filters.search.toLowerCase()) ||
+      phrase.phrase_type.toLowerCase().includes(filters.search.toLowerCase()) ||
+      phrase.source.toLowerCase().includes(filters.search.toLowerCase())
+    );
+    
     return (
-      <Grid container spacing={3}>
-        <Grid item xs={12} md={8}>
-          <Card>
-            <CardContent>
-              <Typography variant="h6" gutterBottom>
-                শীর্ষ ট্রেন্ডিং ফ্রেজ
-              </Typography>
-              <Box mb={2}>
-                <Typography variant="body2" color="text.secondary" paragraph>
-                  {trendingData.start_date} থেকে {trendingData.end_date} | মোট: {trendingData.total_count}টি
-                </Typography>
-                <List>
-                  {trendingData.phrases.slice(0, 20).map((phrase, index) => (
-                    <ListItem key={index} divider>
-                      <ListItemText
-                        primary={
-                          <Box display="flex" alignItems="center" gap={1}>
-                            <Typography variant="h6">{phrase.phrase}</Typography>
-                            <Chip 
-                              label={phrase.score.toFixed(2)} 
-                              size="small" 
-                              color={getScoreColor(phrase.score)} 
-                            />
-                          </Box>
-                        }
-                        secondary={
-                          <Box display="flex" gap={1} mt={1}>
-                            <Chip label={`ফ্রিকোয়েন্সি: ${phrase.frequency}`} size="small" variant="outlined" />
-                            <Chip label={phrase.phrase_type} size="small" color="primary" variant="outlined" />
-                            <Chip label={phrase.source} size="small" color="secondary" variant="outlined" />
-                          </Box>
-                        }
-                      />
-                    </ListItem>
-                  ))}
-                </List>
-              </Box>
-            </CardContent>
-          </Card>
-        </Grid>
-
-        <Grid item xs={12} md={4}>
-          <Card sx={{ mb: 2 }}>
-            <CardContent>
-              <Typography variant="h6" gutterBottom>
-                <LanguageIcon sx={{ mr: 1 }} />
-                ধরন অনুযায়ী
-              </Typography>
-              {Object.entries(phrasesByType).map(([type, phrases]) => (
-                <Box key={type} sx={{ mb: 1 }}>
-                  <Chip 
-                    label={`${type}: ${phrases.length}`} 
-                    variant="outlined" 
-                    sx={{ mr: 1, mb: 1 }}
-                  />
-                </Box>
-              ))}
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardContent>
-              <Typography variant="h6" gutterBottom>
-                <NewspaperIcon sx={{ mr: 1 }} />
-                উৎস অনুযায়ী
-              </Typography>
-              {Object.entries(phrasesBySource).map(([source, phrases]) => (
-                <Box key={source} sx={{ mb: 1 }}>
-                  <Chip 
-                    label={`${source}: ${phrases.length}`} 
-                    variant="outlined" 
-                    sx={{ mr: 1, mb: 1 }}
-                  />
-                </Box>
-              ))}
-            </CardContent>
-          </Card>
-        </Grid>
-      </Grid>
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+        <div className="md:col-span-2 bg-gradient-to-br from-white to-gray-50 shadow-2xl rounded-2xl p-8 border border-gray-200">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-2xl font-black text-gray-900 tracking-tight">{translate('শীর্ষ ট্রেন্ডিং ক্রেজ')}</h2>
+            <button
+              onClick={exportData}
+              disabled={!filteredPhrases.length || loading}
+              className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold transition-all duration-300 shadow-md focus:outline-none focus:ring-2 transform hover:scale-105 ${
+                !filteredPhrases.length || loading
+                  ? 'bg-gray-200 text-gray-500 cursor-not-allowed' 
+                  : 'bg-gradient-to-r from-green-600 to-green-700 hover:from-green-700 hover:to-green-800 text-white focus:ring-green-400 hover:shadow-lg'
+              }`}
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+              </svg>
+              <span>{translate('Export CSV')}</span>
+            </button>
+          </div>
+          <div className="text-slate-600 mb-4 font-semibold">
+            {trendingData.start_date} থেকে {trendingData.end_date} | 
+            মোট: {trendingData.pagination?.total || 0}টি | 
+            {filters.search && (
+              <span className="text-blue-600">ফিল্টার করা: {filteredPhrases.length}টি</span>
+            )}
+          </div>
+          <div className="space-y-0">
+            {filteredPhrases.map((phrase, idx) => (
+              <div key={idx} className="phrase-separator py-5 px-4 flex flex-col gap-3 hover:bg-gradient-to-r hover:from-blue-50 hover:to-indigo-50 rounded-xl transition-all duration-300 group hover:shadow-lg hover:scale-[1.01] hover:z-10 relative">
+                <div className="flex items-center gap-3">
+                  <span className="text-xl font-bold text-gray-900 group-hover:text-blue-900 transition-colors">{phrase.phrase}</span>
+                  <span className={`inline-block px-3 py-1 rounded-full text-sm font-bold shadow-lg transition-all group-hover:scale-105 ${getScoreColor(phrase.score) === 'primary' ? 'bg-gradient-to-r from-blue-500 to-blue-600 text-white' : getScoreColor(phrase.score) === 'secondary' ? 'bg-gradient-to-r from-pink-500 to-pink-600 text-white' : 'bg-gradient-to-r from-gray-500 to-gray-600 text-white'}`}>{phrase.score.toFixed(2)}</span>
+                </div>
+                <div className="flex flex-wrap gap-2 mt-1">
+                  <span className="inline-block bg-gradient-to-r from-gray-100 to-gray-200 text-gray-800 px-3 py-1 rounded-full text-sm font-semibold shadow-md hover:shadow-lg transition-all group-hover:scale-105">ফ্রিকোয়েন্সি: {phrase.frequency}</span>
+                </div>
+                {/* Admin delete button */}
+                {isAdmin && (
+                  <button
+                    onClick={() => openDeleteModal(phrase.id, phrase.phrase)}
+                    className="absolute top-3 right-3 p-2 rounded-full bg-red-500 text-white shadow-md hover:bg-red-600 transition-all duration-300"
+                    title="মুছে ফেলুন"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                )}
+              </div>
+            ))}
+          </div>
+          
+          {/* Pagination Controls */}
+          {trendingData?.pagination && totalPages > 1 && (
+            <div className="flex justify-center items-center gap-4 mt-8 p-4">
+              <button
+                onClick={() => {
+                  setCurrentPage(prev => Math.max(1, prev - 1));
+                }}
+                disabled={currentPage === 1}
+                className={`px-4 py-2 rounded-lg font-semibold transition-all ${
+                  currentPage === 1 
+                    ? 'bg-gray-200 text-gray-400 cursor-not-allowed' 
+                    : 'bg-blue-600 text-white hover:bg-blue-700 shadow-md hover:shadow-lg'
+                }`}
+              >
+                পূর্ববর্তী
+              </button>
+              
+              <span className="text-gray-700 font-semibold">
+                পৃষ্ঠা {currentPage} / {totalPages} (মোট {trendingData.pagination.total}টি)
+              </span>
+              
+              <button
+                onClick={() => {
+                  setCurrentPage(prev => Math.min(totalPages, prev + 1));
+                }}
+                disabled={currentPage === totalPages}
+                className={`px-4 py-2 rounded-lg font-semibold transition-all ${
+                  currentPage === totalPages 
+                    ? 'bg-gray-200 text-gray-400 cursor-not-allowed' 
+                    : 'bg-blue-600 text-white hover:bg-blue-700 shadow-md hover:shadow-lg'
+                }`}
+              >
+                পরবর্তী
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
     );
   };
 
   const renderDailyTab = () => {
-    if (!dailyData) {
-      return (
-        <Alert severity="info">
-          দৈনিক ডেটা লোড করা হচ্ছে...
-        </Alert>
-      );
+    if (loading && !dailyData) {
+      return <LoadingSkeleton />;
     }
-
+    
+    if (!dailyData) {
+      return <div className="bg-gradient-to-r from-blue-50 to-blue-100 border border-blue-200 text-blue-800 px-6 py-4 rounded-xl text-center shadow-sm">
+        <div className="flex items-center justify-center gap-2">
+          <Globe className="w-5 h-5 animate-pulse" />
+          <span>দৈনিক ডেটা লোড করা হচ্ছে...</span>
+        </div>
+      </div>;
+    }
     return (
-      <Grid container spacing={3}>
-        <Grid item xs={12}>
-          <Typography variant="h5" gutterBottom>
-            দৈনিক সারসংক্ষেপ - {dailyData.date}
-          </Typography>
-          <Typography variant="h6" color="text.secondary" paragraph>
-            মোট ফ্রেজ: {dailyData.total_phrases}টি
-          </Typography>
-        </Grid>
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <div className="bg-white shadow rounded-lg p-6">
+          <h2 className="text-lg font-bold mb-2">দৈনিক সারসংক্ষেপ - {dailyData.date}</h2>
+          <div className="text-gray-500 mb-2">মোট ফ্রেজ: {dailyData.total_phrases}টি</div>
+          <ul className="divide-y divide-gray-200">
+            {dailyData.top_phrases.map((phrase, idx) => (
+              <li key={idx} className="py-2 flex flex-col gap-1">
+                <span className="font-medium">{phrase.phrase}</span>
+                <span className="text-xs text-gray-500">স্কোর: {phrase.score.toFixed(2)} | ফ্রিকোয়েন্সি: {phrase.frequency}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      
+      </div>
+    );
+  };
 
-        <Grid item xs={12} md={6}>
-          <Card>
-            <CardContent>
-              <Typography variant="h6" gutterBottom>
-                শীর্ষ ১০ ট্রেন্ডিং
-              </Typography>
-              <List>
-                {dailyData.top_phrases.map((phrase, index) => (
-                  <ListItem key={index} dense>
-                    <ListItemText
-                      primary={phrase.phrase}
-                      secondary={`স্কোর: ${phrase.score.toFixed(2)} | ফ্রিকোয়েন্সি: ${phrase.frequency}`}
-                    />
-                  </ListItem>
-                ))}
-              </List>
-            </CardContent>
-          </Card>
-        </Grid>
-
-        <Grid item xs={12} md={6}>
-          <Card sx={{ mb: 2 }}>
-            <CardContent>
-              <Typography variant="h6" gutterBottom>উৎস অনুযায়ী</Typography>
-              {Object.entries(dailyData.by_source).map(([source, phrases]) => (
-                <Chip 
-                  key={source}
-                  label={`${source}: ${phrases.length}`} 
-                  sx={{ mr: 1, mb: 1 }}
-                  variant="outlined"
-                />
+  const renderWeeklyTab = () => {
+    if (loading && !weeklyData) {
+      return <LoadingSkeleton />;
+    }
+    
+    if (!weeklyData || weeklyData.total_phrases === 0) {
+      return <div className="bg-gradient-to-r from-yellow-50 to-yellow-100 border border-yellow-200 text-yellow-800 px-6 py-4 rounded-xl text-center shadow-sm">
+        <div className="flex items-center justify-center gap-2">
+          <Calendar className="w-5 h-5" />
+          <span>কোনো সাপ্তাহিক ডেটা পাওয়া যায়নি। প্রথমে বিশ্লেষণ চালান।</span>
+        </div>
+      </div>;
+    }
+    
+    return (
+      <div className="bg-white shadow rounded-lg p-6">
+        <div className="mb-4">
+          <h2 className="text-lg font-bold mb-2">সাপ্তাহিক সারসংক্ষেপ - {weeklyData.week_start} থেকে {weeklyData.week_end}</h2>
+          <div className="text-gray-500 mb-2">মোট ফ্রেজ: {weeklyData.total_phrases}টি</div>
+        </div>
+        
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          {/* Top Weekly Phrases */}
+          <div className="bg-white shadow rounded-lg p-6">
+            <h3 className="font-semibold mb-4">শীর্ষ সাপ্তাহিক ফ্রেজ</h3>
+            <ul className="divide-y divide-gray-200">
+              {weeklyData.top_weekly_phrases.slice(0, 10).map((phrase, idx) => (
+                <li key={idx} className="py-2 flex flex-col gap-1">
+                  <span className="font-medium">{phrase.phrase}</span>
+                  <div className="flex gap-2 text-xs text-gray-500">
+                    <span>স্কোর: {phrase.score.toFixed(2)}</span>
+                    <span>ফ্রিকোয়েন্সি: {phrase.frequency}</span>
+                    <span>তারিখ: {phrase.date}</span>
+                  </div>
+                </li>
               ))}
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardContent>
-              <Typography variant="h6" gutterBottom>ধরন অনুযায়ী</Typography>
-              {Object.entries(dailyData.by_phrase_type).map(([type, phrases]) => (
-                <Chip 
-                  key={type}
-                  label={`${type}: ${phrases.length}`} 
-                  sx={{ mr: 1, mb: 1 }}
-                  variant="outlined"
-                />
+            </ul>
+          </div>
+          
+          {/* Daily Breakdown */}
+          <div className="bg-white shadow rounded-lg p-6">
+            <h3 className="font-semibold mb-4">দৈনিক ভাঙ্গন</h3>
+            <div className="space-y-3">
+              {Object.entries(weeklyData.daily_breakdown).map(([date, phrases]) => (
+                <div key={date} className="border-l-4 border-blue-400 pl-3">
+                  <div className="font-medium">{date}</div>
+                  <div className="text-sm text-gray-500">{phrases.length}টি ফ্রেজ</div>
+                  <div className="text-xs text-gray-400 mt-1">
+                    {phrases.slice(0, 3).map(p => p.phrase).join(', ')}
+                    {phrases.length > 3 && '...'}
+                  </div>
+                </div>
               ))}
-            </CardContent>
-          </Card>
-        </Grid>
-      </Grid>
+            </div>
+          </div>
+        </div>
+      </div>
     );
   };
 
   const renderStatsTab = () => {
+    if (loading && !stats) {
+      return <LoadingSkeleton />;
+    }
+    
     if (!stats) {
-      return (
-        <Alert severity="info">
-          পরিসংখ্যান লোড করা হচ্ছে...
-        </Alert>
-      );
+      return <div className="bg-gradient-to-r from-blue-50 to-blue-100 border border-blue-200 text-blue-800 px-6 py-4 rounded-xl text-center shadow-sm">
+        <div className="flex items-center justify-center gap-2">
+          <Users className="w-5 h-5 animate-pulse" />
+          <span>পরিসংখ্যান লোড করা হচ্ছে...</span>
+        </div>
+      </div>;
     }
-
     if (stats.total_phrases === 0) {
-      return (
-        <Alert severity="warning">
-          {stats.message || 'কোনো পরিসংখ্যান পাওয়া যায়নি। প্রথমে বিশ্লেষণ চালান।'}
-        </Alert>
-      );
+      return <div className="bg-gradient-to-r from-yellow-50 to-yellow-100 border border-yellow-200 text-yellow-800 px-6 py-4 rounded-xl text-center shadow-sm">
+        <div className="flex items-center justify-center gap-2">
+          <Users className="w-5 h-5" />
+          <span>{stats.message || 'কোনো পরিসংখ্যান পাওয়া যায়নি। প্রথমে বিশ্লেষণ চালান।'}</span>
+        </div>
+      </div>;
     }
-
     return (
-      <Grid container spacing={3}>
-        <Grid item xs={12} md={6}>
-          <Card>
-            <CardContent>
-              <Typography variant="h5" gutterBottom>
-                সামগ্রিক পরিসংখ্যান
-              </Typography>
-              <Typography variant="h3" color="primary">
-                {stats.total_phrases}
-              </Typography>
-              <Typography variant="body1" color="text.secondary">
-                মোট ট্রেন্ডিং ফ্রেজ
-              </Typography>
-              <Typography variant="h4" color="secondary" sx={{ mt: 2 }}>
-                {stats.recent_phrases_7_days}
-              </Typography>
-              <Typography variant="body1" color="text.secondary">
-                গত ৭ দিনের ফ্রেজ
-              </Typography>
-            </CardContent>
-          </Card>
-        </Grid>
-
-        <Grid item xs={12} md={6}>
-          <Card>
-            <CardContent>
-              <Typography variant="h6" gutterBottom>
-                উৎস অনুযায়ী পরিসংখ্যান
-              </Typography>
-              {stats.by_source.map((sourceStat, index) => (
-                <Box key={index} sx={{ mb: 2 }}>
-                  <Typography variant="subtitle1">{sourceStat.source}</Typography>
-                  <Typography variant="body2" color="text.secondary">
-                    সংখ্যা: {sourceStat.count} | গড় স্কোর: {sourceStat.avg_score}
-                  </Typography>
-                  <Divider sx={{ mt: 1 }} />
-                </Box>
-              ))}
-            </CardContent>
-          </Card>
-        </Grid>
-
-        <Grid item xs={12}>
-          <Card>
-            <CardContent>
-              <Typography variant="h6" gutterBottom>
-                ধরন অনুযায়ী পরিসংখ্যান
-              </Typography>
-              <Grid container spacing={2}>
-                {stats.by_phrase_type.map((typeStat, index) => (
-                  <Grid item xs={12} sm={6} md={4} key={index}>
-                    <Paper sx={{ p: 2, textAlign: 'center' }}>
-                      <Typography variant="h6">{typeStat.phrase_type}</Typography>
-                      <Typography variant="h4" color="primary">
-                        {typeStat.count}
-                      </Typography>
-                      <Typography variant="body2" color="text.secondary">
-                        গড় স্কোর: {typeStat.avg_score}
-                      </Typography>
-                    </Paper>
-                  </Grid>
-                ))}
-              </Grid>
-            </CardContent>
-          </Card>
-        </Grid>
-      </Grid>
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <div className="bg-white shadow rounded-lg p-6">
+          <h2 className="text-lg font-bold mb-2">সামগ্রিক পরিসংখ্যান</h2>
+          <div className="text-3xl font-extrabold text-blue-600">{stats.total_phrases}</div>
+          <div className="text-gray-500 mb-2">মোট ট্রেন্ডিং ফ্রেজ</div>
+          <div className="text-2xl font-bold text-pink-600 mt-4">{stats.recent_phrases_7_days}</div>
+          <div className="text-gray-500">গত ৭ দিনের ফ্রেজ</div>
+        </div>
+        <div className="md:col-span-2 bg-white shadow rounded-lg p-6">
+          <h3 className="font-semibold mb-2">ধরণ অনুযায়ী পরিসংখ্যান</h3>
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
+            {stats.by_phrase_type.map((typeStat, idx) => (
+              <div key={idx} className="bg-blue-50 rounded p-4 text-center">
+                <div className="font-semibold text-blue-700">{typeStat.phrase_type}</div>
+                <div className="text-2xl font-bold text-blue-600">{typeStat.count}</div>
+                <div className="text-xs text-gray-500">গড় স্কোর: {typeStat.avg_score}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
     );
   };
 
   if (loading && tabValue === 0) {
     return (
-      <Container maxWidth="lg" sx={{ mt: 4 }}>
-        <Box display="flex" justifyContent="center" alignItems="center" height="400px">
-          <CircularProgress size={60} />
-          <Typography variant="h6" sx={{ ml: 2 }}>
-            বিশ্লেষণ চলছে...
-          </Typography>
-        </Box>
-      </Container>
+      <div className="max-w-5xl mx-auto mt-16 text-center">
+        <div className="flex flex-col items-center justify-center">
+          <svg className="animate-spin h-16 w-16 text-blue-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"></path></svg>
+          <p className="mt-4 text-lg font-medium text-gray-700">বিশ্লেষণ চলছে...</p>
+        </div>
+      </div>
     );
   }
 
   return (
-    <Container maxWidth="lg" sx={{ mt: 4 }}>
-      <Box textAlign="center" mb={4}>
-        <Typography variant="h3" component="h1" gutterBottom>
-          <TrendingUpIcon sx={{ fontSize: '1.2em', mr: 1 }} />
-          ট্রেন্ডিং বিশ্লেষণ
-        </Typography>
-        <Typography variant="h6" color="text.secondary">
-          বাংলা সংবাদ ও সোশ্যাল মিডিয়া থেকে ট্রেন্ডিং শব্দ ও বাক্যাংশ
-        </Typography>
-      </Box>
-
+    <div className="container mx-auto px-6 py-8 bg-gradient-to-br from-gray-50 to-white min-h-[calc(100vh-4rem)]">
+      <div className="text-center mb-6">
+        <h1 className="text-3xl font-black tracking-tight text-gray-900 mb-2 flex items-center justify-center gap-3">
+          <div className="p-2 bg-gradient-to-br from-blue-600 to-blue-700 rounded-xl shadow-lg">
+            <TrendingUp className="w-6 h-6 text-white" />
+          </div>
+          {translate('ট্রেন্ডিং বিশ্লেষণ')}
+        </h1>
+        {/* <p className="text-sm text-gray-600 font-medium">বাংলা সংবাদ ও সোশ্যাল মিডিয়া থেকে ট্রেন্ডিং শব্দ ও বাক্যাংশ</p> */}
+      </div>
       {error && (
-        <Alert severity="error" sx={{ mb: 3 }}>
-          {error}
-        </Alert>
+        <div className="bg-gradient-to-r from-red-50 to-red-100 border-2 border-red-300 text-red-800 px-6 py-4 rounded-2xl mb-6 shadow-lg">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <svg className="w-5 h-5 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+              <span className="font-semibold">{error}</span>
+              {retryCount > 0 && (
+                <span className="text-sm text-red-600 bg-red-200 px-2 py-1 rounded-full">
+                  চেষ্টা #{retryCount}
+                </span>
+              )}
+            </div>
+            <button
+              onClick={retryAction}
+              className="px-4 py-2 bg-gradient-to-r from-red-600 to-red-700 text-white rounded-lg text-sm font-semibold shadow-md hover:shadow-lg transition-all hover:scale-105 focus:outline-none focus:ring-2 focus:ring-red-400"
+            >
+              পুনরায় চেষ্টা
+            </button>
+          </div>
+        </div>
       )}
-
+      <div className="flex border border-gray-200 mb-8 max-w-5xl mx-auto bg-white rounded-2xl shadow-lg overflow-hidden backdrop-blur-sm">
+        {[
+          { label: translate("ট্রেন্ডিং ক্রেজ"), icon: TrendingUp },
+          { label: translate("দৈনিক সারসংক্ষেপ"), icon: Globe },
+          { label: translate("সাপ্তাহিক সারসংক্ষেপ"), icon: Calendar },
+          { label: translate("পরিসংখ্যান"), icon: Users }
+        ].map(({ label, icon: Icon }, idx) => (
+          <button
+            key={idx}
+            className={`flex-1 py-4 px-6 text-center font-bold transition-all duration-300 border-b-4 flex items-center justify-center gap-3 cursor-pointer relative overflow-hidden ${
+              tabValue === idx 
+                ? 'border-blue-600 text-blue-800 bg-gradient-to-br from-blue-50 to-blue-100 shadow-inner transform scale-[0.98]' 
+                : 'border-transparent text-slate-700 bg-gradient-to-br from-slate-200 to-slate-300 hover:from-blue-50 hover:to-blue-100 hover:text-blue-700 hover:border-blue-300 shadow-md hover:shadow-lg hover:scale-[1.02] active:scale-[0.98]'
+            }`}
+            onClick={() => handleTabChange(idx)}
+          >
+            <Icon className="w-5 h-5 drop-shadow-sm" />
+            <span className="text-sm font-semibold tracking-wide">{label}</span>
+          </button>
+        ))}
+      </div>
       {renderFilters()}
-
-      <Box sx={{ borderBottom: 1, borderColor: 'divider', mb: 3 }}>
-        <Tabs value={tabValue} onChange={handleTabChange}>
-          <Tab 
-            label="ট্রেন্ডিং ফ্রেজ" 
-            icon={<TrendingUpIcon />} 
-            iconPosition="start"
-          />
-          <Tab 
-            label="দৈনিক সারসংক্ষেপ" 
-            icon={<NewspaperIcon />} 
-            iconPosition="start"
-          />
-          <Tab 
-            label="পরিসংখ্যান" 
-            icon={<GroupIcon />} 
-            iconPosition="start"
-          />
-        </Tabs>
-      </Box>
-
       {loading ? (
-        <Box display="flex" justifyContent="center" p={4}>
-          <CircularProgress />
-        </Box>
+        <div className="flex justify-center p-8"><svg className="animate-spin h-8 w-8 text-blue-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"></path></svg></div>
       ) : (
         <>
           {tabValue === 0 && renderTrendingTab()}
           {tabValue === 1 && renderDailyTab()}
-          {tabValue === 2 && renderStatsTab()}
+          {tabValue === 2 && renderWeeklyTab()}
+          {tabValue === 3 && renderStatsTab()}
         </>
       )}
-    </Container>
+      
+      {/* Toast Notification */}
+      {toast && (
+        <div className={`fixed top-4 right-4 z-50 px-6 py-4 rounded-lg shadow-lg transition-all duration-300 transform ${
+          toast.type === 'success' 
+            ? 'bg-gradient-to-r from-green-500 to-green-600 text-white' 
+            : 'bg-gradient-to-r from-red-500 to-red-600 text-white'
+        }`}>
+          <div className="flex items-center gap-3">
+            {toast.type === 'success' ? (
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+              </svg>
+            ) : (
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            )}
+            <span className="font-semibold">{toast.message}</span>
+          </div>
+        </div>
+      )}
+      
+      {/* Progressive Analysis Modal */}
+      {showProgressiveAnalysis && (
+        <ProgressiveAnalysis
+          key="progressive-analysis-modal" // Add stable key to prevent remounting
+          onAnalysisComplete={handleProgressiveAnalysisComplete}
+          onClose={handleProgressiveAnalysisClose}
+        />
+      )}
+
+      {/* Delete Confirmation Modal */}
+      {deleteModal.isOpen && (
+        <ConfirmationModal
+          isOpen={deleteModal.isOpen}
+          title="ফ্রেজ মুছে ফেলুন"
+          message={`আপনি কি নিশ্চিত যে "${deleteModal.phraseName}" ফ্রেজটি মুছে ফেলতে চান? এই কাজটি আর পূর্বাবস্থায় ফিরিয়ে আনা যাবে না।`}
+          confirmText="হ্যাঁ, মুছে ফেলুন"
+          cancelText="বাতিল"
+          type="danger"
+          onClose={() => setDeleteModal({ isOpen: false, phraseId: null, phraseName: '' })}
+          onConfirm={async () => {
+            // Handle delete action
+            try {
+              setLoading(true);
+              await apiV2.deleteTrendingPhrase(deleteModal.phraseId);
+              showToast(`'${deleteModal.phraseName}' সফলভাবে মুছে ফেলা হয়েছে`, 'success');
+              setDeleteModal({ isOpen: false, phraseId: null, phraseName: '' });
+              // Refetch data
+              if (tabValue === 0) {
+                await fetchTrendingData();
+              } else if (tabValue === 1) {
+                await fetchDailyData();
+              } else if (tabValue === 2) {
+                await fetchWeeklyData();
+              } else if (tabValue === 3) {
+                await fetchStats();
+              }
+            } catch (err) {
+              console.error('Delete phrase error:', err);
+              showToast('ফ্রেজ মুছে ফেলতে ব্যর্থ', 'error');
+            } finally {
+              setLoading(false);
+            }
+          }}
+        />
+      )}
+    </div>
   );
 }
 

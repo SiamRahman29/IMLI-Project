@@ -1,0 +1,27 @@
+{
+  "timestamp": "2025-06-24T14:36:34.269091",
+  "reddit_posts_analyzed": 96,
+  "llm_model": "llama-3.3-70b-versatile",
+  "llm_response_raw": "Reddit ট্রেন্ডিং শব্দ/বাক্যাংশ (৮টি):\n১. শিক্ষা সমস্যা\n২. রাজনৈতিক অস্থিতিশীলতা\n৩. চাকরির সুযোগ\n৪. বিশ্ববিদ্যালয় ভর্তি\n৫. গেমিং সংস্কৃতি\n৬. সামাজিক নিরাপত্তা\n৭. প্রযুক্তি উন্নয়ন\n৮. কর্মসংস্থান সমস্যা",
+  "extracted_trending_words": [
+    "Reddit ট্রেন্ডিং শব্দ/বাক্যাংশ (৮টি):",
+    "শিক্ষা সমস্যা",
+    "রাজনৈতিক অস্থিতিশীলতা",
+    "চাকরির সুযোগ",
+    "বিশ্ববিদ্যালয় ভর্তি",
+    "গেমিং সংস্কৃতি",
+    "সামাজিক নিরাপত্তা",
+    "প্রযুক্তি উন্নয়ন",
+    "কর্মসংস্থান সমস্যা"
+  ],
+  "analysis_summary": {
+    "total_trending_words": 9,
+    "analysis_type": "Reddit Social Media Trending Analysis (Mixed Language Input, Bengali Output)",
+    "language": "Bengali",
+    "input_languages": [
+      "English",
+      "Banglish",
+      "Bengali"
+    ]
+  }
+}

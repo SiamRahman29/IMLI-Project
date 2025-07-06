@@ -1,8 +1,9 @@
 import os
 import re
 import requests
+from requests.exceptions import Timeout, ConnectionError
 from datetime import date, datetime, timedelta
-from typing import List, Dict, Tuple
+from typing import List, Dict, Tuple, TYPE_CHECKING
 from collections import Counter, defaultdict
 import pandas as pd
 import numpy as np
@@ -13,9 +14,18 @@ from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
 from dotenv import load_dotenv
 from groq import Groq
+import traceback
+
+# Type checking imports
+if TYPE_CHECKING:
+    from app.services.advanced_bengali_nlp import TrendingBengaliAnalyzer
+
+# Database and model imports
 from sqlalchemy.orm import Session
-from app.models.word import Article, TrendingPhrase
-from app.services.social_media_scraper import scrape_social_media_content
+from app.models.word import TrendingPhrase, Article
+from app.services.text_preprocessing import get_google_trends_bangladesh, get_youtube_trending_bangladesh, get_serpapi_trending_bangladesh
+from app.services.stopwords import STOP_WORDS
+
 
 load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), '../../.env'))
 
@@ -25,146 +35,130 @@ try:
 except LookupError:
     nltk.download('punkt')
 
-BENGALI_STOP_WORDS = {
-    'এবং', 'বা', 'কিন্তু', 'তবে', 'যদি', 'তাহলে', 'কেননা', 'যেহেতু', 'অতএব', 'সুতরাং',
-    'এর', 'তার', 'তাদের', 'আমার', 'আমাদের', 'তোমার', 'তোমাদের', 'তিনি', 'তারা', 'আমি', 'আমরা',
-    'তুমি', 'তোমরা', 'সে', 'এই', 'এটি', 'ওই', 'ওটি', 'যে', 'যেটি', 'কী', 'কি', 'কেন', 'কোথায়',
-    'কখন', 'কীভাবে', 'কোন', 'কত', 'কতটা', 'হয়', 'হয়েছে', 'হবে', 'হচ্ছে', 'থাকা', 'থাকে', 'থাকবে',
-    'আছে', 'ছিল', 'থেকে', 'পর্যন্ত', 'দিয়ে', 'করে', 'জন্য', 'সাথে', 'মধ্যে', 'ভিতরে', 'বাইরে',
-    'উপর', 'নিচে', 'আগে', 'পরে', 'সময়', 'দিন', 'রাত', 'সকাল', 'বিকাল', 'সন্ধ্যা', 'এখন', 'তখন',
-    'একটি', 'একটা', 'দুটি', 'দুটো', 'তিনটি', 'তিনটে', 'চারটি', 'চারটে', 'পাঁচটি', 'পাঁচটে',
-    'না', 'নেই', 'নয়', 'নি', 'অন্য', 'আরও', 'আরো', 'অনেক', 'সব', 'সকল', 'প্রতি', 'খুব', 'বেশ',
-    'ভাল', 'ভালো', 'মন্দ', 'ভাল', 'মানুষ', 'লোক', 'জন', 'গুলি', 'গুলো', 'টি', 'টা', 'খানা', 'খানি',
-    'টুকু', 'মত', 'মতো', 'মতন', 'হিসেবে', 'হিসেবে', 'রূপে', 'হিসেবে', 'বলে', 'বলা', 'বলেন', 'বলেছেন',
-    'বলছেন', 'বলবেন', 'বর', 'বরং', 'মাঝে', 'মাঝেমাঝে', 'কখনো', 'কখনও', 'সর্বদা', 'সবসময়', 'প্রায়',
-    'প্রায়ই', 'কখনো', 'কদাচিৎ', 'মোটেও', 'মোটেই', 'একেবারে', 'একদম', 'পুরোপুরি', 'সম্পূর্ণ', 'সম্পূর্ণভাবে',
-    'হয়তো', 'হয়ত', 'অবশ্যই', 'অবশ্য', 'নিশ্চয়', 'নিশ্চিত', 'সম্ভবত', 'হয়নি', 'নয়', 'না', 'কোনো',
-    'কোন', 'কেউ', 'কেউই', 'কিছু', 'কিছুই', 'কোথাও', 'কোথাওই', 'কখনো', 'কখনোই', 'যখন', 'তখনই',
-    'যেখানে', 'সেখানে', 'যেভাবে', 'সেভাবে', 'যতটা', 'ততটা', 'যতক্ষণ', 'ততক্ষণ', 'প্রথম', 'দ্বিতীয়',
-    'তৃতীয়', 'চতুর্থ', 'পঞ্চম', 'ষষ্ঠ', 'সপ্তম', 'অষ্টম', 'নবম', 'দশম', 'একে', 'তাকে', 'তাদেরকে',
-    'আমাকে', 'আমাদেরকে', 'তোমাকে', 'তোমাদেরকে', 'এটাকে', 'ওটাকে', 'যাকে', 'কাকে', 'ঐ', 'ওই',
-    'এই', 'সেই', 'যে', 'যেই', 'কোন', 'কোনো', 'একজন', 'দুজন', 'তিনজন', 'চারজন', 'পাঁচজন',
-    'নতুন', 'পুরাতন', 'পুরোনো', 'বড়', 'ছোট', 'ভালো', 'খারাপ', 'সুন্দর', 'কুৎসিত', 'উচ্চ', 'নিম্ন',
-    'অই', 'অগত্যা', 'অত: পর', 'অতএব', 'অথচ', 'অথবা', 'অধিক', 'অধীনে', 'অধ্যায়', 'অনুগ্রহ',
-    'অনুভূত', 'অনুযায়ী', 'অনুরূপ', 'অনুসন্ধান', 'অনুসরণ', 'অনুসারে', 'অনুসৃত', 'অনেক', 'অনেকে',
-    'অনেকেই', 'অন্তত', 'অন্য', 'অন্যত্র', 'অন্যান্য', 'অপেক্ষাকৃতভাবে', 'অবধি', 'অবশ্য', 'অবশ্যই',
-    'অবস্থা', 'অবিলম্বে', 'অভ্যন্তরস্থ', 'অর্জিত', 'অর্থাত', 'অসদৃশ', 'অসম্ভাব্য', 'আইন', 'আউট',
-    'আক্রান্ত', 'আগামী', 'আগে', 'আগেই', 'আগ্রহী', 'আছে', 'আজ', 'আট', 'আদেশ', 'আদ্যভাগে', 'আন্দাজ',
-    'আপনার', 'আপনি', 'আবার', 'আমরা', 'আমাকে', 'আমাদিগের', 'আমাদের', 'আমার', 'আমি', 'আর', 'আরও',
-    'আশি', 'আশু', 'আসা', 'আসে', 'ই', 'ইচ্ছা', 'ইচ্ছাপূর্বক', 'ইতিমধ্যে', 'ইতোমধ্যে', 'ইত্যাদি',
-    'ইশারা', 'ইহা', 'ইহাতে', 'উক্তি', 'উচিত', 'উচ্চ', 'উঠা', 'উত্তম', 'উত্তর', 'উনি', 'উপর',
-    'উপরে', 'উপলব্ধ', 'উপায়', 'উভয়', 'উল্লেখ', 'উল্লেখযোগ্যভাবে', 'উহার', 'ঊর্ধ্বতন', 'এ', 'এপর্যন্ত',
-    'এঁদের', 'এঁরা', 'এই', 'এইগুলো', 'এইভাবে', 'এক', 'একই', 'একটি', 'একদা', 'একবার', 'একভাবে',
-    'একরকম', 'একসঙ্গে', 'একা', 'একে', 'এক্', 'এখন', 'এখনও', 'এখনো', 'এখানে', 'এখানেই', 'এছাড়াও',
-    'এটা', 'এটাই', 'এটি', 'এত', 'এতটাই', 'এতদ্বারা', 'এতে', 'এদিকে', 'এদের', 'এপর্যন্ত', 'এবং',
-    'এবার', 'এমন', 'এমনকি', 'এমনকী', 'এমনি', 'এর', 'এরকম', 'এরা', 'এল', 'এলাকায়', 'এলাকার', 'এস',
-    'এসে', 'ঐ', 'ও', 'ওঁদের', 'ওঁর', 'ওঁরা', 'ওই', 'ওকে', 'ওখানে', 'ওদের', 'ওর', 'ওরা', 'ওহে',
-    'কক্ষ', 'কখন', 'কখনও', 'কত', 'কবে', 'কম', 'কমনে', 'কয়েক', 'কয়েকটি', 'করছে', 'করছেন', 'করতে',
-    'করবে', 'করবেন', 'করলে', 'করলেন', 'করলো', 'করা', 'করাই', 'করাত', 'করার', 'করায়', 'করি',
-    'করিতে', 'করিয়া', 'করিয়ে', 'করে', 'করেই', 'করেছিল', 'করেছিলেন', 'করেছে', 'করেছেন', 'করেন',
-    'কর্তব্য', 'কাউকে', 'কাছ', 'কাছাকাছি', 'কাছে', 'কাজ', 'কাজে', 'কারও', 'কারণ', 'কারণসমূহ', 'কারো',
-    'কি', 'কিংবা', 'কিছু', 'কিছুই', 'কিছুটা', 'কিছুনা', 'কিনা', 'কিন্তু', 'কিভাবে', 'কী', 'কূপ', 'কে',
-    'কেউ', 'কেউই', 'কেউনা', 'কেখা', 'কেন', 'কেবল', 'কেবা', 'কেস', 'কেহ', 'কোটি', 'কোথা', 'কোথাও',
-    'কোথায়', 'কোন', 'কোনও', 'কোনো', 'ক্রম', 'ক্ষেত্রে', 'কয়েক', 'কয়েকটি', 'খুঁজছেন', 'খুব',
-    'খোলা', 'খোলে', 'গড়', 'গত', 'গিয়ে', 'গিয়েছিলাম', 'গিয়েছে', 'গিয়ে', 'গিয়েছে', 'গুরুত্ব', 'গুলি',
-    'গেছে', 'গেল', 'গেলে', 'গোটা', 'গোষ্ঠীবদ্ধ', 'গ্রহণ', 'গ্রুপ', 'ঘর', 'ঘোষণা', 'চলে', 'চান', 'চায়',
-    'চার', 'চালা', 'চালান', 'চালু', 'চায়', 'চেয়ে', 'চেয়েছিলেন', 'চেষ্টা', 'চেয়ে', 'ছয়', 'ছাড়া',
-    'ছাড়াছাড়ি', 'ছাড়া', 'ছাড়াও', 'ছিল', 'ছিলেন', 'ছোট', 'জন', 'জনকে', 'জনাব', 'জনাবা', 'জনের',
-    'জন্য', 'জানতাম', 'জানতে', 'জানা', 'জানানো', 'জানায়', 'জানিয়ে', 'জানিয়েছে', 'জানে', 'জায়গা',
-    'জিজ্ঞাসা', 'জিজ্ঞেস', 'জিনিস', 'জে', 'জ্নজন', 'টা', 'টি', 'ঠিক', 'ঠিকআছে', 'ডগা', 'তখন', 'তত',
-    'তত্কারণে', 'তত্প্রতি', 'তথা', 'তদনুসারে', 'তদ্ব্যতীত', 'তন্নতন্ন', 'তবু', 'তবে', 'তরুণ', 'তা',
-    'তাঁকে', 'তাঁদের', 'তাঁর', 'তাঁরা', 'তাঁহারা', 'তাই', 'তাও', 'তাকে', 'তাতে', 'তাদের', 'তার', 'তারপর',
-    'তারপরেও', 'তারা', 'তারিখ', 'তারৈ', 'তাহলে', 'তাহা', 'তাহাতে', 'তাহাদিগকে', 'তাহাদেরই', 'তাহার',
-    'তিন', 'তিনি', 'তিনিও', 'তীক্ষ্ন', 'তুমি', 'তুলে', 'তেমন', 'তৈরীর', 'তো', 'তোমার', 'তোলে', 'থাকবে',
-    'থাকবেন', 'থাকা', 'থাকায়', 'থাকায়', 'থাকে', 'থাকেন', 'থেকে', 'থেকেই', 'থেকেও', 'দরকারী', 'দলবদ্ধ',
-    'দান', 'দিকে', 'দিতে', 'দিন', 'দিয়ে', 'দিয়েছে', 'দিয়েছেন', 'দিলেন', 'দিয়ে', 'দিয়েছে', 'দিয়েছেন',
-    'দু', 'দুই', 'দুটি', 'দুটো', 'দূরে', 'দেওয়ার', 'দেওয়া', 'দেওয়ার', 'দেখতে', 'দেখা', 'দেখাচ্ছে',
-    'দেখিয়েছেন', 'দেখে', 'দেখেন', 'দেন', 'দেয়', 'দেয়', 'দ্বারা', 'দ্বিগুণ', 'দ্বিতীয়', 'দ্য', 'ধরা',
-    'ধরে', 'ধামার', 'নতুন', 'নব্বই', 'নয়', 'নাই', 'নাকি', 'নাগাদ', 'নানা', 'নাম', 'নিচে', 'নিছক',
-    'নিজে', 'নিজেই', 'নিজেকে', 'নিজেদের', 'নিজেদেরকে', 'নিজের', 'নিতে', 'নিদিষ্ট', 'নিম্নাভিমুখে',
-    'নিয়ে', 'নির্দিষ্ট', 'নির্বিশেষে', 'নিশ্চিত', 'নিয়ে', 'নেই', 'নেওয়ার', 'নেওয়া', 'নেয়ার', 'নয়',
-    'পক্ষই', 'পক্ষে', 'পঞ্চম', 'পড়া', 'পণ্য', 'পথ', 'পয়েন্ট', 'পর', 'পরন্তু', 'পরবর্তী', 'পরিণত',
-    'পরিবর্তে', 'পরে', 'পরেই', 'পরেও', 'পর্যন্ত', 'পর্যাপ্ত', 'পাঁচ', 'পাওয়া', 'পাচ', 'পায়', 'পারা',
-    'পারি', 'পারিনি', 'পারে', 'পারেন', 'পালা', 'পাশ', 'পাশে', 'পিছনে', 'পিঠের', 'পুরোনো', 'পুরোপুরি',
-    'পূর্বে', 'পৃষ্ঠা', 'পৃষ্ঠাগুলি', 'পেছনে', 'পেয়েছেন', 'পেয়ে', 'পেয়্র্', 'প্রকৃতপক্ষে', 'প্রণীত', 'প্রতি',
-    'প্রথম', 'প্রদত্ত', 'প্রদর্শনী', 'প্রদর্শিত', 'প্রধানত', 'প্রবলভাবে', 'প্রভৃতি', 'প্রমাণীকরণ', 'প্রযন্ত',
-    'প্রয়োজন', 'প্রয়োজনীয়', 'প্রসূত', 'প্রাক্তন', 'প্রাথমিক', 'প্রাথমিকভাবে', 'প্রান্ত', 'প্রাপ্ত',
-    'প্রায়', 'প্রায়ই', 'প্রায়', 'ফলাফল', 'ফলে', 'ফিক্স', 'ফিরে', 'ফের', 'বক্তব্য', 'বছর', 'বড়', 'বদলে',
-    'বন', 'বন্ধ', 'বরং', 'বরাবর', 'বর্ণন', 'বর্তমান', 'বলতে', 'বলল', 'বললেন', 'বলা', 'বলে', 'বলেছেন',
-    'বলেন', 'বসে', 'বহু', 'বা', 'বাঁক', 'বাইরে', 'বাকি', 'বাড়ি', 'বাতিক', 'বাদ', 'বাদে', 'বার', 'বাহিরে',
-    'বিনা', 'বিন্দু', 'বিভিন্ন', 'বিশেষ', 'বিশেষণ', 'বিশেষত', 'বিশেষভাবে', 'বিশ্ব', 'বিষয়টি', 'বুঝিয়ে',
-    'বৃহত্তর', 'বের', 'বেশ', 'বেশি', 'বেশী', 'ব্যতীত', 'ব্যবহার', 'ব্যবহারসমূহ', 'ব্যবহৃত', 'ব্যাক',
-    'ব্যাপকভাবে', 'ব্যাপারে', 'ভবিষ্যতে', 'ভান', 'ভাবে', 'ভাবেই', 'ভাল', 'ভিতরে', 'ভিন্ন', 'ভিন্নভাবে',
-    'মত', 'মতো', 'মতোই', 'মধ্যভাগে', 'মধ্যে', 'মধ্যেই', 'মধ্যেও', 'মনে', 'মনে হয়', 'মস্ত', 'মহান',
-    'মাত্র', 'মাধ্যম', 'মাধ্যমে', 'মান', 'মানানসই', 'মানুষ', 'মানে', 'মামলা', 'মিলিয়ন', 'মুখ', 'মূলত',
-    'মোট', 'মোটেই', 'যখন', 'যখনই', 'যত', 'যতটা', 'যথা', 'যথাক্রমে', 'যথেষ্ট', 'যদি', 'যদিও', 'যন্ত্রাংশ',
-    'যা', 'যাঁর', 'যাঁরা', 'যাই', 'যাওয়া', 'যাওয়ার', 'যাওয়া', 'যাওয়ার', 'যাকে', 'যাচ্ছে', 'যাতে', 'যাদের',
-    'যান', 'যাবে', 'যায়', 'যার', 'যারা', 'যাহার', 'যাহোক', 'যিনি', 'যে', 'যেখানে', 'যেখানেই', 'যেটি',
-    'যেতে', 'যেন', 'যেমন', 'যেহেতু', 'যোগ', 'রকম', 'রয়েছে', 'রাখা', 'রাখে', 'রাজী', 'রাজ্যের', 'রেখে',
-    'রয়েছে', 'লক্ষ', 'লাইন', 'লাল', 'শত', 'শব্দ', 'শীঘ্র', 'শীঘ্রই', 'শুধু', 'শুরু', 'শুরুতে', 'শূন্য',
-    'শেষ', 'সংক্রান্ত', 'সংক্ষিপ্ত', 'সংক্ষেপে', 'সংখ্যা', 'সংখ্যার', 'সংশ্লিষ্ট', 'সক্ষম', 'সঙ্গে',
-    'সঙ্গেও', 'সত্য', 'সত্যিই', 'সদয়', 'সদস্য', 'সদস্যদের', 'সফলভাবে', 'সব', 'সবচেয়ে', 'সবাই', 'সবার',
-    'সময়', 'সমস্ত', 'সমান', 'সম্পন্ন', 'সম্প্রতি', 'সম্ভব', 'সম্ভবত', 'সম্ভাব্য', 'সরাইয়া', 'সর্বত্র',
-    'সর্বদা', 'সর্বস্বান্ত', 'সহ', 'সহিত', 'সাত', 'সাধারণ', 'সাধারণত', 'সাব', 'সাবেক', 'সামগ্রিক', 'সামনে',
-    'সামান্য', 'সাম্প্রতিক', 'সুতরাং', 'সুত্র', 'সূচক', 'সে', 'সে হবে', 'সেই', 'সেকেন্ড', 'সেখান', 'সেখানে',
-    'সেগুলো', 'সেটা', 'সেটাই', 'সেটাও', 'সেটি', 'সেরা', 'স্টপ', 'স্থাপিত', 'স্পষ্ট', 'স্পষ্টত', 'স্পষ্টতই',
-    'স্ব', 'স্বয়ং', 'স্বাগত', 'স্বাভাবিকভাবে', 'স্বার্থ', 'স্বয়ং', 'হইতে', 'হইবে', 'হইয়া', 'হওয়া', 'হওয়ায়',
-    'হওয়ার', 'হচ্ছে', 'হত', 'হতে', 'হতেই', 'হন', 'হবে', 'হবেন', 'হয়', 'হয়তো', 'হয়নি', 'হয়ে', 'হয়েই',
-    'হয়েছিল', 'হয়েছে', 'হয়েছেন', 'হল', 'হলে', 'হলেই', 'হলেও', 'হলো', 'হাজার', 'হায়', 'হারানো',
-    'হিসাবে', 'হৈলে', 'হোক', 'হয়', 'হয়তো', 'হয়নি', 'হয়ে', 'হয়েই', 'হয়েছিল', 'হয়েছে', 'হয়েছেন', 'অংশ'
-}
-
-
 class BengaliTextProcessor:
     def __init__(self):
-        self.stop_words = BENGALI_STOP_WORDS
-        
+        self.stop_words = STOP_WORDS
+
     def clean_text(self, text: str) -> str:
         """Clean and normalize Bengali text"""
         if not text:
             return ""
-            
         # Remove HTML tags
         text = BeautifulSoup(text, 'html.parser').get_text()
-        
         # Remove URLs
         text = re.sub(r'http\S+|www\S+|https\S+', '', text, flags=re.MULTILINE)
-        
         # Remove email addresses
         text = re.sub(r'\S+@\S+', '', text)
-        
         # Remove special characters but keep Bengali characters
         text = re.sub(r'[^\u0980-\u09FF\s\u0964\u0965]', ' ', text)
-        
         # Remove extra whitespace
         text = re.sub(r'\s+', ' ', text).strip()
-        
         return text
-    
+
     def tokenize_sentences(self, text: str) -> List[str]:
         """Tokenize text into sentences"""
-        # Bengali sentence endings
         sentences = re.split(r'[।!?]', text)
-        return [sent.strip() for sent in sentences if sent.strip()]
-    
+        sentences = [sent.strip() for sent in sentences if sent.strip()]
+        return sentences
+
     def tokenize_words(self, text: str) -> List[str]:
         """Tokenize text into words"""
-        words = re.findall(r'\b[\u0980-\u09FF]+\b', text)
-        return [word for word in words if len(word) > 1]  # Filter single characters
-    
+        words = re.findall(r'[\u0980-\u09FF]+', text)
+        filtered_words = [word for word in words if len(word) > 1]  # Filter single characters
+        return filtered_words
+
     def remove_stop_words(self, words: List[str]) -> List[str]:
         """Remove Bengali stop words"""
-        return [word for word in words if word not in self.stop_words]
-    
+        filtered_words = [word for word in words if word not in self.stop_words]
+        return filtered_words
+
     def generate_ngrams(self, words: List[str], n: int) -> List[str]:
         """Generate n-grams from word list"""
         if len(words) < n:
             return []
-        return [' '.join(words[i:i+n]) for i in range(len(words) - n + 1)]
+        ngrams = [' '.join(words[i:i+n]) for i in range(len(words) - n + 1)]
+        return ngrams
 
 class TrendingAnalyzer:
     def __init__(self):
         self.text_processor = BengaliTextProcessor()
+        
+    def filter_quality_phrases(self, phrases_dict: Dict[str, int], min_length=3, max_length=50) -> Dict[str, int]:
+        """Filter phrases for better quality by removing duplicates and low-quality entries"""
+        
+        # Person name indicators to exclude
+        person_indicators = [
+            'মাননীয়', 'জনাব', 'মিসেস', 'মিস', 'ডঃ', 'প্রফেসর', 'শেখ', 'মোঃ', 'সৈয়দ',
+            'সাহেব', 'সাহেবা', 'বেগম', 'খান', 'চৌধুরী', 'আহমেদ', 'হোসেন', 'উদ্দিন', 'রহমান',
+            'মন্ত্রী', 'প্রধানমন্ত্রী', 'রাষ্ট্রপতি', 'সচিব'
+        ]
+        
+        # Low-quality patterns to exclude
+        exclude_phrases = [
+            'বলেছেন', 'জানিয়েছেন', 'নিশ্চিত করেছেন', 'উল্লেখ করেছেন',
+            'করা হয়েছে', 'হয়েছে বলে', 'বলা হয়েছে', 'জানা গেছে',
+            'সংবাদদাতা', 'প্রতিবেদক', 'সংবাদ সম্মেলন'
+        ]
+        
+        filtered_phrases = {}
+        seen_topics = set()
+        
+        for phrase, freq in phrases_dict.items():
+            phrase_clean = phrase.strip()
+            
+            # Length filtering
+            if len(phrase_clean) < min_length or len(phrase_clean) > max_length:
+                continue
+                
+            # Skip phrases with person indicators
+            if any(indicator in phrase_clean for indicator in person_indicators):
+                continue
+                
+            # Skip low-quality phrases
+            if any(exclude in phrase_clean for exclude in exclude_phrases):
+                continue
+                
+            # Skip if it's mostly numbers or contains too many English characters
+            if re.search(r'[0-9]{3,}', phrase_clean) or re.search(r'[a-zA-Z]{5,}', phrase_clean):
+                continue
+                
+            # Topic deduplication - avoid similar phrases
+            phrase_lower = phrase_clean.lower()
+            words = set(phrase_lower.split())
+            
+            is_duplicate = False
+            for seen_topic in list(seen_topics):
+                seen_words = set(seen_topic.split())
+                
+                # Check for significant word overlap
+                if words and seen_words:
+                    overlap = len(words.intersection(seen_words)) / min(len(words), len(seen_words))
+                    if overlap > 0.75:  # 75% word overlap = duplicate
+                        # Keep the one with higher frequency
+                        existing_freq = filtered_phrases.get(seen_topic, 0)
+                        if freq > existing_freq:
+                            # Remove old entry
+                            filtered_phrases.pop(seen_topic, None)
+                            seen_topics.remove(seen_topic)
+                        else:
+                            is_duplicate = True
+                        break
+                        
+                # Check for substring relationship
+                if phrase_lower in seen_topic or seen_topic in phrase_lower:
+                    # Keep the longer, more descriptive phrase
+                    if len(phrase_clean) > len(seen_topic):
+                        filtered_phrases.pop(seen_topic, None)
+                        seen_topics.remove(seen_topic)
+                    else:
+                        is_duplicate = True
+                    break
+            
+            if not is_duplicate:
+                filtered_phrases[phrase_clean] = freq
+                seen_topics.add(phrase_lower)
+        
+        return filtered_phrases
         
     def calculate_tfidf_scores(self, documents: List[str]) -> Dict[str, float]:
         """Calculate TF-IDF scores for terms in documents"""
@@ -177,7 +171,8 @@ class TrendingAnalyzer:
             lowercase=False,
             ngram_range=(1, 3),
             max_features=1000,
-            min_df=2
+            min_df=2,
+            token_pattern=None  # Suppress warning when using custom tokenizer
         )
         
         try:
@@ -285,72 +280,110 @@ def get_trending_words(db: Session):
     Implements N-gram Frequency Analysis with TF-IDF scoring.
     """
     print("Starting comprehensive trending words analysis...")
-    
     # Fetch news articles
     print("Fetching news data...")
     news_articles = fetch_news()
     print(f"Fetched {len(news_articles)} news articles")
-    
-    # Fetch social media content
-    print("Fetching social media content...")
-    try:
-        social_media_posts = scrape_social_media_content()
-        print(f"Fetched {len(social_media_posts)} social media posts")
-    except Exception as e:
-        print(f"Error fetching social media content: {e}")
-        social_media_posts = []
-    
+    # Fetch social media content (DISABLED)
+    # print("Fetching social media content...")
+    # try:
+    #     social_media_posts = scrape_social_media_content()
+    #     print(f"Fetched {len(social_media_posts)} social media posts")
+    # except Exception as e:
+    #     print(f"Error fetching social media content: {e}")
+    #     social_media_posts = []
+    social_media_posts = []
     # Combine all content
     all_content = news_articles + social_media_posts
-    
     if not all_content:
-        print("No content fetched, skipping analysis")
-        return
-    
+        return []
     # Store articles and posts in database
     print("Storing content in the database...")
     store_news(db, news_articles)
-    if social_media_posts:
-        store_social_media_content(db, social_media_posts)
+    # if social_media_posts:
+    #     store_social_media_content(db, social_media_posts)
     
-    # Analyze trending phrases for each source separately
-    print("Analyzing trending phrases...")
-    analyzer = TrendingAnalyzer()
+    # Analyze trending phrases using advanced Bengali NLP
+    print("Analyzing trending phrases with advanced Bengali NLP...")
+    from app.services.advanced_bengali_nlp import TrendingBengaliAnalyzer
     
     today = date.today()
-    
     # Clear existing data for today
     db.query(TrendingPhrase).filter(TrendingPhrase.date == today).delete()
     
-    # Analyze news content
+    # Use advanced Bengali analyzer for main analysis
+    advanced_analyzer = TrendingBengaliAnalyzer()
+    
+    # Analyze news content with advanced NLP
     if news_articles:
-        analyze_and_store_trends(db, analyzer, news_articles, 'news', today)
+        print(f"\n🔍 Analyzing {len(news_articles)} news articles with advanced Bengali NLP...")
+        analyze_trending_content_and_store(db, advanced_analyzer, news_articles, 'news', today)
     
     # Analyze social media content  
     if social_media_posts:
-        analyze_and_store_trends(db, analyzer, social_media_posts, 'social_media', today)
+        print(f"\n📱 Analyzing {len(social_media_posts)} social media posts...")
+        analyze_trending_content_and_store(db, advanced_analyzer, social_media_posts, 'social_media', today)
     
     db.commit()
     print("Comprehensive trending phrases analysis completed and stored!")
+    
+    # Aggregate weekly trending data
+    print("Aggregating weekly trending data...")
+    try:
+        # weekly_count = aggregate_weekly_trending(db)
+        # print(f"Weekly aggregation completed: {weekly_count} phrases")
+        print("Weekly aggregation skipped (function not implemented)")
+    except Exception as e:
+        print(f"Error in weekly aggregation: {e}")
+        import traceback
+        traceback.print_exc()
 
 def analyze_and_store_trends(db: Session, analyzer: TrendingAnalyzer, 
                            content: List[Dict], source: str, target_date: date):
     """Analyze trends for a specific content source and store in database"""
-    
     # Prepare text data
     texts = []
     for item in content:
-        if source == 'news':
-            combined_text = f"{item.get('title', '')} {item.get('description', '')}"
-        else:  # social_media
-            combined_text = item.get('content', '')
-        texts.append(combined_text)
-    
+        # Use heading instead of description
+        if item.get('heading'):
+            texts.append(item['heading'])
+        elif item.get('title'):
+            texts.append(item['title'])
     if not texts:
         return
     
-    # Calculate frequency scores
+    # Use advanced Bengali analyzer for better quality filtering
+    from app.services.advanced_bengali_nlp import TrendingBengaliAnalyzer
+    advanced_analyzer = TrendingBengaliAnalyzer()
+    
+    # Calculate frequency scores using old method
     frequency_scores = analyzer.calculate_frequency_scores(texts)
+    
+    # Basic filtering first
+    print(f"Before filtering - Unigrams: {len(frequency_scores['unigrams'])}, Bigrams: {len(frequency_scores['bigrams'])}, Trigrams: {len(frequency_scores['trigrams'])}")
+    
+    # Apply basic quality filtering to each n-gram type
+    frequency_scores['unigrams'] = analyzer.filter_quality_phrases(frequency_scores['unigrams'])
+    frequency_scores['bigrams'] = analyzer.filter_quality_phrases(frequency_scores['bigrams'])  
+    frequency_scores['trigrams'] = analyzer.filter_quality_phrases(frequency_scores['trigrams'])
+    
+    # Apply advanced filtering to remove duplicates and person names
+    # Convert frequency dict to list of tuples for advanced filtering
+    unigrams_list = [(phrase, 1.0) for phrase in frequency_scores['unigrams'].keys()]
+    bigrams_list = [(phrase, 1.0) for phrase in frequency_scores['bigrams'].keys()]
+    trigrams_list = [(phrase, 1.0) for phrase in frequency_scores['trigrams'].keys()]
+    
+    # Apply advanced filtering
+    filtered_unigrams = advanced_analyzer.filter_and_deduplicate_keywords(unigrams_list, max_results=50)
+    filtered_bigrams = advanced_analyzer.filter_and_deduplicate_keywords(bigrams_list, max_results=30) 
+    filtered_trigrams = advanced_analyzer.filter_and_deduplicate_keywords(trigrams_list, max_results=20)
+    
+    # Convert back to frequency dict format
+    frequency_scores['unigrams'] = {phrase: frequency_scores['unigrams'][phrase] for phrase, _ in filtered_unigrams if phrase in frequency_scores['unigrams']}
+    frequency_scores['bigrams'] = {phrase: frequency_scores['bigrams'][phrase] for phrase, _ in filtered_bigrams if phrase in frequency_scores['bigrams']}
+    frequency_scores['trigrams'] = {phrase: frequency_scores['trigrams'][phrase] for phrase, _ in filtered_trigrams if phrase in frequency_scores['trigrams']}
+    
+    print(f"After advanced filtering - Unigrams: {len(frequency_scores['unigrams'])}, Bigrams: {len(frequency_scores['bigrams'])}, Trigrams: {len(frequency_scores['trigrams'])}")
     
     # Calculate TF-IDF scores
     tfidf_scores = analyzer.calculate_tfidf_scores(texts)
@@ -433,76 +466,838 @@ def fetch_news():
     """Fetch news from multiple Bengali sources"""
     articles = []
     
-    # Fetch from NewsData.io API
-    try:
-        news_api_url = os.getenv("NEWS_API_URL")
-        if news_api_url:
-            response = requests.get(news_api_url, timeout=30)
-            if response.status_code == 200:
-                data = response.json()
-                api_articles = data.get("results", [])
-                for article in api_articles:
-                    articles.append({
-                        'title': article.get('title', ''),
-                        'description': article.get('description', ''),
-                        'url': article.get('link', ''),
-                        'published_date': datetime.now().date(),
-                        'source': 'newsdata_api'
-                    })
-                print(f"Fetched {len(api_articles)} articles from NewsData API")
-    except Exception as e:
-        print(f"Error fetching from NewsData API: {e}")
-    
     # Scrape Bengali news websites
     scraped_articles = scrape_bengali_news()
     articles.extend(scraped_articles)
     
     return articles
 
-def scrape_bengali_news() -> List[Dict]:
-    """Scrape Bengali news from multiple sources"""
+# List of Bangladeshi newspaper homepages for modular scraping
+BANGLA_NEWS_SITES = [
+    ("Prothom Alo", "https://www.prothomalo.com/"),
+    ("Kaler Kantho", "https://www.kalerkantho.com/"),
+    ("Jugantor", "https://www.jugantor.com/"),
+    ("Ittefaq", "https://www.ittefaq.com.bd/"),
+    ("Bangladesh Pratidin", "https://www.bd-pratidin.com/"),
+    ("Manab Zamin", "https://mzamin.com/"),
+    ("Samakal", "https://samakal.com/"),
+    ("Amader Shomoy", "https://www.dainikamadershomoy.com/"),
+    ("Janakantha", "https://www.dailyjanakantha.com/"),
+    ("Inqilab", "https://dailyinqilab.com/"),
+    ("Sangbad", "https://sangbad.net.bd/"),
+    ("Noya Diganta", "https://www.dailynayadiganta.com/"),
+    ("Jai Jai Din", "https://www.jaijaidinbd.com/"),
+    ("Manobkantha", "https://www.manobkantha.com.bd/"),
+    ("Ajkaler Khobor", "https://www.ajkalerkhobor.net/"),
+    ("Ajker Patrika", "https://www.ajkerpatrika.com/"),
+    ("Protidiner Sangbad", "https://www.protidinersangbad.com/"),
+    ("Bangladesher Khabor", "https://www.bangladesherkhabor.net/"),
+    ("Bangladesh Journal", "https://www.bd-journal.com/")
+]
+
+# Modular news scraping functions for each site (add more as needed)
+def scrape_prothom_alo():
     articles = []
-    
-    # Prothom Alo RSS
     try:
         feed_url = "https://www.prothomalo.com/feed/"
         feed = feedparser.parse(feed_url)
-        for entry in feed.entries[:10]:  # Limit to 10 articles
-            articles.append({
-                'title': entry.get('title', ''),
-                'description': entry.get('summary', ''),
-                'url': entry.get('link', ''),
-                'published_date': datetime.now().date(),
-                'source': 'prothom_alo'
-            })
-        print(f"Scraped {len(feed.entries[:10])} articles from Prothom Alo")
+        seen_urls = set()
+        for entry in feed.entries:
+            url = entry.get('link', '')
+            if not url or url in seen_urls:
+                continue
+            seen_urls.add(url)
+            try:
+                res = robust_request(url)
+                if not res:
+                    continue
+                soup = BeautifulSoup(res.text, "html.parser")
+                # Only use h1 tags for headings
+                headings = [tag.text.strip() for tag in soup.find_all('h1') if tag.text.strip()]
+                heading_text = ' '.join(headings)
+                articles.append({
+                    'title': headings[0] if headings else entry.get('title', ''),
+                    'heading': heading_text,
+                    'url': url,
+                    'published_date': datetime.now().date(),
+                    'source': 'prothom_alo'
+                })
+            except Exception as e:
+                print(f"Error scraping Prothom Alo article: {e}")
     except Exception as e:
         print(f"Error scraping Prothom Alo: {e}")
-    
-    # BD News 24 RSS
-    try:
-        feed_url = "https://bangla.bdnews24.com/rss.xml"
-        feed = feedparser.parse(feed_url)
-        for entry in feed.entries[:10]:
-            articles.append({
-                'title': entry.get('title', ''),
-                'description': entry.get('summary', ''),
-                'url': entry.get('link', ''),
-                'published_date': datetime.now().date(),
-                'source': 'bdnews24'
-            })
-        print(f"Scraped {len(feed.entries[:10])} articles from BD News 24")
-    except Exception as e:
-        print(f"Error scraping BD News 24: {e}")
-    
     return articles
+
+
+def robust_request(url, timeout=50):
+    try:
+        return requests.get(url, timeout=timeout)
+    except (Timeout, ConnectionError) as e:
+        print(f"Timeout/ConnectionError scraping {url}: {e}")
+        return None
+
+def scrape_jugantor():
+    articles = []
+    # Only use these category URLs for Jugantor
+    category_urls = [
+        "https://www.jugantor.com/national",
+        "https://www.jugantor.com/economics",
+        "https://www.jugantor.com/politics",
+        "https://www.jugantor.com/lifestyle",
+        "https://www.jugantor.com/entertainment",
+        "https://www.jugantor.com/sports",
+        "https://www.jugantor.com/islam-life",
+        "https://www.jugantor.com/job-seek",
+        "https://www.jugantor.com/campus",
+        "https://www.jugantor.com/disease",
+        "https://www.jugantor.com/tech",
+        "https://www.jugantor.com/international",
+    ]
+    import re
+    try:
+        candidate_urls = set()
+        for category_url in category_urls:
+            res = robust_request(category_url)
+            if not res:
+                continue
+            soup = BeautifulSoup(res.text, "html.parser")
+            count = 0
+            for link in soup.select("h2 a, h3 a, a[href]"):
+                if count >= 8:
+                    break
+                url = link.get('href')
+                if not url:
+                    continue
+                # Normalize URL
+                if not url.startswith('http'):
+                    url = "https://www.jugantor.com/".rstrip('/') + '/' + url.lstrip('/')
+                # Only keep URLs that end with a numeric ID (real articles)
+                if re.search(r'/[0-9]{4,}$', url):
+                    if url not in candidate_urls:
+                        candidate_urls.add(url)
+                        count += 1
+        # Deduplicate and scrape articles
+        for url in candidate_urls:
+            article_res = robust_request(url)
+            if not article_res:
+                continue
+            try:
+                article_soup = BeautifulSoup(article_res.text, "html.parser")
+                # Only use h1 tags for headings, remove duplicates
+                headings = []
+                seen = set()
+                for tag in article_soup.find_all('h1'):
+                    text = tag.text.strip()
+                    if text and text not in seen:
+                        headings.append(text)
+                        seen.add(text)
+                heading_text = ' '.join(headings)
+                print(f"[scrape_jugantor] url: {url}\n  headings: {headings}")
+                articles.append({
+                    "title": headings[0] if headings else "",
+                    "heading": heading_text,
+                    "url": url,
+                    "published_date": datetime.now().date(),
+                    "source": "jugantor"
+                })
+            except Exception as e:
+                print(f"Error scraping Jugantor article: {e}")
+    except Exception as e:
+        print(f"Error scraping Jugantor category pages: {e}")
+    return articles
+
+def scrape_kaler_kantho():
+    articles = []
+    try:
+        homepage = "https://www.kalerkantho.com/"
+        res = robust_request(homepage)
+        if not res:
+            return articles
+        soup = BeautifulSoup(res.text, "html.parser")
+        seen_urls = set()
+        for link in soup.select("a[href*='/online/']"):
+            url = link.get('href')
+            if url and not url.startswith('http'):
+                url = homepage.rstrip('/') + '/' + url.lstrip('/')
+            if not url or url in seen_urls:
+                continue
+            seen_urls.add(url)
+            article_res = robust_request(url)
+            if not article_res:
+                continue
+            try:
+                article_soup = BeautifulSoup(article_res.text, "html.parser")
+                # Only use h1 tags for headings
+                headings = [tag.text.strip() for tag in article_soup.find_all('h1') if tag.text.strip()]
+                heading_text = ' '.join(headings)
+                print(f"[scrape_kaler_kantho] url: {url}\n  headings: {headings}")
+                articles.append({
+                    "title": headings[0] if headings else "",
+                    "heading": heading_text,
+                    "url": url,
+                    "published_date": datetime.now().date(),
+                    "source": "kaler_kantho"
+                })
+            except Exception as e:
+                print(f"Error scraping Kaler Kantho article: {e}")
+    except Exception as e:
+        print(f"Error scraping Kaler Kantho homepage: {e}")
+    return articles
+
+def scrape_ittefaq():
+    articles = []
+    try:
+        homepage = "https://www.ittefaq.com.bd/"
+        res = robust_request(homepage)
+        if not res:
+            return articles
+        soup = BeautifulSoup(res.text, "html.parser")
+        seen_urls = set()
+        for link in soup.select(".lead-news a, .main-news a, .title a"):
+            url = link.get('href')
+            if url and not url.startswith('http'):
+                url = homepage.rstrip('/') + '/' + url.lstrip('/')
+            if not url or url in seen_urls:
+                continue
+            seen_urls.add(url)
+            article_res = robust_request(url)
+            if not article_res:
+                continue
+            try:
+                article_soup = BeautifulSoup(article_res.text, "html.parser")
+                # Only use h1 tags for headings
+                headings = [tag.text.strip() for tag in article_soup.find_all('h1') if tag.text.strip()]
+                heading_text = ' '.join(headings)
+                print(f"[scrape_ittefaq] url: {url}\n  headings: {headings}")
+                articles.append({
+                    "title": headings[0] if headings else "",
+                    "heading": heading_text,
+                    "url": url,
+                    "published_date": datetime.now().date(),
+                    "source": "ittefaq"
+                })
+            except Exception as e:
+                print(f"Error scraping Ittefaq article: {e}")
+    except Exception as e:
+        print(f"Error scraping Ittefaq homepage: {e}")
+    return articles
+
+def scrape_bd_pratidin():
+    articles = []
+    try:
+        homepage = "https://www.bd-pratidin.com/"
+        res = robust_request(homepage)
+        if not res:
+            return articles
+        soup = BeautifulSoup(res.text, "html.parser")
+        seen_urls = set()
+        for link in soup.select(".lead-news a, .main-news a, .title a"):
+            url = link.get('href')
+            if url and not url.startswith('http'):
+                url = homepage.rstrip('/') + '/' + url.lstrip('/')
+            if not url or url in seen_urls:
+                continue
+            seen_urls.add(url)
+            article_res = robust_request(url)
+            if not article_res:
+                continue
+            try:
+                article_soup = BeautifulSoup(article_res.text, "html.parser")
+                # Only use h1 tags for headings
+                headings = [tag.text.strip() for tag in article_soup.find_all('h1') if tag.text.strip()]
+                heading_text = ' '.join(headings)
+                print(f"[scrape_bd_pratidin] url: {url}\n  headings: {headings}")
+                articles.append({
+                    "title": headings[0] if headings else "",
+                    "heading": heading_text,
+                    "url": url,
+                    "published_date": datetime.now().date(),
+                    "source": "bd_pratidin"
+                })
+            except Exception as e:
+                print(f"Error scraping BD Pratidin article: {e}")
+    except Exception as e:
+        print(f"Error scraping BD Pratidin homepage: {e}")
+    return articles
+
+def scrape_manab_zamin():
+    articles = []
+    try:
+        homepage = "https://mzamin.com/"
+        res = robust_request(homepage)
+        if not res:
+            return articles
+        soup = BeautifulSoup(res.text, "html.parser")
+        seen_urls = set()
+        for link in soup.select("h3 a, h2 a"):
+            url = link.get('href')
+            if url and not url.startswith('http'):
+                url = homepage.rstrip('/') + '/' + url.lstrip('/')
+            if not url or url in seen_urls:
+                continue
+            seen_urls.add(url)
+            article_res = robust_request(url)
+            if not article_res:
+                continue
+            try:
+                article_soup = BeautifulSoup(article_res.text, "html.parser")
+                # Only use h1 tags for headings
+                headings = [tag.text.strip() for tag in article_soup.find_all('h1') if tag.text.strip()]
+                heading_text = ' '.join(headings)
+                print(f"[scrape_manab_zamin] url: {url}\n  headings: {headings}")
+                articles.append({
+                    "title": headings[0] if headings else "",
+                    "heading": heading_text,
+                    "url": url,
+                    "published_date": datetime.now().date(),
+                    "source": "manab_zamin"
+                })
+            except Exception as e:
+                print(f"Error scraping Manab Zamin article: {e}")
+    except Exception as e:
+        print(f"Error scraping Manab Zamin homepage: {e}")
+    return articles
+
+def scrape_samakal():
+    articles = []
+    try:
+        homepage = "https://samakal.com/"
+        res = robust_request(homepage)
+        if not res:
+            return articles
+        soup = BeautifulSoup(res.text, "html.parser")
+        seen_urls = set()
+        for link in soup.select("a[href*='samakal.com/']"):
+            url = link.get('href')
+            if url and not url.startswith('http'):
+                url = homepage.rstrip('/') + '/' + url.lstrip('/')
+            if not url or url in seen_urls:
+                continue
+            seen_urls.add(url)
+            article_res = robust_request(url)
+            if not article_res:
+                continue
+            try:
+                article_soup = BeautifulSoup(article_res.text, "html.parser")
+                # Only use h1 tags for headings
+                headings = [tag.text.strip() for tag in article_soup.find_all('h1') if tag.text.strip()]
+                heading_text = ' '.join(headings)
+                print(f"[scrape_samakal] url: {url}\n  headings: {headings}")
+                articles.append({
+                    "title": headings[0] if headings else "",
+                    "heading": heading_text,
+                    "url": url,
+                    "published_date": datetime.now().date(),
+                    "source": "samakal"
+                })
+            except Exception as e:
+                print(f"Error scraping Samakal article: {e}")
+    except Exception as e:
+        print(f"Error scraping Samakal homepage: {e}")
+    return articles
+
+def scrape_amader_shomoy():
+    articles = []
+    try:
+        homepage = "https://www.dainikamadershomoy.com/"
+        res = robust_request(homepage)
+        if not res:
+            return articles
+        soup = BeautifulSoup(res.text, "html.parser")
+        for link in soup.select("h2 a, h3 a, a[href*='/news/']"):
+            url = link.get('href')
+            if url and not url.startswith('http'):
+                url = homepage.rstrip('/') + '/' + url.lstrip('/')
+            article_res = robust_request(url)
+            if not article_res:
+                continue
+            try:
+                article_soup = BeautifulSoup(article_res.text, "html.parser")
+                # Only use h1 tags for headings
+                headings = [tag.text.strip() for tag in article_soup.find_all('h1') if tag.text.strip()]
+                heading_text = ' '.join(headings)
+                print(f"[scrape_amader_shomoy] url: {url}\n  headings: {headings}")
+                articles.append({
+                    "title": headings[0] if headings else "",
+                    "heading": heading_text,
+                    "url": url,
+                    "published_date": datetime.now().date(),
+                    "source": "amader_shomoy"
+                })
+            except Exception as e:
+                print(f"Error scraping Amader Shomoy article: {e}")
+    except Exception as e:
+        print(f"Error scraping Amader Shomoy homepage: {e}")
+    return articles
+
+def scrape_janakantha():
+    articles = []
+    try:
+        homepage = "https://www.dailyjanakantha.com/"
+        res = robust_request(homepage)
+        if not res:
+            return articles
+        soup = BeautifulSoup(res.text, "html.parser")
+        for link in soup.select("a[href*='/news/']"):
+            url = link.get('href')
+            if url and not url.startswith('http'):
+                url = homepage.rstrip('/') + '/' + url.lstrip('/')
+            article_res = robust_request(url)
+            if not article_res:
+                continue
+            try:
+                article_soup = BeautifulSoup(article_res.text, "html.parser")
+                # Only use h1 tags for headings
+                headings = [tag.text.strip() for tag in article_soup.find_all('h1') if tag.text.strip()]
+                heading_text = ' '.join(headings)
+                print(f"[scrape_janakantha] url: {url}\n  headings: {headings}")
+                articles.append({
+                    "title": headings[0] if headings else "",
+                    "heading": heading_text,
+                    "url": url,
+                    "published_date": datetime.now().date(),
+                    "source": "janakantha"
+                })
+            except Exception as e:
+                print(f"Error scraping Janakantha article: {e}")
+    except Exception as e:
+        print(f"Error scraping Janakantha homepage: {e}")
+    return articles
+
+def scrape_inqilab():
+    articles = []
+    try:
+        homepage = "https://dailyinqilab.com/"
+        res = robust_request(homepage)
+        if not res:
+            return articles
+        soup = BeautifulSoup(res.text, "html.parser")
+        seen_urls = set()
+        for link in soup.select("h2 a, h3 a, a[href*='/news/']"):
+            url = link.get('href')
+            if url and not url.startswith('http'):
+                url = homepage.rstrip('/') + '/' + url.lstrip('/')
+            if not url or url in seen_urls:
+                continue
+            seen_urls.add(url)
+            article_res = robust_request(url)
+            if not article_res:
+                continue
+            try:
+                article_soup = BeautifulSoup(article_res.text, "html.parser")
+                headings = [tag.text.strip() for tag in article_soup.find_all(['h1', 'h2']) if tag.text.strip()]
+                heading_text = ' '.join(headings)
+                print(f"[scrape_inqilab] url: {url}\n  headings: {headings}")
+                articles.append({
+                    "title": headings[0] if headings else "",
+                    "heading": heading_text,
+                    "url": url,
+                    "published_date": datetime.now().date(),
+                    "source": "inqilab"
+                })
+            except Exception as e:
+                print(f"Error scraping Inqilab article: {e}")
+    except Exception as e:
+        print(f"Error scraping Inqilab homepage: {e}")
+    return articles
+
+def scrape_sangbad():
+    articles = []
+    section_urls = [
+        "https://sangbad.net.bd/news/national/",
+        "https://sangbad.net.bd/news/bangladesh/",
+        "https://sangbad.net.bd/news/sports/",
+        "https://sangbad.net.bd/news/entertainment/",
+        "https://sangbad.net.bd/news/it/",
+        "https://sangbad.net.bd/news/education/",
+        "https://sangbad.net.bd/news/politics/",
+        "https://sangbad.net.bd/news/campus/",
+        "https://sangbad.net.bd/opinion/open-discussion/",
+        "https://sangbad.net.bd/news/international/",
+        
+    ]
+    seen_urls = set()
+    for section_url in section_urls:
+        res = robust_request(section_url)
+        if not res:
+            print(f"[scrape_sangbad] Failed to fetch section: {section_url}")
+            continue
+        soup = BeautifulSoup(res.text, "html.parser")
+        section_candidate_urls = set()
+        for link in soup.select("a[href*='/news/']"):
+            url = link.get('href')
+            if url and not url.startswith('http'):
+                url = "https://sangbad.net.bd" + url
+            if url and url not in seen_urls and '/news/' in url:
+                section_candidate_urls.add(url)
+                seen_urls.add(url)
+            if len(section_candidate_urls) >= 15:
+                break
+        print(f"[scrape_sangbad] {section_url} -> {len(section_candidate_urls)} candidate article URLs for this section.")
+        for url in list(section_candidate_urls):
+            article_res = robust_request(url)
+            if not article_res:
+                continue
+            try:
+                article_soup = BeautifulSoup(article_res.text, "html.parser")
+                heading_tag = article_soup.find('h2')
+                heading = heading_tag.text.strip() if heading_tag and heading_tag.text.strip() else ""
+                print(f"[scrape_sangbad] url: {url}\n  heading: {heading}")
+                articles.append({
+                    "title": heading,
+                    "heading": heading,
+                    "url": url,
+                    "published_date": datetime.now().date().isoformat(),
+                    "source": "sangbad"
+                })
+            except Exception as e:
+                print(f"Error scraping Sangbad article: {e}")
+    print(f"[scrape_sangbad] Scraped {len(articles)} articles.")
+    return articles
+
+def scrape_noya_diganta():
+    articles = []
+    try:
+        homepage = "https://www.dailynayadiganta.com/"
+        res = robust_request(homepage)
+        if not res:
+            return articles
+        soup = BeautifulSoup(res.text, "html.parser")
+        seen_urls = set()
+        for link in soup.select("h2 a, h3 a, a[href*='/news/']"):
+            url = link.get('href')
+            if url and not url.startswith('http'):
+                url = homepage.rstrip('/') + '/' + url.lstrip('/')
+            article_res = robust_request(url)
+            if not article_res:
+                continue
+            try:
+                article_soup = BeautifulSoup(article_res.text, "html.parser")
+                # Only use h1 tags for headings
+                headings = [tag.text.strip() for tag in article_soup.find_all('h1') if tag.text.strip()]
+                heading_text = ' '.join(headings)
+                print(f"[scrape_noya_diganta] url: {url}\n  headings: {headings}")
+                articles.append({
+                    "title": headings[0] if headings else "",
+                    "heading": heading_text,
+                    "url": url,
+                    "published_date": datetime.now().date(),
+                    "source": "noya_diganta"
+                })
+            except Exception as e:
+                print(f"Error scraping Noya Diganta article: {e}")
+    except Exception as e:
+        print(f"Error scraping Noya Diganta homepage: {e}")
+    return articles
+
+def scrape_jai_jai_din():
+    articles = []
+    try:
+        homepage = "https://www.jaijaidinbd.com/"
+        res = robust_request(homepage)
+        if not res:
+            return articles
+        soup = BeautifulSoup(res.text, "html.parser")
+        for link in soup.select("h2 a, h3 a, a[href*='/news/'], a[href*='/details/']"):
+            url = link.get('href')
+            if url and not url.startswith('http'):
+                url = homepage.rstrip('/') + '/' + url.lstrip('/')
+            article_res = robust_request(url)
+            if not article_res:
+                continue
+            try:
+                article_soup = BeautifulSoup(article_res.text, "html.parser")
+                # Only use h1 tags for headings
+                headings = [tag.text.strip() for tag in article_soup.find_all(['h1','h2']) if tag.text.strip()]
+                heading_text = ' '.join(headings)
+                articles.append({
+                    "title": headings[0] if headings else "",
+                    "heading": heading_text,
+                    "url": url,
+                    "published_date": datetime.now().date(),
+                    "source": "jai_jai_din"
+                })
+            except Exception as e:
+                print(f"Error scraping Jai Jai Din article: {e}")
+    except Exception as e:
+        print(f"Error scraping Jai Jai Din homepage: {e}")
+    return articles
+
+def scrape_manobkantha():
+    articles = []
+    try:
+        homepage = "https://www.manobkantha.com.bd/"
+        res = robust_request(homepage)
+        if not res:
+            return articles
+        soup = BeautifulSoup(res.text, "html.parser")
+        seen_urls = set()
+        for link in soup.select("h2 a, h3 a, a[href*='/news/'], a[href*='/details/']"):
+            url = link.get('href')
+            if url and not url.startswith('http'):
+                url = homepage.rstrip('/') + '/' + url.lstrip('/')
+            # Deduplicate by URL before scraping
+            if not url or url in seen_urls:
+                continue
+            seen_urls.add(url)
+            article_res = robust_request(url)
+            if not article_res:
+                continue
+            try:
+                article_soup = BeautifulSoup(article_res.text, "html.parser")
+                # Only use h1 and h2 tags for headings
+                headings = [tag.text.strip() for tag in article_soup.find_all('h1') if tag.text.strip()]
+                heading_text = ' '.join(headings)
+                print(f"[scrape_manobkantha] url: {url}\n  headings: {headings}")
+                articles.append({
+                    "title": headings[0] if headings else "",
+                    "heading": heading_text,
+                    "url": url,
+                    "published_date": datetime.now().date(),
+                    "source": "manobkantha"
+                })
+            except Exception as e:
+                print(f"Error scraping Manobkantha article: {e}")
+    except Exception as e:
+        print(f"Error scraping Manobkantha homepage: {e}")
+    return articles
+
+def scrape_ajkaler_khobor():
+    articles = []
+    try:
+        homepage = "https://www.ajkalerkhobor.net/"
+        res = robust_request(homepage)
+        if not res:
+            return articles
+        soup = BeautifulSoup(res.text, "html.parser")
+        for link in soup.select(".lead-news a, .main-news a, .title a"):
+            url = link.get('href')
+            if url and not url.startswith('http'):
+                url = homepage.rstrip('/') + '/' + url.lstrip('/')
+            article_res = robust_request(url)
+            if not article_res:
+                continue
+            try:
+                article_soup = BeautifulSoup(article_res.text, "html.parser")
+                # Only use h1 tags for headings
+                headings = [tag.text.strip() for tag in article_soup.find_all('h1') if tag.text.strip()]
+                heading_text = ' '.join(headings)
+                print(f"[scrape_ajkaler_khobor] url: {url}\n  headings: {headings}")
+                articles.append({
+                    "title": headings[0] if headings else "",
+                    "heading": heading_text,
+                    "url": url,
+                    "published_date": datetime.now().date(),
+                    "source": "ajkaler_khobor"
+                })
+            except Exception as e:
+                print(f"Error scraping Ajkaler Khobor article: {e}")
+    except Exception as e:
+        print(f"Error scraping Ajkaler Khobor homepage: {e}")
+    return articles
+
+def scrape_ajker_patrika():
+    articles = []
+    try:
+        homepage = "https://www.ajkerpatrika.com/"
+        res = robust_request(homepage)
+        if not res:
+            return articles
+        soup = BeautifulSoup(res.text, "html.parser")
+        seen_urls = set()
+        for link in soup.select("h2 a, h3 a, a[href*='/news/'], a[href*='/details/']"):
+            url = link.get('href')
+            if url and not url.startswith('http'):
+                url = homepage.rstrip('/') + '/' + url.lstrip('/')
+            # Deduplicate by URL before scraping
+            if not url or url in seen_urls:
+                continue
+            seen_urls.add(url)
+            article_res = robust_request(url)
+            if not article_res:
+                continue
+            try:
+                article_soup = BeautifulSoup(article_res.text, "html.parser")
+                # Only use h1 tags for headings
+                headings = [tag.text.strip() for tag in article_soup.find_all('h1') if tag.text.strip()]
+                heading_text = ' '.join(headings)
+                print(f"[scrape_ajker_patrika] url: {url}\n  headings: {headings}")
+                articles.append({
+                    "title": headings[0] if headings else "",
+                    "heading": heading_text,
+                    "url": url,
+                    "published_date": datetime.now().date(),
+                    "source": "ajker_patrika"
+                })
+            except Exception as e:
+                print(f"Error scraping Ajker Patrika article: {e}")
+    except Exception as e:
+        print(f"Error scraping Ajker Patrika homepage: {e}")
+    return articles
+
+def scrape_protidiner_sangbad():
+    articles = []
+    try:
+        homepage = "https://www.protidinersangbad.com/"
+        res = robust_request(homepage)
+        if not res:
+            return articles
+        soup = BeautifulSoup(res.text, "html.parser")
+        seen_urls = set()
+        for link in soup.select(".lead-news a, .main-news a, .title a"):
+            url = link.get('href')
+            if url and not url.startswith('http'):
+                url = homepage.rstrip('/') + '/' + url.lstrip('/')
+            if not url or url in seen_urls:
+                continue
+            seen_urls.add(url)
+            article_res = robust_request(url)
+            if not article_res:
+                continue
+            try:
+                article_soup = BeautifulSoup(article_res.text, "html.parser")
+                # Only use h1 tags for headings
+                headings = [tag.text.strip() for tag in article_soup.find_all(['h1','h2']) if tag.text.strip()]
+                heading_text = ' '.join(headings)
+                print(f"[scrape_protidiner_sangbad] url: {url}\n  headings: {headings}")
+                articles.append({
+                    "title": headings[0] if headings else "",
+                    "heading": heading_text,
+                    "url": url,
+                    "published_date": datetime.now().date(),
+                    "source": "protidiner_sangbad"
+                })
+            except Exception as e:
+                print(f"Error scraping Protidiner Sangbad article: {e}")
+    except Exception as e:
+        print(f"Error scraping Protidiner Sangbad homepage: {e}")
+    return articles
+
+def scrape_bangladesher_khabor():
+    articles = []
+    try:
+        homepage = "https://www.bangladesherkhabor.net/"
+        res = robust_request(homepage)
+        if not res:
+            return articles
+        soup = BeautifulSoup(res.text, "html.parser")
+        for link in soup.select("h2 a, h3 a, a[href*='/news/'], a[href*='/details/']"):
+            url = link.get('href')
+            if url and not url.startswith('http'):
+                url = homepage.rstrip('/') + '/' + url.lstrip('/')
+            article_res = robust_request(url)
+            if not article_res:
+                continue
+            try:
+                article_soup = BeautifulSoup(article_res.text, "html.parser")
+                # Only use h1 tags for headings
+                headings = [tag.text.strip() for tag in article_soup.find_all('h1') if tag.text.strip()]
+                heading_text = ' '.join(headings)
+                articles.append({
+                    "title": headings[0] if headings else "",
+                    "heading": heading_text,
+                    "url": url,
+                    "published_date": datetime.now().date(),
+                    "source": "bangladesher_khabor"
+                })
+            except Exception as e:
+                print(f"Error scraping Bangladesher Khabor article: {e}")
+    except Exception as e:
+        print(f"Error scraping Bangladesher Khabor homepage: {e}")
+    return articles
+
+def scrape_bangladesh_journal():
+    articles = []
+    try:
+        homepage = "https://www.bd-journal.com/"
+        res = robust_request(homepage)
+        if not res:
+            return articles
+        soup = BeautifulSoup(res.text, "html.parser")
+        for link in soup.select("h2 a, h3 a, a[href*='/news/'], a[href*='/details/']"):
+            url = link.get('href')
+            if url and not url.startswith('http'):
+                url = homepage.rstrip('/') + '/' + url.lstrip('/')
+            article_res = robust_request(url)
+            if not article_res:
+                continue
+            try:
+                article_soup = BeautifulSoup(article_res.text, "html.parser")
+                # Only use h1 tags for headings
+                headings = [tag.text.strip() for tag in article_soup.find_all('h1') if tag.text.strip()]
+                heading_text = ' '.join(headings)
+                articles.append({
+                    "title": headings[0] if headings else "",
+                    "heading": heading_text,
+                    "url": url,
+                    "published_date": datetime.now().date(),
+                    "source": "bangladesh_journal"
+                })
+            except Exception as e:
+                print(f"Error scraping Bangladesh Journal article: {e}")
+    except Exception as e:
+        print(f"Error scraping Bangladesh Journal homepage: {e}")
+    return articles
+
+# Update scrape_bengali_news to call all scrapers
+def scrape_bengali_news() -> List[Dict]:
+    """Scrape Bengali news from multiple sources (modular, only user-supplied sites)"""
+    articles = []
+    source_counts = {}
+    all_sources = [
+        ("prothom_alo", scrape_prothom_alo),
+        ("kaler_kantho", scrape_kaler_kantho),
+        ("jugantor", scrape_jugantor),
+            # ("ittefaq", scrape_ittefaq),
+            # ("bd_pratidin", scrape_bd_pratidin),
+            # ("manab_zamin", scrape_manab_zamin),
+        ("samakal", scrape_samakal),
+        # ("amader_shomoy", scrape_amader_shomoy),
+        ("janakantha", scrape_janakantha),
+        ("inqilab", scrape_inqilab),
+        ("sangbad", scrape_sangbad),
+        ("noya_diganta", scrape_noya_diganta),
+        # ("jai_jai_din", scrape_jai_jai_dিন),
+        ("manobkantha", scrape_manobkantha),
+            # ("ajkaler_khobor", scrape_ajkaler_khobor),
+        ("ajker_patrika", scrape_ajker_patrika),
+        ("protidiner_sangbad", scrape_protidiner_sangbad),
+        # ("bangladesher_khabor", scrape_bangladesher_khabor),
+        # ("bangladesh_journal", scrape_bangladesh_journal)
+    ]
+    print("\n[Scraping: Starting all newspaper scrapers]")
+    for source, func in all_sources:
+        print(f" Calling {func.__name__}() for {source}...")
+        src_articles = func()
+        print(f" {func.__name__}() returned {len(src_articles)} articles.")
+        if src_articles:
+            for art in src_articles[:3]:
+                print(f"    url: {art.get('url', '')} | heading: {art.get('heading', '')[:60]}")
+        source_counts[source] = len(src_articles)
+        articles.extend(src_articles)
+    # Deduplicate by URL
+    seen_urls = set()
+    deduped_articles = []
+    for art in articles:
+        url = art.get('url')
+        if url and url not in seen_urls:
+            deduped_articles.append(art)
+            seen_urls.add(url)
+    print("\n[Scraping Summary]")
+    for source, count in source_counts.items():
+        print(f"  {source}: {count} articles scraped")
+    print(f"  Total (after deduplication): {len(deduped_articles)} unique articles")
+    return deduped_articles
 
 def store_news(db: Session, articles: List[Dict]):
     """Store news articles in database"""
     for article_data in articles:
+        # Use heading as description if description is not available
+        description = article_data.get('description') or article_data.get('heading') or ''
+        
         article = Article(
             title=article_data.get('title', ''),
-            description=article_data.get('description') or '',  # Ensure not None
+            description=description,  # Use heading if description is not available
             url=article_data.get('url', ''),
             published_date=article_data.get('published_date'),
             source=article_data.get('source', 'unknown')
@@ -513,14 +1308,14 @@ def store_news(db: Session, articles: List[Dict]):
     print(f"Stored {len(articles)} articles in database")
 
 def fetch_social_media_posts():
-    """Fetch social media posts from various Bengali platforms"""
-    try:
-        posts = scrape_social_media_content()
-        print(f"Fetched {len(posts)} social media posts")
-        return posts
-    except Exception as e:
-        print(f"Error fetching social media posts: {e}")
-        return []
+    # try:
+    #     posts = scrape_social_media_content()
+    #     print(f"Fetched {len(posts)} social media posts")
+    #     return posts
+    # except Exception as e:
+    #     print(f"Error fetching social media posts: {e}")
+    #     return []
+    return []
 
 def parse_news(articles: List[Dict]) -> str:
     """Parse articles into combined text"""
@@ -532,45 +1327,111 @@ def parse_news(articles: List[Dict]) -> str:
     
     return "\n".join(combined_texts)
 
-def generate_trending_word_candidates(db: Session, limit: int = 10) -> str:
-    """Generate trending word candidates using Groq AI"""
-    # Get recent articles
-    articles = fetch_news()
-    if not articles:
-        return "No articles available for analysis"
-    
-    # Parse articles
-    combined_text = parse_news(articles)
-    
-    # Use Groq for intelligent word extraction
-    try:
-        client = Groq(api_key=os.environ.get("GROQ_API_KEY"))
-        
-        prompt = f"""
-নিচের বাংলা সংবাদের টেক্সট থেকে আজকের জন্য সবচেয়ে গুরুত্বপূর্ণ এবং trending {limit}টি শব্দ বা বাক্যাংশ খুঁজে বের করো।
+# --- STUB: optimize_text_for_ai_analysis_with_categories ---
+def optimize_text_for_ai_analysis_with_categories(articles_with_metadata, analyzer, max_chars=12000, max_articles=150, enable_categories=True):
+    """
+    Use all available newspaper article headings/titles for category-wise LLM analysis, with NO truncation or article limit.
+    This implementation ignores max_chars and max_articles for newspaper content.
+    Only uses 'heading' or 'title' fields, never 'content'.
+    """
+    combined_texts = []
+    for article in articles_with_metadata:
+        # Use heading if available, else title
+        text = article.get('heading') or article.get('title')
+        if text:
+            combined_texts.append(text.strip())
+    return "\n".join(combined_texts)
 
-নিয়মাবলী:
-1. শব্দগুলি অবশ্যই অর্থপূর্ণ এবং গুরুত্বপূর্ণ হতে হবে
-2. সাধারণ stop words (যেমন: এই, সেই, করা, হওয়া) এড়িয়ে চলো
-3. ব্যক্তির নাম, স্থানের নাম, সংস্থার নাম অন্তর্ভুক্ত করতে পারো
-4. একক শব্দ বা ছোট বাক্যাংশ (২-৩ শব্দ) উভয়ই গ্রহণযোগ্য
-5. প্রতিটি শব্দ/বাক্যাংশ আলাদা লাইনে লেখো
-6. শুধুমাত্র বাংলা শব্দ/বাক্যাংশ দাও, অন্য কিছু নয়
+# --- STUB: process_mixed_content_for_llm ---
+def process_mixed_content_for_llm(articles_with_metadata, social_media_content, analyzer, max_chars=12000):
+    """Stub for process_mixed_content_for_llm. Implement as needed."""
+    raise NotImplementedError("process_mixed_content_for_llm is not yet implemented. Please implement this function.")
 
-টেক্সট:
-{combined_text}
+# --- STUB: optimize_text_for_ai_analysis ---
+def optimize_text_for_ai_analysis(all_texts, analyzer, max_chars=12000, max_articles=150):
+    """Stub for optimize_text_for_ai_analysis. Implement as needed."""
+    raise NotImplementedError("optimize_text_for_ai_analysis is not yet implemented. Please implement this function.")
 
-trending শব্দ/বাক্যাংশ ({limit}টি):
-"""
-        
-        response = client.chat.completions.create(
-            messages=[{"role": "user", "content": prompt}],
-            model="llama-3.3-70b-versatile",
-            stream=False,
-        )
-        
-        return response.choices[0].message.content
-        
-    except Exception as e:
-        print(f"Error generating trending words with Groq: {e}")
-        return "Error generating trending words"
+# --- STUB: create_mixed_content_llm_prompt ---
+def create_mixed_content_llm_prompt(combined_text, limit):
+    """Stub for create_mixed_content_llm_prompt. Implement as needed."""
+    raise NotImplementedError("create_mixed_content_llm_prompt is not yet implemented. Please implement this function.")
+
+# --- IMPLEMENTATION: analyze_trending_content_and_store ---
+def analyze_trending_content_and_store(db: Session, analyzer, content: list, source: str, target_date: date):
+    """
+    Analyze a list of articles/posts for trending words/phrases and store results in the TrendingPhrase table.
+    - db: SQLAlchemy session
+    - analyzer: TrendingAnalyzer or compatible
+    - content: list of dicts (articles or posts)
+    - source: 'news' or 'social_media'
+    - target_date: date for which to store results
+    """
+    # Prepare text data (use heading or title)
+    texts = []
+    for item in content:
+        if item.get('heading'):
+            texts.append(item['heading'])
+        elif item.get('title'):
+            texts.append(item['title'])
+    if not texts:
+        return
+    # Calculate frequency scores
+    frequency_scores = analyzer.calculate_frequency_scores(texts)
+    # Apply quality filtering
+    frequency_scores['unigrams'] = analyzer.filter_quality_phrases(frequency_scores['unigrams'])
+    frequency_scores['bigrams'] = analyzer.filter_quality_phrases(frequency_scores['bigrams'])
+    frequency_scores['trigrams'] = analyzer.filter_quality_phrases(frequency_scores['trigrams'])
+    # Calculate TF-IDF scores
+    tfidf_scores = analyzer.calculate_tfidf_scores(texts)
+    # Set weights
+    source_weight = 1.0 if source == 'news' else 0.8
+    recency_weight = 1.0
+    # Store unigrams
+    for phrase, freq in frequency_scores['unigrams'].items():
+        if len(phrase) > 2 and freq >= 2:
+            tfidf_score = tfidf_scores.get(phrase, 0.0)
+            trend_score = analyzer.calculate_trend_score(
+                phrase, freq, tfidf_score, recency_weight, source_weight
+            )
+            trending_phrase = TrendingPhrase(
+                date=target_date,
+                phrase=phrase,
+                score=trend_score,
+                frequency=freq,
+                phrase_type='unigram',
+                source=source
+            )
+            db.add(trending_phrase)
+    # Store bigrams
+    for phrase, freq in frequency_scores['bigrams'].items():
+        if freq >= 2:
+            tfidf_score = tfidf_scores.get(phrase, 0.0)
+            trend_score = analyzer.calculate_trend_score(
+                phrase, freq, tfidf_score, recency_weight, source_weight
+            )
+            trending_phrase = TrendingPhrase(
+                date=target_date,
+                phrase=phrase,
+                score=trend_score,
+                frequency=freq,
+                phrase_type='bigram',
+                source=source
+            )
+            db.add(trending_phrase)
+    # Store trigrams
+    for phrase, freq in frequency_scores['trigrams'].items():
+        if freq >= 2:
+            tfidf_score = tfidf_scores.get(phrase, 0.0)
+            trend_score = analyzer.calculate_trend_score(
+                phrase, freq, tfidf_score, recency_weight, source_weight
+            )
+            trending_phrase = TrendingPhrase(
+                date=target_date,
+                phrase=phrase,
+                score=trend_score,
+                frequency=freq,
+                phrase_type='trigram',
+                source=source
+            )
+            db.add(trending_phrase)

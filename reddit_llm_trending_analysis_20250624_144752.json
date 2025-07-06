@@ -1,0 +1,27 @@
+{
+  "timestamp": "2025-06-24T14:47:52.665971",
+  "reddit_posts_analyzed": 96,
+  "llm_model": "llama-3.3-70b-versatile",
+  "llm_response_raw": "Reddit ট্রেন্ডিং শব্দ/বাক্যাংশ (৮টি):\n১. ভবিষ্যৎ অনিশ্চয়তা\n২. দেশত্যাগের ইচ্ছা\n৩. শিক্ষার চাহিদা\n৪. কর্মসংস্থানের সমস্যা\n৫. নিরাপত্তাহীনতা\n৬. সামাজিক অবস্থা\n৭. প্রযুক্তিগত উন্নয়ন\n৮. জীবনধারা ও সংস্কৃতি",
+  "extracted_trending_words": [
+    "Reddit ট্রেন্ডিং শব্দ/বাক্যাংশ (৮টি):",
+    "ভবিষ্যৎ অনিশ্চয়তা",
+    "দেশত্যাগের ইচ্ছা",
+    "শিক্ষার চাহিদা",
+    "কর্মসংস্থানের সমস্যা",
+    "নিরাপত্তাহীনতা",
+    "সামাজিক অবস্থা",
+    "প্রযুক্তিগত উন্নয়ন",
+    "জীবনধারা ও সংস্কৃতি"
+  ],
+  "analysis_summary": {
+    "total_trending_words": 9,
+    "analysis_type": "Reddit Social Media Trending Analysis (Mixed Language Input, Bengali Output)",
+    "language": "Bengali",
+    "input_languages": [
+      "English",
+      "Banglish",
+      "Bengali"
+    ]
+  }
+}

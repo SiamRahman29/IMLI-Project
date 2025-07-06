@@ -5,8 +5,10 @@ from datetime import date
 class TrendingWordsResponse(BaseModel):
     date: str
     words: str
+    selected_words: Optional[List[Dict[str, str]]] = None  # Array of {word, category, originalText}
 
 class TrendingPhraseResponse(BaseModel):
+    id: int
     date: str
     phrase: str
     score: float

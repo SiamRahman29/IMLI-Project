@@ -14,110 +14,13 @@ from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.cluster import KMeans
 from sklearn.metrics.pairwise import cosine_similarity
 import nltk
+from app.services.stopwords import STOP_WORDS
 
 
 class AdvancedBengaliProcessor:
     
     def __init__(self):
-        self.stop_words = {
-            'এবং', 'বা', 'কিন্তু', 'তবে', 'যদি', 'তাহলে', 'কেননা', 'যেহেতু', 'অতএব', 'সুতরাং',
-            'এর', 'তার', 'তাদের', 'আমার', 'আমাদের', 'তোমার', 'তোমাদের', 'তিনি', 'তারা', 'আমি', 'আমরা',
-            'তুমি', 'তোমরা', 'সে', 'এই', 'এটি', 'ওই', 'ওটি', 'যে', 'যেটি', 'কী', 'কি', 'কেন', 'কোথায়',
-            'কখন', 'কীভাবে', 'কোন', 'কত', 'কতটা', 'হয়', 'হয়েছে', 'হবে', 'হচ্ছে', 'থাকা', 'থাকে', 'থাকবে',
-            'আছে', 'ছিল', 'থেকে', 'পর্যন্ত', 'দিয়ে', 'করে', 'জন্য', 'সাথে', 'মধ্যে', 'ভিতরে', 'বাইরে',
-            'উপর', 'নিচে', 'আগে', 'পরে', 'সময়', 'দিন', 'রাত', 'সকাল', 'বিকাল', 'সন্ধ্যা', 'এখন', 'তখন',
-            'একটি', 'একটা', 'দুটি', 'দুটো', 'তিনটি', 'তিনটে', 'চারটি', 'চারটে', 'পাঁচটি', 'পাঁচটে',
-            'না', 'নেই', 'নয়', 'নি', 'অন্য', 'আরও', 'আরো', 'অনেক', 'সব', 'সকল', 'প্রতি', 'খুব', 'বেশ',
-            'লাইক', 'শেয়ার', 'কমেন্ট', 'ফলো', 'আনফলো', 'পোস্ট', 'স্ট্যাটাস', 'আপডেট', 'ট্যাগ',
-            'কইছে', 'করছে', 'করব', 'করবো', 'যাব', 'যাবো', 'আসব', 'আসবো', 'হইছে', 'হবো', 'যাই', 'কি', 'কেমন',
-            'ভাই', 'আপু', 'দাদা', 'আন্টি', 'আংকেল', 'বোন', 'ভাবী',
-            'এবং', 'বা', 'কিন্তু', 'তবে', 'যদি', 'তাহলে', 'কেননা', 'যেহেতু', 'অতএব', 'সুতরাং',
-            'এর', 'তার', 'তাদের', 'আমার', 'আমাদের', 'তোমার', 'তোমাদের', 'তিনি', 'তারা', 'আমি', 'আমরা',
-            'তুমি', 'তোমরা', 'সে', 'এই', 'এটি', 'ওই', 'ওটি', 'যে', 'যেটি', 'কী', 'কি', 'কেন', 'কোথায়',
-            'কখন', 'কীভাবে', 'কোন', 'কত', 'কতটা', 'হয়', 'হয়েছে', 'হবে', 'হচ্ছে', 'থাকা', 'থাকে', 'থাকবে',
-            'আছে', 'ছিল', 'থেকে', 'পর্যন্ত', 'দিয়ে', 'করে', 'জন্য', 'সাথে', 'মধ্যে', 'ভিতরে', 'বাইরে',
-            'উপর', 'নিচে', 'আগে', 'পরে', 'সময়', 'দিন', 'রাত', 'সকাল', 'বিকাল', 'সন্ধ্যা', 'এখন', 'তখন',
-            'একটি', 'একটা', 'দুটি', 'দুটো', 'তিনটি', 'তিনটে', 'চারটি', 'চারটে', 'পাঁচটি', 'পাঁচটে',
-            'না', 'নেই', 'নয়', 'নি', 'অন্য', 'আরও', 'আরো', 'অনেক', 'সব', 'সকল', 'প্রতি', 'খুব', 'বেশ',
-            'ভাল', 'ভালো', 'মন্দ', 'ভাল', 'মানুষ', 'লোক', 'জন', 'গুলি', 'গুলো', 'টি', 'টা', 'খানা', 'খানি',
-            'টুকু', 'মত', 'মতো', 'মতন', 'হিসেবে', 'হিসেবে', 'রূপে', 'হিসেবে', 'বলে', 'বলা', 'বলেন', 'বলেছেন',
-            'বলছেন', 'বলবেন', 'বর', 'বরং', 'মাঝে', 'মাঝেমাঝে', 'কখনো', 'কখনও', 'সর্বদা', 'সবসময়', 'প্রায়',
-            'প্রায়ই', 'কখনো', 'কদাচিৎ', 'মোটেও', 'মোটেই', 'একেবারে', 'একদম', 'পুরোপুরি', 'সম্পূর্ণ', 'সম্পূর্ণভাবে',
-            'হয়তো', 'হয়ত', 'অবশ্যই', 'অবশ্য', 'নিশ্চয়', 'নিশ্চিত', 'সম্ভবত', 'হয়নি', 'নয়', 'না', 'কোনো',
-            'কোন', 'কেউ', 'কেউই', 'কিছু', 'কিছুই', 'কোথাও', 'কোথাওই', 'কখনো', 'কখনোই', 'যখন', 'তখনই',
-            'যেখানে', 'সেখানে', 'যেভাবে', 'সেভাবে', 'যতটা', 'ততটা', 'যতক্ষণ', 'ততক্ষণ', 'প্রথম', 'দ্বিতীয়',
-            'তৃতীয়', 'চতুর্থ', 'পঞ্চম', 'ষষ্ঠ', 'সপ্তম', 'অষ্টম', 'নবম', 'দশম', 'একে', 'তাকে', 'তাদেরকে',
-            'আমাকে', 'আমাদেরকে', 'তোমাকে', 'তোমাদেরকে', 'এটাকে', 'ওটাকে', 'যাকে', 'কাকে', 'ঐ', 'ওই',
-            'এই', 'সেই', 'যে', 'যেই', 'কোন', 'কোনো', 'একজন', 'দুজন', 'তিনজন', 'চারজন', 'পাঁচজন',
-            'নতুন', 'পুরাতন', 'পুরোনো', 'বড়', 'ছোট', 'ভালো', 'খারাপ', 'সুন্দর', 'কুৎসিত', 'উচ্চ', 'নিম্ন',
-            'অই', 'অগত্যা', 'অত: পর', 'অতএব', 'অথচ', 'অথবা', 'অধিক', 'অধীনে', 'অধ্যায়', 'অনুগ্রহ',
-            'অনুভূত', 'অনুযায়ী', 'অনুরূপ', 'অনুসন্ধান', 'অনুসরণ', 'অনুসারে', 'অনুসৃত', 'অনেক', 'অনেকে',
-            'অনেকেই', 'অন্তত', 'অন্য', 'অন্যত্র', 'অন্যান্য', 'অপেক্ষাকৃতভাবে', 'অবধি', 'অবশ্য', 'অবশ্যই',
-            'অবস্থা', 'অবিলম্বে', 'অভ্যন্তরস্থ', 'অর্জিত', 'অর্থাত', 'অসদৃশ', 'অসম্ভাব্য', 'আইন', 'আউট',
-            'আক্রান্ত', 'আগামী', 'আগে', 'আগেই', 'আগ্রহী', 'আছে', 'আজ', 'আট', 'আদেশ', 'আদ্যভাগে', 'আন্দাজ',
-            'আপনার', 'আপনি', 'আবার', 'আমরা', 'আমাকে', 'আমাদিগের', 'আমাদের', 'আমার', 'আমি', 'আর', 'আরও',
-            'আশি', 'আশু', 'আসা', 'আসে', 'ই', 'ইচ্ছা', 'ইচ্ছাপূর্বক', 'ইতিমধ্যে', 'ইতোমধ্যে', 'ইত্যাদি',
-            'ইশারা', 'ইহা', 'ইহাতে', 'উক্তি', 'উচিত', 'উচ্চ', 'উঠা', 'উত্তম', 'উত্তর', 'উনি', 'উপর',
-            'উপরে', 'উপলব্ধ', 'উপায়', 'উভয়', 'উল্লেখ', 'উল্লেখযোগ্যভাবে', 'উহার', 'ঊর্ধ্বতন', 'এ', 'এপর্যন্ত',
-            'এঁদের', 'এঁরা', 'এই', 'এইগুলো', 'এইভাবে', 'এক', 'একই', 'একটি', 'একদা', 'একবার', 'একভাবে',
-            'একরকম', 'একসঙ্গে', 'একা', 'একে', 'এক্', 'এখন', 'এখনও', 'এখনো', 'এখানে', 'এখানেই', 'এছাড়াও',
-            'এটা', 'এটাই', 'এটি', 'এত', 'এতটাই', 'এতদ্বারা', 'এতে', 'এদিকে', 'এদের', 'এপর্যন্ত', 'এবং',
-            'এবার', 'এমন', 'এমনকি', 'এমনকী', 'এমনি', 'এর', 'এরকম', 'এরা', 'এল', 'এলাকায়', 'এলাকার', 'এস',
-            'এসে', 'ঐ', 'ও', 'ওঁদের', 'ওঁর', 'ওঁরা', 'ওই', 'ওকে', 'ওখানে', 'ওদের', 'ওর', 'ওরা', 'ওহে',
-            'কক্ষ', 'কখন', 'কখনও', 'কত', 'কবে', 'কম', 'কমনে', 'কয়েক', 'কয়েকটি', 'করছে', 'করছেন', 'করতে',
-            'করবে', 'করবেন', 'করলে', 'করলেন', 'করলো', 'করা', 'করাই', 'করাত', 'করার', 'করায়', 'করি',
-            'করিতে', 'করিয়া', 'করিয়ে', 'করে', 'করেই', 'করেছিল', 'করেছিলেন', 'করেছে', 'করেছেন', 'করেন',
-            'কর্তব্য', 'কাউকে', 'কাছ', 'কাছাকাছি', 'কাছে', 'কাজ', 'কাজে', 'কারও', 'কারণ', 'কারণসমূহ', 'কারো',
-            'কি', 'কিংবা', 'কিছু', 'কিছুই', 'কিছুটা', 'কিছুনা', 'কিনা', 'কিন্তু', 'কিভাবে', 'কী', 'কূপ', 'কে',
-            'কেউ', 'কেউই', 'কেউনা', 'কেখা', 'কেন', 'কেবল', 'কেবা', 'কেস', 'কেহ', 'কোটি', 'কোথা', 'কোথাও',
-            'কোথায়', 'কোন', 'কোনও', 'কোনো', 'ক্রম', 'ক্ষেত্রে', 'কয়েক', 'কয়েকটি', 'খুঁজছেন', 'খুব',
-            'খোলা', 'খোলে', 'গড়', 'গত', 'গিয়ে', 'গিয়েছিলাম', 'গিয়েছে', 'গিয়ে', 'গিয়েছে', 'গুরুত্ব', 'গুলি',
-            'গেছে', 'গেল', 'গেলে', 'গোটা', 'গোষ্ঠীবদ্ধ', 'গ্রহণ', 'গ্রুপ', 'ঘর', 'ঘোষণা', 'চলে', 'চান', 'চায়',
-            'চার', 'চালা', 'চালান', 'চালু', 'চায়', 'চেয়ে', 'চেয়েছিলেন', 'চেষ্টা', 'চেয়ে', 'ছয়', 'ছাড়া',
-            'ছাড়াছাড়ি', 'ছাড়া', 'ছাড়াও', 'ছিল', 'ছিলেন', 'ছোট', 'জন', 'জনকে', 'জনাব', 'জনাবা', 'জনের',
-            'জন্য', 'জানতাম', 'জানতে', 'জানা', 'জানানো', 'জানায়', 'জানিয়ে', 'জানিয়েছে', 'জানে', 'জায়গা',
-            'জিজ্ঞাসা', 'জিজ্ঞেস', 'জিনিস', 'জে', 'জ্নজন', 'টা', 'টি', 'ঠিক', 'ঠিকআছে', 'ডগা', 'তখন', 'তত',
-            'তত্কারণে', 'তত্প্রতি', 'তথা', 'তদনুসারে', 'তদ্ব্যতীত', 'তন্নতন্ন', 'তবু', 'তবে', 'তরুণ', 'তা',
-            'তাঁকে', 'তাঁদের', 'তাঁর', 'তাঁরা', 'তাঁহারা', 'তাই', 'তাও', 'তাকে', 'তাতে', 'তাদের', 'তার', 'তারপর',
-            'তারপরেও', 'তারা', 'তারিখ', 'তারৈ', 'তাহলে', 'তাহা', 'তাহাতে', 'তাহাদিগকে', 'তাহাদেরই', 'তাহার',
-            'তিন', 'তিনি', 'তিনিও', 'তীক্ষ্ন', 'তুমি', 'তুলে', 'তেমন', 'তৈরীর', 'তো', 'তোমার', 'তোলে', 'থাকবে',
-            'থাকবেন', 'থাকা', 'থাকায়', 'থাকায়', 'থাকে', 'থাকেন', 'থেকে', 'থেকেই', 'থেকেও', 'দরকারী', 'দলবদ্ধ',
-            'দান', 'দিকে', 'দিতে', 'দিন', 'দিয়ে', 'দিয়েছে', 'দিয়েছেন', 'দিলেন', 'দিয়ে', 'দিয়েছে', 'দিয়েছেন',
-            'দু', 'দুই', 'দুটি', 'দুটো', 'দূরে', 'দেওয়ার', 'দেওয়া', 'দেওয়ার', 'দেখতে', 'দেখা', 'দেখাচ্ছে',
-            'দেখিয়েছেন', 'দেখে', 'দেখেন', 'দেন', 'দেয়', 'দেয়', 'দ্বারা', 'দ্বিগুণ', 'দ্বিতীয়', 'দ্য', 'ধরা',
-            'ধরে', 'ধামার', 'নতুন', 'নব্বই', 'নয়', 'নাই', 'নাকি', 'নাগাদ', 'নানা', 'নাম', 'নিচে', 'নিছক',
-            'নিজে', 'নিজেই', 'নিজেকে', 'নিজেদের', 'নিজেদেরকে', 'নিজের', 'নিতে', 'নিদিষ্ট', 'নিম্নাভিমুখে',
-            'নিয়ে', 'নির্দিষ্ট', 'নির্বিশেষে', 'নিশ্চিত', 'নিয়ে', 'নেই', 'নেওয়ার', 'নেওয়া', 'নেয়ার', 'নয়',
-            'পক্ষই', 'পক্ষে', 'পঞ্চম', 'পড়া', 'পণ্য', 'পথ', 'পয়েন্ট', 'পর', 'পরন্তু', 'পরবর্তী', 'পরিণত',
-            'পরিবর্তে', 'পরে', 'পরেই', 'পরেও', 'পর্যন্ত', 'পর্যাপ্ত', 'পাঁচ', 'পাওয়া', 'পাচ', 'পায়', 'পারা',
-            'পারি', 'পারিনি', 'পারে', 'পারেন', 'পালা', 'পাশ', 'পাশে', 'পিছনে', 'পিঠের', 'পুরোনো', 'পুরোপুরি',
-            'পূর্বে', 'পৃষ্ঠা', 'পৃষ্ঠাগুলি', 'পেছনে', 'পেয়েছেন', 'পেয়ে', 'পেয়্র্', 'প্রকৃতপক্ষে', 'প্রণীত', 'প্রতি',
-            'প্রথম', 'প্রদত্ত', 'প্রদর্শনী', 'প্রদর্শিত', 'প্রধানত', 'প্রবলভাবে', 'প্রভৃতি', 'প্রমাণীকরণ', 'প্রযন্ত',
-            'প্রয়োজন', 'প্রয়োজনীয়', 'প্রসূত', 'প্রাক্তন', 'প্রাথমিক', 'প্রাথমিকভাবে', 'প্রান্ত', 'প্রাপ্ত',
-            'প্রায়', 'প্রায়ই', 'প্রায়', 'ফলাফল', 'ফলে', 'ফিক্স', 'ফিরে', 'ফের', 'বক্তব্য', 'বছর', 'বড়', 'বদলে',
-            'বন', 'বন্ধ', 'বরং', 'বরাবর', 'বর্ণন', 'বর্তমান', 'বলতে', 'বলল', 'বললেন', 'বলা', 'বলে', 'বলেছেন',
-            'বলেন', 'বসে', 'বহু', 'বা', 'বাঁক', 'বাইরে', 'বাকি', 'বাড়ি', 'বাতিক', 'বাদ', 'বাদে', 'বার', 'বাহিরে',
-            'বিনা', 'বিন্দু', 'বিভিন্ন', 'বিশেষ', 'বিশেষণ', 'বিশেষত', 'বিশেষভাবে', 'বিশ্ব', 'বিষয়টি', 'বুঝিয়ে',
-            'বৃহত্তর', 'বের', 'বেশ', 'বেশি', 'বেশী', 'ব্যতীত', 'ব্যবহার', 'ব্যবহারসমূহ', 'ব্যবহৃত', 'ব্যাক',
-            'ব্যাপকভাবে', 'ব্যাপারে', 'ভবিষ্যতে', 'ভান', 'ভাবে', 'ভাবেই', 'ভাল', 'ভিতরে', 'ভিন্ন', 'ভিন্নভাবে',
-            'মত', 'মতো', 'মতোই', 'মধ্যভাগে', 'মধ্যে', 'মধ্যেই', 'মধ্যেও', 'মনে', 'মনে হয়', 'মস্ত', 'মহান',
-            'মাত্র', 'মাধ্যম', 'মাধ্যমে', 'মান', 'মানানসই', 'মানুষ', 'মানে', 'মামলা', 'মিলিয়ন', 'মুখ', 'মূলত',
-            'মোট', 'মোটেই', 'যখন', 'যখনই', 'যত', 'যতটা', 'যথা', 'যথাক্রমে', 'যথেষ্ট', 'যদি', 'যদিও', 'যন্ত্রাংশ',
-            'যা', 'যাঁর', 'যাঁরা', 'যাই', 'যাওয়া', 'যাওয়ার', 'যাওয়া', 'যাওয়ার', 'যাকে', 'যাচ্ছে', 'যাতে', 'যাদের',
-            'যান', 'যাবে', 'যায়', 'যার', 'যারা', 'যাহার', 'যাহোক', 'যিনি', 'যে', 'যেখানে', 'যেখানেই', 'যেটি',
-            'যেতে', 'যেন', 'যেমন', 'যেহেতু', 'যোগ', 'রকম', 'রয়েছে', 'রাখা', 'রাখে', 'রাজী', 'রাজ্যের', 'রেখে',
-            'রয়েছে', 'লক্ষ', 'লাইন', 'লাল', 'শত', 'শব্দ', 'শীঘ্র', 'শীঘ্রই', 'শুধু', 'শুরু', 'শুরুতে', 'শূন্য',
-            'শেষ', 'সংক্রান্ত', 'সংক্ষিপ্ত', 'সংক্ষেপে', 'সংখ্যা', 'সংখ্যার', 'সংশ্লিষ্ট', 'সক্ষম', 'সঙ্গে',
-            'সঙ্গেও', 'সত্য', 'সত্যিই', 'সদয়', 'সদস্য', 'সদস্যদের', 'সফলভাবে', 'সব', 'সবচেয়ে', 'সবাই', 'সবার',
-            'সময়', 'সমস্ত', 'সমান', 'সম্পন্ন', 'সম্প্রতি', 'সম্ভব', 'সম্ভবত', 'সম্ভাব্য', 'সরাইয়া', 'সর্বত্র',
-            'সর্বদা', 'সর্বস্বান্ত', 'সহ', 'সহিত', 'সাত', 'সাধারণ', 'সাধারণত', 'সাব', 'সাবেক', 'সামগ্রিক', 'সামনে',
-            'সামান্য', 'সাম্প্রতিক', 'সুতরাং', 'সুত্র', 'সূচক', 'সে', 'সে হবে', 'সেই', 'সেকেন্ড', 'সেখান', 'সেখানে',
-            'সেগুলো', 'সেটা', 'সেটাই', 'সেটাও', 'সেটি', 'সেরা', 'স্টপ', 'স্থাপিত', 'স্পষ্ট', 'স্পষ্টত', 'স্পষ্টতই',
-            'স্ব', 'স্বয়ং', 'স্বাগত', 'স্বাভাবিকভাবে', 'স্বার্থ', 'স্বয়ং', 'হইতে', 'হইবে', 'হইয়া', 'হওয়া', 'হওয়ায়',
-            'হওয়ার', 'হচ্ছে', 'হত', 'হতে', 'হতেই', 'হন', 'হবে', 'হবেন', 'হয়', 'হয়তো', 'হয়নি', 'হয়ে', 'হয়েই',
-            'হয়েছিল', 'হয়েছে', 'হয়েছেন', 'হল', 'হলে', 'হলেই', 'হলেও', 'হলো', 'হাজার', 'হায়', 'হারানো',
-            'হিসাবে', 'হৈলে', 'হোক', 'হয়', 'হয়তো', 'হয়নি', 'হয়ে', 'হয়েই', 'হয়েছিল', 'হয়েছে', 'হয়েছেন', 'অংশ'
-        }
+        self.stop_words = STOP_WORDS
         
         self.sentence_enders = {'।', '!', '?', '...', '!!', '???'}
         
@@ -175,37 +78,51 @@ class AdvancedBengaliProcessor:
     
     def advanced_tokenize(self, text: str) -> List[str]:
         """Advanced tokenization for Bengali text"""
-        text = self.normalize_text(text)
-        
-        sentences = []
-        current_sentence = ""
-        
-        for char in text:
-            if char in self.sentence_enders:
-                if current_sentence.strip():
-                    sentences.append(current_sentence.strip())
-                current_sentence = ""
-            else:
-                current_sentence += char
-        
-        if current_sentence.strip():
-            sentences.append(current_sentence.strip())
-        
-        # Tokenize words from sentences
-        words = []
-        for sentence in sentences:
-            # Remove punctuation except for compound words
-            sentence = re.sub(r'[^\u0980-\u09FF\s-]', ' ', sentence)
+        try:
+            if not isinstance(text, str):
+                text = str(text) if text is not None else ""
             
-            # Split by whitespace and filter
-            sentence_words = sentence.split()
-            for word in sentence_words:
-                word = word.strip('-')
-                if len(word) > 1 and word not in self.stop_words:
-                    words.append(word)
-        
-        return words
-    
+            text = self.normalize_text(text)
+            
+            sentences = []
+            current_sentence = ""
+            
+            for char in text:
+                if char in self.sentence_enders:
+                    if current_sentence.strip():
+                        sentences.append(current_sentence.strip())
+                    current_sentence = ""
+                else:
+                    current_sentence += char
+            
+            if current_sentence.strip():
+                sentences.append(current_sentence.strip())
+            
+            # Tokenize words from sentences
+            words = []
+            for sentence in sentences:
+                # Remove punctuation except for compound words
+                sentence = re.sub(r'[^\u0980-\u09FF\s-]', ' ', sentence)
+                
+                # Split by whitespace and filter
+                sentence_words = sentence.split()
+                for word in sentence_words:
+                    word = word.strip('-')
+                    if len(word) > 1 and word not in self.stop_words:
+                        # Ensure the word is a string
+                        words.append(str(word))
+            
+            return words
+            
+        except Exception as e:
+            print(f"Error in advanced_tokenize: {e}")
+            # Fallback tokenization
+            if isinstance(text, str):
+                simple_words = text.split()
+                return [str(w) for w in simple_words if w and len(w) > 1]
+            else:
+                return []
+    # Named Entity Recognition
     def extract_named_entities(self, text: str) -> Dict[str, List[str]]:
         entities = {
             'persons': [],
@@ -307,9 +224,10 @@ class AdvancedBengaliProcessor:
             preprocessor=bengali_preprocessor,
             ngram_range=(1, 3),
             max_features=1000,
-            min_df=2,
-            max_df=0.8,
-            lowercase=False
+            min_df=1,
+            max_df=1.0,
+            lowercase=False,
+            token_pattern=None  # Suppress warning: token_pattern is ignored when tokenizer is set
         )
         
         try:
@@ -332,23 +250,54 @@ class AdvancedBengaliProcessor:
     
     def cluster_similar_phrases(self, phrases: List[str], n_clusters: int = 5) -> Dict[int, List[str]]:
         """Cluster similar phrases using TF-IDF and K-means"""
-        if len(phrases) < n_clusters:
-            # If we have fewer phrases than clusters, put each in its own cluster
-            return {i: [phrase] for i, phrase in enumerate(phrases)}
-        
-        def bengali_preprocessor(text):
-            words = self.advanced_tokenize(text)
-            return ' '.join(words)
-        
-        vectorizer = TfidfVectorizer(
-            preprocessor=bengali_preprocessor,
-            ngram_range=(1, 2),
-            max_features=500,
-            min_df=1,
-            lowercase=False
-        )
-        
         try:
+            # Filter to only non-empty strings and ensure all are strings
+            filtered_phrases = []
+            for p in phrases:
+                if p is not None and isinstance(p, str) and p.strip():
+                    filtered_phrases.append(p.strip())
+                elif p is not None:
+                    # Convert non-string to string as fallback
+                    str_p = str(p).strip()
+                    if str_p:
+                        filtered_phrases.append(str_p)
+            
+            phrases = filtered_phrases
+            
+            if len(phrases) == 0:
+                print("No valid phrases for clustering")
+                return {}
+                
+            if len(phrases) < n_clusters:
+                # If we have fewer phrases than clusters, put each in its own cluster
+                return {i: [phrase] for i, phrase in enumerate(phrases)}
+            
+            def safe_bengali_preprocessor(text):
+                """Safe preprocessor that handles errors gracefully"""
+                try:
+                    if not isinstance(text, str):
+                        text = str(text)
+                    words = self.advanced_tokenize(text)
+                    # Ensure all words are strings
+                    safe_words = [str(w) for w in words if w is not None]
+                    return ' '.join(safe_words)
+                except Exception as e:
+                    print(f"Error in preprocessor for text '{text}': {e}")
+                    # Fallback: just return cleaned text
+                    if isinstance(text, str):
+                        return re.sub(r'[^\u0980-\u09FF\s]', ' ', text)
+                    else:
+                        return str(text)
+            
+            vectorizer = TfidfVectorizer(
+                preprocessor=safe_bengali_preprocessor,
+                ngram_range=(1, 2),
+                max_features=500,
+                min_df=1,
+                lowercase=False,
+                token_pattern=r'(?u)\b\w\w+\b'  # Use explicit pattern instead of None
+            )
+            
             tfidf_matrix = vectorizer.fit_transform(phrases)
             
             # Perform K-means clustering
@@ -364,8 +313,13 @@ class AdvancedBengaliProcessor:
             
         except Exception as e:
             print(f"Error in phrase clustering: {e}")
+            import traceback
+            print(f"Clustering error traceback: {traceback.format_exc()}")
             # Fallback: return all phrases in one cluster
-            return {0: phrases}
+            if phrases:
+                return {0: phrases}
+            else:
+                return {}
     
     def calculate_phrase_importance(self, phrase: str, context_texts: List[str]) -> float:
         """Calculate importance score for a phrase within given context"""
@@ -393,69 +347,227 @@ class AdvancedBengaliProcessor:
             words = self.advanced_tokenize(text)
             for word in words:
                 self.word_freq_cache[word] = self.word_freq_cache.get(word, 0) + 1
-
-
-class TrendingBengaliAnalyzer:
-    """
-    Main analyzer class for Bengali trending content
-    """
     
-    def __init__(self):
-        self.processor = AdvancedBengaliProcessor()
-    
-    def analyze_trending_content(self, contents: List[Dict], source_type: str = 'mixed') -> Dict:
+    def filter_and_deduplicate_keywords(self, trending_keywords, max_results=15):
+        """
+        Filter and deduplicate trending keywords to avoid repetitive and low-quality phrases
+        """
+        if not trending_keywords:
+            return []
+        
+        # Person name patterns to exclude
+        person_indicators = [
+            'মাননীয়', 'জনাব', 'মিসেস', 'মিস', 'ডঃ', 'প্রফেসর', 'শেখ', 'মোঃ', 'সৈয়দ',
+            'সাহেব', 'সাহেবা', 'বেগম', 'খান', 'চৌধুরী', 'আহমেদ', 'হোসেন', 'উদ্দিন', 'রহমান'
+        ]
+        
+        # Low-quality phrase patterns to exclude (compiled for safety)
+        exclude_patterns = []
+        try:
+            pattern_strings = [
+                r'বলেছেন যে',
+                r'নিশ্চিত করেছে যে',
+                r'জানিয়েছেন যে',
+                r'সরকার.*যে',
+                r'প্রধানমন্ত্রী.*যে',
+                r'মন্ত্রী.*যে',
+                r'.{30,}',  # Very long phrases (30+ characters)
+            ]
+            for pattern_str in pattern_strings:
+                exclude_patterns.append(re.compile(pattern_str))
+        except Exception as e:
+            print(f"Error compiling regex patterns: {e}")
+            exclude_patterns = []
+        
+        filtered_keywords = []
+        seen_topics = set()
+        
+        for keyword, score in trending_keywords:
+            try:
+                keyword_text = str(keyword).strip() if keyword else ""
+                
+                # Skip if empty or too short
+                if len(keyword_text) < 2:
+                    continue
+                
+                # Skip if contains person indicators
+                if any(indicator in keyword_text for indicator in person_indicators):
+                    continue
+                
+                # Skip if matches exclude patterns (safely)
+                skip_pattern = False
+                for pattern in exclude_patterns:
+                    try:
+                        if pattern.search(keyword_text):
+                            skip_pattern = True
+                            break
+                    except Exception as pattern_error:
+                        print(f"Pattern search error: {pattern_error}")
+                        continue
+                
+                if skip_pattern:
+                    continue
+                
+                # Skip common stop words that might slip through
+                if keyword_text in ['করা', 'হওয়া', 'দেওয়া', 'নেওয়া', 'বলা', 'আসা', 'যাওয়া']:
+                    continue
+                
+                # Deduplicate similar topics
+                # Check if this keyword is too similar to already selected ones
+                is_duplicate = False
+                normalized_keyword = keyword_text.lower().strip()
+                
+                for seen_topic in seen_topics:
+                    # Check for substring relationship
+                    if (normalized_keyword in seen_topic or seen_topic in normalized_keyword):
+                        # If current has higher score and is more comprehensive, replace
+                        if len(normalized_keyword) > len(seen_topic):
+                            seen_topics.remove(seen_topic)
+                            # Remove the old entry from filtered_keywords
+                            filtered_keywords = [(k, s) for k, s in filtered_keywords if k.lower().strip() != seen_topic]
+                            break
+                        else:
+                            is_duplicate = True
+                            break
+                    
+                    # Check for word overlap (if 70% words are common, consider duplicate)
+                    words1 = set(normalized_keyword.split())
+                    words2 = set(seen_topic.split())
+                    if words1 and words2:
+                        overlap = len(words1.intersection(words2)) / min(len(words1), len(words2))
+                        if overlap > 0.7:
+                            if score > dict(filtered_keywords).get(seen_topic, 0):
+                                seen_topics.remove(seen_topic)
+                                filtered_keywords = [(k, s) for k, s in filtered_keywords if k.lower().strip() != seen_topic]
+                                break
+                            else:
+                                is_duplicate = True
+                                break
+                
+                if not is_duplicate:
+                    filtered_keywords.append((keyword_text, score))
+                    seen_topics.add(normalized_keyword)
+                
+                # Stop when we have enough results
+                if len(filtered_keywords) >= max_results:
+                    break
+                    
+            except Exception as keyword_error:
+                print(f"Error processing keyword '{keyword}': {keyword_error}")
+                continue
+        
+        # Sort by score in descending order
+        filtered_keywords.sort(key=lambda x: x[1], reverse=True)
+        
+        return filtered_keywords
+
+    def analyze_trending_content(self, contents, source_type='news'):
         """
         Comprehensive analysis of trending content
         """
+        print(" Incoming contents:")
+        print(contents)
         # Extract text content
         texts = []
         for content in contents:
-            if 'title' in content and 'description' in content:
-                text = f"{content['title']} {content['description']}"
+            if 'title' in content and 'heading' in content:
+                text = f"{content['title']} {content['heading']}"
             elif 'content' in content:
                 text = content['content']
             else:
                 continue
             texts.append(text)
-        
+        print(" Step 1 - Extracted Texts:")
+        for t in texts:
+            print(t)
+        print(f" Number of extracted texts: {len(texts)}")
+        print("\n")
         if not texts:
+            print(" No texts extracted. Returning early.")
             return {}
-        
         # Update word frequency cache
-        self.processor.update_word_frequency_cache(texts)
+        self.update_word_frequency_cache(texts)
+        print(" Step 2 - Word Frequency Cache Updated:")
+        print(f"   Total unique words in cache: {len(self.word_freq_cache)}")
+        if self.word_freq_cache:
+            # Show top 10 most frequent words
+            top_words = sorted(self.word_freq_cache.items(), key=lambda x: x[1], reverse=True)[:10]
+            print("   Top 10 most frequent words:")
+            for i, (word, freq) in enumerate(top_words, 1):
+                print(f"     {i:2d}. {word:20s} - {freq:3d} times")
+        print("\n")
+        # Extract trending keywords with TF-IDF scores (sorted by importance)
+        trending_keywords = self.extract_trending_keywords(texts, top_k=100)
+        print(" Step 3 - Trending Keywords (TF-IDF sorted by importance):")
+        print("Top 10 Keywords with highest TF-IDF scores:")
+        for i, (keyword, score) in enumerate(trending_keywords[:10], 1):
+            print(f"  {i:2d}. {keyword:30s} - Score: {score:.6f}")
+        print(f"Total keywords extracted: {len(trending_keywords)}")
+        print("\n")
         
-        # Extract trending keywords
-        trending_keywords = self.processor.extract_trending_keywords(texts, top_k=100)
-        
+        # Filter and deduplicate keywords for better quality
+        trending_keywords = self.filter_and_deduplicate_keywords(trending_keywords, max_results=15)
+        print(" Step 3.1 - Filtered & Deduplicated Keywords:")
+        print("After filtering and deduplication:")
+        for i, (keyword, score) in enumerate(trending_keywords[:10], 1):
+            print(f"  {i:2d}. {keyword:30s} - Score: {score:.6f}")
+        print(f"Final filtered keywords count: {len(trending_keywords)}")
+        print("\n")
+        # Prepare trending keywords (list of tuples) as a prompt for LLM
+        llm_prompt = "ট্রেন্ডিং বাংলা শব্দ/বাক্যাংশ ও স্কোর (শব্দ:স্কোর):\n" + "\n".join(f"{i+1}. {kw}: {score:.4f}" for i, (kw, score) in enumerate(trending_keywords))
+        # Example: Call your LLM here (replace with your actual LLM call)
+        # llm_response = call_groq_llm(llm_prompt)
+        # print(" LLM Response:")
+        # print(llm_response)
         # Extract named entities
         all_entities = {'persons': [], 'places': [], 'organizations': [], 'dates': []}
         for text in texts:
-            entities = self.processor.extract_named_entities(text)
+            entities = self.extract_named_entities(text)
             for entity_type in all_entities:
                 all_entities[entity_type].extend(entities[entity_type])
-        
+        print(" Step 4 - Named Entities (raw):")
+        print(all_entities)
+        print("\n")
         # Remove duplicates and count frequencies
         for entity_type in all_entities:
             entity_counter = Counter(all_entities[entity_type])
             all_entities[entity_type] = entity_counter.most_common(20)
-        
+        print(" Step 5 - Named Entities (deduped, counted):")
+        print(all_entities)
+        print("\n")
         # Sentiment analysis
         sentiment_scores = []
         for text in texts:
-            sentiment = self.processor.calculate_text_sentiment(text)
+            sentiment = self.calculate_text_sentiment(text)
             sentiment_scores.append(sentiment)
-        
+        print(" Step 6 - Sentiment Scores:")
+        print(sentiment_scores)
+        print("\n")
         # Average sentiment
         avg_sentiment = {
             'positive': np.mean([s['positive'] for s in sentiment_scores]),
             'negative': np.mean([s['negative'] for s in sentiment_scores]),
             'neutral': np.mean([s['neutral'] for s in sentiment_scores])
         }
-        
+        print(" Step 7 - Average Sentiment:")
+        print(avg_sentiment)
+        print("\n")
         # Cluster similar phrases
         phrases = [kw[0] for kw in trending_keywords[:50]]
-        clustered_phrases = self.processor.cluster_similar_phrases(phrases, n_clusters=8)
-        
+        if not phrases:
+            clustered_phrases = {}
+        else:
+            clustered_phrases = self.cluster_similar_phrases(phrases, n_clusters=8)
+        print(" Step 8 - Clustered Phrases:")
+        print(clustered_phrases)
+        print("\n")
+        # Filter and deduplicate trending keywords for better quality
+        filtered_trending_keywords = self.filter_and_deduplicate_keywords(trending_keywords, max_results=15)
+        print(" Step 9 - Filtered and Deduplicated Trending Keywords:")
+        for i, (keyword, score) in enumerate(filtered_trending_keywords, 1):
+            print(f"  {i:2d}. {keyword:30s} - Score: {score:.6f}")
+        print(f"Total filtered keywords: {len(filtered_trending_keywords)}")
+        print("\n")
         return {
             'trending_keywords': trending_keywords,
             'named_entities': all_entities,
@@ -463,8 +575,8 @@ class TrendingBengaliAnalyzer:
             'phrase_clusters': clustered_phrases,
             'content_statistics': {
                 'total_texts': len(texts),
-                'total_words': sum(len(self.processor.advanced_tokenize(text)) for text in texts),
-                'unique_words': len(set(word for text in texts for word in self.processor.advanced_tokenize(text))),
+                'total_words': sum(len(self.advanced_tokenize(text)) for text in texts),
+                'unique_words': len(set(word for text in texts for word in self.advanced_tokenize(text))),
                 'source_type': source_type
             }
         }
@@ -481,11 +593,11 @@ def test_bengali_analyzer():
     sample_contents = [
         {
             'title': 'বাংলাদেশের অর্থনীতি ভালো অবস্থায়',
-            'description': 'দেশের অর্থনৈতিক অবস্থা উন্নতির দিকে এগিয়ে চলেছে। মানুষের আয় বৃদ্ধি পাচ্ছে।'
+            'heading': 'দেশের অর্থনৈতিক অবস্থা উন্নতির দিকে এগিয়ে চলেছে। মানুষের আয় বৃদ্ধি পাচ্ছে।'
         },
         {
             'title': 'শিক্ষা ক্ষেত্রে নতুন পরিকল্পনা',
-            'description': 'সরকার শিক্ষা ক্ষেত্রে আধুনিকায়নের জন্য নতুন পরিকল্পনা গ্রহণ করেছে।'
+            'heading': 'সরকার শিক্ষা ক্ষেত্রে আধুনিকায়নের জন্য নতুন পরিকল্পনা গ্রহণ করেছে।'
         }
     ]
     
@@ -506,3 +618,183 @@ def test_bengali_analyzer():
 
 if __name__ == "__main__":
     test_bengali_analyzer()
+
+
+# Add TrendingBengaliAnalyzer class for compatibility
+class TrendingBengaliAnalyzer:
+    """
+    Wrapper class for advanced Bengali text analysis
+    Provides trending analysis capabilities for Bengali content
+    """
+    
+    def __init__(self):
+        self.processor = AdvancedBengaliProcessor()
+    
+    def analyze_trending_content(self, contents: List[Dict], source_type: str = 'news') -> Dict:
+        """
+        Analyze trending content and return comprehensive analysis results
+        
+        Args:
+            contents: List of content dictionaries with 'title', 'heading', 'source' fields
+            source_type: Type of source ('news', 'social_media', 'mixed')
+        
+        Returns:
+            Dictionary containing trending analysis results
+        """
+        # Extract texts from content
+        texts = []
+        for content in contents:
+            text_parts = []
+            if content.get('title'):
+                text_parts.append(content['title'])
+            if content.get('heading'):
+                text_parts.append(content['heading'])
+            if text_parts:
+                texts.append(' '.join(text_parts))
+        
+        if not texts:
+            return {
+                'trending_keywords': [],
+                'named_entities': {'persons': [], 'places': [], 'organizations': [], 'dates': []},
+                'sentiment_analysis': {'positive': 0, 'negative': 0, 'neutral': 1},
+                'phrase_clusters': {},
+                'content_statistics': {'total_texts': 0, 'total_words': 0, 'unique_words': 0, 'source_type': source_type}
+            }
+        
+        # Extract trending keywords
+        trending_keywords = self.processor.extract_trending_keywords(texts, top_k=50)
+        
+        # Filter and deduplicate keywords
+        trending_keywords = self.filter_and_deduplicate_keywords(trending_keywords, max_results=15)
+        
+        # Extract named entities
+        all_entities = {'persons': [], 'places': [], 'organizations': [], 'dates': []}
+        for text in texts:
+            entities = self.processor.extract_named_entities(text)
+            for entity_type in all_entities:
+                all_entities[entity_type].extend(entities[entity_type])
+        
+        # Remove duplicates from entities
+        for entity_type in all_entities:
+            all_entities[entity_type] = list(set(all_entities[entity_type]))
+        
+        # Calculate sentiment
+        sentiment_scores = []
+        for text in texts:
+            sentiment = self.processor.calculate_text_sentiment(text)
+            sentiment_scores.append(sentiment)
+        
+        avg_sentiment = {
+            'positive': np.mean([s['positive'] for s in sentiment_scores]),
+            'negative': np.mean([s['negative'] for s in sentiment_scores]),
+            'neutral': np.mean([s['neutral'] for s in sentiment_scores])
+        }
+        
+        # Cluster phrases
+        phrases = [kw[0] for kw in trending_keywords[:20]]
+        clustered_phrases = {}
+        if phrases:
+            try:
+                clustered_phrases = self.processor.cluster_similar_phrases(phrases, n_clusters=min(5, len(phrases)))
+            except Exception as e:
+                print(f"Error clustering phrases: {e}")
+                clustered_phrases = {}
+        
+        return {
+            'trending_keywords': trending_keywords,
+            'named_entities': all_entities,
+            'sentiment_analysis': avg_sentiment,
+            'phrase_clusters': clustered_phrases,
+            'content_statistics': {
+                'total_texts': len(texts),
+                'total_words': sum(len(self.processor.advanced_tokenize(text)) for text in texts),
+                'unique_words': len(set(word for text in texts for word in self.processor.advanced_tokenize(text))),
+                'source_type': source_type
+            }
+        }
+    
+    def filter_and_deduplicate_keywords(self, trending_keywords, max_results=15):
+        """Filter and deduplicate trending keywords for better quality"""
+        if not trending_keywords:
+            return []
+        
+        # Person name patterns to exclude
+        person_indicators = [
+            'মাননীয়', 'জনাব', 'মিসেস', 'মিস', 'ডঃ', 'প্রফেসর', 'শেখ', 'মোঃ', 'সৈয়দ',
+            'সাহেব', 'সাহেবা', 'বেগম', 'খান', 'চৌধুরী', 'আহমেদ', 'হোসেন', 'উদ্দিন', 'রহমান'
+        ]
+        
+        # Low-quality phrase patterns to exclude
+        exclude_patterns = [
+            r'বলেছেন যে',
+            r'নিশ্চিত করেছে যে',
+            r'জানিয়েছেন যে',
+            r'সরকার.*যে',
+            r'প্রধানমন্ত্রী.*যে',
+            r'মন্ত্রী.*যে',
+            r'.{30,}',  # Very long phrases (30+ characters)
+        ]
+        
+        filtered_keywords = []
+        seen_topics = set()
+        
+        for keyword, score in trending_keywords:
+            keyword_text = keyword.strip()
+            
+            # Skip if empty or too short
+            if len(keyword_text) < 2:
+                continue
+            
+            # Skip if contains person indicators
+            if any(indicator in keyword_text for indicator in person_indicators):
+                continue
+            
+            # Skip if matches exclude patterns
+            if any(re.search(pattern, keyword_text) for pattern in exclude_patterns):
+                continue
+            
+            # Skip common stop words that might slip through
+            if keyword_text in ['করা', 'হওয়া', 'দেওয়া', 'নেওয়া', 'বলা', 'আসা', 'যাওয়া']:
+                continue
+            
+            # Deduplicate similar topics
+            is_duplicate = False
+            normalized_keyword = keyword_text.lower().strip()
+            
+            for seen_topic in seen_topics:
+                # Check for substring relationship
+                if (normalized_keyword in seen_topic or seen_topic in normalized_keyword):
+                    # If current has higher score and is more comprehensive, replace
+                    if len(normalized_keyword) > len(seen_topic):
+                        seen_topics.remove(seen_topic)
+                        filtered_keywords = [(k, s) for k, s in filtered_keywords if k.lower().strip() != seen_topic]
+                        break
+                    else:
+                        is_duplicate = True
+                        break
+                
+                # Check for word overlap
+                words1 = set(normalized_keyword.split())
+                words2 = set(seen_topic.split())
+                if words1 and words2:
+                    overlap = len(words1.intersection(words2)) / min(len(words1), len(words2))
+                    if overlap > 0.7:
+                        if score > dict(filtered_keywords).get(seen_topic, 0):
+                            seen_topics.remove(seen_topic)
+                            filtered_keywords = [(k, s) for k, s in filtered_keywords if k.lower().strip() != seen_topic]
+                            break
+                        else:
+                            is_duplicate = True
+                            break
+            
+            if not is_duplicate:
+                filtered_keywords.append((keyword_text, score))
+                seen_topics.add(normalized_keyword)
+            
+            if len(filtered_keywords) >= max_results:
+                break
+        
+        # Sort by score in descending order
+        filtered_keywords.sort(key=lambda x: x[1], reverse=True)
+        
+        return filtered_keywords
