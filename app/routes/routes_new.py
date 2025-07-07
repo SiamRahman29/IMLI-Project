@@ -527,8 +527,8 @@ def get_trending_phrases(
     # Get total count for pagination
     total_count = query.count()
     
-    # Order by score descending and apply pagination
-    phrases = query.order_by(desc(TrendingPhrase.score)).offset(offset).limit(limit).all()
+    # Order by date descending (latest first), then by score descending
+    phrases = query.order_by(desc(TrendingPhrase.date), desc(TrendingPhrase.score)).offset(offset).limit(limit).all()
     
     # Convert to response format
     trending_phrases = []
@@ -1039,20 +1039,19 @@ def get_weekly_trending(
     target_week: Optional[str] = Query(None, description="Target week start date in YYYY-MM-DD format"),
     db: Session = Depends(get_db)
 ):
-    """Get trending phrases summary for a specific week"""
+    """Get trending phrases summary for previous 7 days (default) or a specific week"""
     
     if not target_week:
-        # Current week start (Monday)
+        # Previous 7 days from today
         today = date.today()
-        days_since_monday = today.weekday()
-        week_start = today - timedelta(days=days_since_monday)
+        week_end = today
+        week_start = today - timedelta(days=6)  # Previous 7 days including today
     else:
         try:
             week_start = datetime.strptime(target_week, "%Y-%m-%d").date()
+            week_end = week_start + timedelta(days=6)
         except ValueError:
             raise HTTPException(status_code=400, detail="Invalid date format. Use YYYY-MM-DD")
-    
-    week_end = week_start + timedelta(days=6)
     
     # Get phrases for the target week
     phrases = db.query(TrendingPhrase).filter(
@@ -1060,7 +1059,7 @@ def get_weekly_trending(
             TrendingPhrase.date >= week_start,
             TrendingPhrase.date <= week_end
         )
-    ).order_by(desc(TrendingPhrase.score)).all()
+    ).order_by(desc(TrendingPhrase.date), desc(TrendingPhrase.score)).all()
     
     # Group by day
     daily_data = {}

@@ -74,11 +74,11 @@ const ResetPassword = () => {
               Password Reset Successful!
             </h2>
             <p className="text-gray-600 mb-6">
-              আপনার পাসওয়ার্ড সফলভাবে পরিবর্তন হয়েছে। 
-              এখন আপনি নতুন পাসওয়ার্ড দিয়ে লগইন করতে পারেন।
+              Your password has been successfully changed.
+              Now you can log in with your new password.
             </p>
             <p className="text-sm text-blue-600 mb-6">
-              আপনি 3 সেকেন্ডে লগইন পেইজে নিয়ে যাওয়া হবে...
+              You will be redirected to the login page in 3 seconds...
             </p>
             <Link 
               to="/login" 
@@ -100,7 +100,7 @@ const ResetPassword = () => {
             Reset Password
           </h2>
           <p className="mt-2 text-sm text-gray-600">
-            আপনার ইমেইলে পাঠানো 6-সংখ্যার OTP এবং নতুন পাসওয়ার্ড দিন
+            Enter the 6-digit OTP sent to your email and your new password
           </p>
         </div>
 

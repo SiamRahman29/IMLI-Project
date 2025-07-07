@@ -21,6 +21,17 @@ app = FastAPI(
     version="2.0.0"
 )
 
+# Initialize database on startup
+@app.on_event("startup")
+async def startup_event():
+    """Initialize database tables and admin user on startup"""
+    try:
+        from app.auth.create_auth_tables import initialize_database
+        initialize_database()
+    except Exception as e:
+        print(f"Warning: Database initialization failed: {e}")
+        print("Make sure to run the database setup manually if needed.")
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://localhost:3000", "http://localhost:5173", "http://127.0.0.1:3000", "http://127.0.0.1:5173", "http://localhost:5174"],

@@ -41,14 +41,14 @@ const ForgotPassword = () => {
               Email Sent!
             </h2>
             <p className="text-gray-600 mb-6">
-              আমরা <strong>{email}</strong> এ একটি 6-সংখ্যার OTP পাঠিয়েছি। 
-              আপনার ইমেইল চেক করুন এবং OTP দিয়ে নতুন পাসওয়ার্ড সেট করুন।
+              We have sent a 6-digit OTP to <strong>{email}</strong>.
+              Please check your email and set a new password using the OTP.
             </p>
             <p className="text-sm text-gray-500 mb-6">
-              ইমেইল পাননি? স্প্যাম ফোল্ডার চেক করুন বা পুনরায় চেষ্টা করুন।
+              Did not receive the email? Check your spam folder or try again.
             </p>
             <p className="text-sm text-blue-600 mb-6">
-              আপনি 3 সেকেন্ডে reset password পেইজে নিয়ে যাওয়া হবে...
+              You will be redirected to the reset password page in 3 seconds...
             </p>
             <Link 
               to="/login" 
@@ -71,7 +71,7 @@ const ForgotPassword = () => {
             Forgot Password
           </h2>
           <p className="mt-2 text-sm text-gray-600">
-            আপনার ইমেইল ঠিকানা লিখুন এবং আমরা আপনাকে একটি OTP পাঠাবো
+            Enter your Email address here and we will send you a 6-digit OTP
           </p>
         </div>
 

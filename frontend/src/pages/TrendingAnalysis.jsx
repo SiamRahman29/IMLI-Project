@@ -617,7 +617,7 @@ function TrendingAnalysis() {
               <div key={idx} className="phrase-separator py-5 px-4 flex flex-col gap-3 hover:bg-gradient-to-r hover:from-blue-50 hover:to-indigo-50 rounded-xl transition-all duration-300 group hover:shadow-lg hover:scale-[1.01] hover:z-10 relative">
                 <div className="flex items-center gap-3">
                   <span className="text-xl font-bold text-gray-900 group-hover:text-blue-900 transition-colors">{phrase.phrase}</span>
-                  <span className={`inline-block px-3 py-1 rounded-full text-sm font-bold shadow-lg transition-all group-hover:scale-105 ${getScoreColor(phrase.score) === 'primary' ? 'bg-gradient-to-r from-blue-500 to-blue-600 text-white' : getScoreColor(phrase.score) === 'secondary' ? 'bg-gradient-to-r from-pink-500 to-pink-600 text-white' : 'bg-gradient-to-r from-gray-500 to-gray-600 text-white'}`}>{phrase.score.toFixed(2)}</span>
+                  {/* <span className={`inline-block px-3 py-1 rounded-full text-sm font-bold shadow-lg transition-all group-hover:scale-105 ${getScoreColor(phrase.score) === 'primary' ? 'bg-gradient-to-r from-blue-500 to-blue-600 text-white' : getScoreColor(phrase.score) === 'secondary' ? 'bg-gradient-to-r from-pink-500 to-pink-600 text-white' : 'bg-gradient-to-r from-gray-500 to-gray-600 text-white'}`}>{phrase.score.toFixed(2)}</span> */}
                 </div>
                 <div className="flex flex-wrap gap-2 mt-1">
                   <span className="inline-block bg-gradient-to-r from-gray-100 to-gray-200 text-gray-800 px-3 py-1 rounded-full text-sm font-semibold shadow-md hover:shadow-lg transition-all group-hover:scale-105">ফ্রিকোয়েন্সি: {phrase.frequency}</span>
@@ -726,7 +726,7 @@ function TrendingAnalysis() {
     return (
       <div className="bg-white shadow rounded-lg p-6">
         <div className="mb-4">
-          <h2 className="text-lg font-bold mb-2">সাপ্তাহিক সারসংক্ষেপ - {weeklyData.week_start} থেকে {weeklyData.week_end}</h2>
+          <h2 className="text-lg font-bold mb-2">সাপ্তাহিক সারসংক্ষেপ - {weeklyData.week_start} থেকে {weeklyData.week_end}</h2>          
           <div className="text-gray-500 mb-2">মোট ফ্রেজ: {weeklyData.total_phrases}টি</div>
         </div>
         
@@ -750,7 +750,7 @@ function TrendingAnalysis() {
           
           {/* Daily Breakdown */}
           <div className="bg-white shadow rounded-lg p-6">
-            <h3 className="font-semibold mb-4">দৈনিক ভাঙ্গন</h3>
+            <h3 className="font-semibold mb-4">Daily Breakdown</h3>
             <div className="space-y-3">
               {Object.entries(weeklyData.daily_breakdown).map(([date, phrases]) => (
                 <div key={date} className="border-l-4 border-blue-400 pl-3">
@@ -799,18 +799,7 @@ function TrendingAnalysis() {
           <div className="text-2xl font-bold text-pink-600 mt-4">{stats.recent_phrases_7_days}</div>
           <div className="text-gray-500">গত ৭ দিনের ফ্রেজ</div>
         </div>
-        <div className="md:col-span-2 bg-white shadow rounded-lg p-6">
-          <h3 className="font-semibold mb-2">ধরণ অনুযায়ী পরিসংখ্যান</h3>
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
-            {stats.by_phrase_type.map((typeStat, idx) => (
-              <div key={idx} className="bg-blue-50 rounded p-4 text-center">
-                <div className="font-semibold text-blue-700">{typeStat.phrase_type}</div>
-                <div className="text-2xl font-bold text-blue-600">{typeStat.count}</div>
-                <div className="text-xs text-gray-500">গড় স্কোর: {typeStat.avg_score}</div>
-              </div>
-            ))}
-          </div>
-        </div>
+        
       </div>
     );
   };
@@ -820,7 +809,7 @@ function TrendingAnalysis() {
       <div className="max-w-5xl mx-auto mt-16 text-center">
         <div className="flex flex-col items-center justify-center">
           <svg className="animate-spin h-16 w-16 text-blue-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"></path></svg>
-          <p className="mt-4 text-lg font-medium text-gray-700">বিশ্লেষণ চলছে...</p>
+          <p className="mt-4 text-lg font-medium text-gray-700">Analysis running...</p>
         </div>
       </div>
     );
@@ -847,7 +836,7 @@ function TrendingAnalysis() {
               <span className="font-semibold">{error}</span>
               {retryCount > 0 && (
                 <span className="text-sm text-red-600 bg-red-200 px-2 py-1 rounded-full">
-                  চেষ্টা #{retryCount}
+                  Attempt #{retryCount}
                 </span>
               )}
             </div>
@@ -855,7 +844,7 @@ function TrendingAnalysis() {
               onClick={retryAction}
               className="px-4 py-2 bg-gradient-to-r from-red-600 to-red-700 text-white rounded-lg text-sm font-semibold shadow-md hover:shadow-lg transition-all hover:scale-105 focus:outline-none focus:ring-2 focus:ring-red-400"
             >
-              পুনরায় চেষ্টা
+              Retry Again
             </button>
           </div>
         </div>
@@ -928,10 +917,10 @@ function TrendingAnalysis() {
       {deleteModal.isOpen && (
         <ConfirmationModal
           isOpen={deleteModal.isOpen}
-          title="ফ্রেজ মুছে ফেলুন"
-          message={`আপনি কি নিশ্চিত যে "${deleteModal.phraseName}" ফ্রেজটি মুছে ফেলতে চান? এই কাজটি আর পূর্বাবস্থায় ফিরিয়ে আনা যাবে না।`}
-          confirmText="হ্যাঁ, মুছে ফেলুন"
-          cancelText="বাতিল"
+          title="You want to remove the phrase?"
+          message={`Are you sure you want to delete the phrase "${deleteModal.phraseName}"? This action cannot be undone.`}
+          confirmText="Yes, delete"
+          cancelText="Cancel"
           type="danger"
           onClose={() => setDeleteModal({ isOpen: false, phraseId: null, phraseName: '' })}
           onConfirm={async () => {
@@ -939,7 +928,7 @@ function TrendingAnalysis() {
             try {
               setLoading(true);
               await apiV2.deleteTrendingPhrase(deleteModal.phraseId);
-              showToast(`'${deleteModal.phraseName}' সফলভাবে মুছে ফেলা হয়েছে`, 'success');
+              showToast(`'${deleteModal.phraseName}' has been successfully deleted`, 'success');
               setDeleteModal({ isOpen: false, phraseId: null, phraseName: '' });
               // Refetch data
               if (tabValue === 0) {
@@ -953,7 +942,7 @@ function TrendingAnalysis() {
               }
             } catch (err) {
               console.error('Delete phrase error:', err);
-              showToast('ফ্রেজ মুছে ফেলতে ব্যর্থ', 'error');
+              showToast('Failed to delete phrase', 'error');
             } finally {
               setLoading(false);
             }
