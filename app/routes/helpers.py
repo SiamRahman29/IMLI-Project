@@ -400,7 +400,8 @@ def analyze_and_store_trends(db: Session, analyzer: TrendingAnalyzer,
                 phrase, freq, tfidf_score, recency_weight, source_weight
             )
             
-            trending_phrase = TrendingPhrase(
+            add_or_update_trending_phrase(
+                db=db,
                 date=target_date,
                 phrase=phrase,
                 score=trend_score,
@@ -408,7 +409,6 @@ def analyze_and_store_trends(db: Session, analyzer: TrendingAnalyzer,
                 phrase_type='unigram',
                 source=source
             )
-            db.add(trending_phrase)
     
     # Store bigrams
     for phrase, freq in frequency_scores['bigrams'].items():
@@ -418,7 +418,8 @@ def analyze_and_store_trends(db: Session, analyzer: TrendingAnalyzer,
                 phrase, freq, tfidf_score, recency_weight, source_weight
             )
             
-            trending_phrase = TrendingPhrase(
+            add_or_update_trending_phrase(
+                db=db,
                 date=target_date,
                 phrase=phrase,
                 score=trend_score,
@@ -426,7 +427,6 @@ def analyze_and_store_trends(db: Session, analyzer: TrendingAnalyzer,
                 phrase_type='bigram',
                 source=source
             )
-            db.add(trending_phrase)
     
     # Store trigrams
     for phrase, freq in frequency_scores['trigrams'].items():
@@ -436,7 +436,8 @@ def analyze_and_store_trends(db: Session, analyzer: TrendingAnalyzer,
                 phrase, freq, tfidf_score, recency_weight, source_weight
             )
             
-            trending_phrase = TrendingPhrase(
+            add_or_update_trending_phrase(
+                db=db,
                 date=target_date,
                 phrase=phrase,
                 score=trend_score,
@@ -444,7 +445,6 @@ def analyze_and_store_trends(db: Session, analyzer: TrendingAnalyzer,
                 phrase_type='trigram',
                 source=source
             )
-            db.add(trending_phrase)
 
 def store_social_media_content(db: Session, posts: List[Dict]):
     """Store social media content in database"""
@@ -1394,7 +1394,8 @@ def analyze_trending_content_and_store(db: Session, analyzer, content: list, sou
             trend_score = analyzer.calculate_trend_score(
                 phrase, freq, tfidf_score, recency_weight, source_weight
             )
-            trending_phrase = TrendingPhrase(
+            add_or_update_trending_phrase(
+                db=db,
                 date=target_date,
                 phrase=phrase,
                 score=trend_score,
@@ -1402,7 +1403,6 @@ def analyze_trending_content_and_store(db: Session, analyzer, content: list, sou
                 phrase_type='unigram',
                 source=source
             )
-            db.add(trending_phrase)
     # Store bigrams
     for phrase, freq in frequency_scores['bigrams'].items():
         if freq >= 2:
@@ -1410,7 +1410,8 @@ def analyze_trending_content_and_store(db: Session, analyzer, content: list, sou
             trend_score = analyzer.calculate_trend_score(
                 phrase, freq, tfidf_score, recency_weight, source_weight
             )
-            trending_phrase = TrendingPhrase(
+            add_or_update_trending_phrase(
+                db=db,
                 date=target_date,
                 phrase=phrase,
                 score=trend_score,
@@ -1418,7 +1419,6 @@ def analyze_trending_content_and_store(db: Session, analyzer, content: list, sou
                 phrase_type='bigram',
                 source=source
             )
-            db.add(trending_phrase)
     # Store trigrams
     for phrase, freq in frequency_scores['trigrams'].items():
         if freq >= 2:
@@ -1426,7 +1426,8 @@ def analyze_trending_content_and_store(db: Session, analyzer, content: list, sou
             trend_score = analyzer.calculate_trend_score(
                 phrase, freq, tfidf_score, recency_weight, source_weight
             )
-            trending_phrase = TrendingPhrase(
+            add_or_update_trending_phrase(
+                db=db,
                 date=target_date,
                 phrase=phrase,
                 score=trend_score,
@@ -1434,4 +1435,44 @@ def analyze_trending_content_and_store(db: Session, analyzer, content: list, sou
                 phrase_type='trigram',
                 source=source
             )
-            db.add(trending_phrase)
+
+def add_or_update_trending_phrase(db: Session, date, phrase, score, frequency, phrase_type, source):
+    """
+    Add a new trending phrase or update existing one with proper frequency management
+    """
+    from sqlalchemy.exc import IntegrityError
+    
+    try:
+        # Try to insert new phrase
+        trending_phrase = TrendingPhrase(
+            date=date,
+            phrase=phrase,
+            score=score,
+            frequency=frequency,
+            phrase_type=phrase_type,
+            source=source
+        )
+        db.add(trending_phrase)
+        db.flush()  # Force the insert to check constraint
+        return trending_phrase
+        
+    except IntegrityError:
+        # Phrase already exists, update it
+        db.rollback()
+        
+        existing_phrase = db.query(TrendingPhrase).filter(
+            TrendingPhrase.date == date,
+            TrendingPhrase.phrase == phrase,
+            TrendingPhrase.phrase_type == phrase_type,
+            TrendingPhrase.source == source
+        ).first()
+        
+        if existing_phrase:
+            # Update frequency and recalculate score
+            existing_phrase.frequency += frequency
+            # Take the higher score between existing and new
+            existing_phrase.score = max(existing_phrase.score, score)
+            return existing_phrase
+            
+        # If we get here, something went wrong
+        return None

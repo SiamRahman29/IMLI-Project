@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react';
 import { apiV2, formatDate, getScoreColor, groupPhrasesByType, groupPhrasesBySource, authUtils } from '../api';
-import { TrendingUp, Globe, Newspaper, Users, RefreshCw, Filter, Zap, Calendar, Trash2 } from 'lucide-react';
+import { TrendingUp, Globe, Newspaper, Users, RefreshCw, Filter, Zap, Calendar, Trash2, BarChart3, X } from 'lucide-react';
 import ProgressiveAnalysis from '../components/ProgressiveAnalysis';
 import ConfirmationModal from '../components/ConfirmationModal';
 import { useLanguage } from '../hooks/useLanguage';
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar } from 'recharts';
 
 function TrendingAnalysis() {
   const { isBengali, translate } = useLanguage();
@@ -48,9 +49,11 @@ function TrendingAnalysis() {
   const [showProgressiveAnalysis, setShowProgressiveAnalysis] = useState(false);
   const [progressiveAnalysisCompleted, setProgressiveAnalysisCompleted] = useState(false);
   const [preventModalClose, setPreventModalClose] = useState(false); // Add protection flag
-  const [deleteModal, setDeleteModal] = useState({ isOpen: false, phraseId: null, phraseName: '' });
+  const [deleteModal, setDeleteModal] = useState({ isOpen: false, phraseId: null, phraseName: '', frequency: 0 });
   const [currentPage, setCurrentPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
+  const [phraseGraphModal, setPhraseGraphModal] = useState({ isOpen: false, phrase: null, data: [] });
+  const [phraseGraphLoading, setPhraseGraphLoading] = useState(false);
 
   // Check if user is admin
   const isAdmin = authUtils.isAdmin();
@@ -67,8 +70,15 @@ function TrendingAnalysis() {
 
   const handleDeletePhrase = async (phraseId) => {
     try {
-      await apiV2.deleteTrendingPhrase(phraseId);
-      showToast('ট্রেন্ডিং ফ্রেজ সফলভাবে মুছে ফেলা হয়েছে', 'success');
+      const response = await apiV2.deleteTrendingPhrase(phraseId);
+      
+      // Handle different delete actions
+      if (response.action === 'frequency_decreased') {
+        showToast(`ফ্রিকোয়েন্সি কমে গেছে ${response.remaining_frequency} এ`, 'success');
+      } else {
+        showToast('ট্রেন্ডিং ফ্রেজ সম্পূর্ণভাবে মুছে ফেলা হয়েছে', 'success');
+      }
+      
       setDeleteModal({ isOpen: false, phraseId: null, phraseName: '' });
       // Refresh the data
       fetchTrendingData();
@@ -78,12 +88,42 @@ function TrendingAnalysis() {
     }
   };
 
-  const openDeleteModal = (phraseId, phraseName) => {
-    setDeleteModal({ isOpen: true, phraseId, phraseName });
+  const openDeleteModal = (phraseId, phraseName, frequency) => {
+    setDeleteModal({ isOpen: true, phraseId, phraseName, frequency });
   };
 
   const closeDeleteModal = () => {
-    setDeleteModal({ isOpen: false, phraseId: null, phraseName: '' });
+    setDeleteModal({ isOpen: false, phraseId: null, phraseName: '', frequency: 0 });
+  };
+
+  // Function to fetch phrase frequency data over time
+  const fetchPhraseFrequencyData = async (phrase) => {
+    setPhraseGraphLoading(true);
+    try {
+      // Call API to get phrase frequency over time (without date restrictions to show all data)
+      const response = await apiV2.getPhraseFrequencyData(phrase, null, null);
+      console.log('🔍 API response for phrase frequency:', { phrase, response });
+      // Backend returns { data: { phrase, start_date, end_date, total_records, data: [...] } }
+      // So we need response.data.data
+      return response.data?.data || [];
+    } catch (error) {
+      console.error('Error fetching phrase frequency data:', error);
+      showToast('ফ্রেজ ডেটা লোড করতে ব্যর্থ', 'error');
+      return [];
+    } finally {
+      setPhraseGraphLoading(false);
+    }
+  };
+
+  const openPhraseGraphModal = async (phrase) => {
+    setPhraseGraphModal({ isOpen: true, phrase, data: [] });
+    const data = await fetchPhraseFrequencyData(phrase);
+    console.log('🔍 Phrase frequency data received:', { phrase, data });
+    setPhraseGraphModal(prev => ({ ...prev, data }));
+  };
+
+  const closePhraseGraphModal = () => {
+    setPhraseGraphModal({ isOpen: false, phrase: null, data: [] });
   };
 
   useEffect(() => {
@@ -445,7 +485,7 @@ function TrendingAnalysis() {
         </div>
         {filters.search && (
           <div className="mt-2 flex items-center gap-2">
-            <span className="text-sm text-blue-600 font-medium">খুঁজছেন: "{filters.search}"</span>
+            <span className="text-sm text-blue-600 font-medium">Searched: "{filters.search}"</span>
             <button
               onClick={() => {
                 setSearchInput('');
@@ -453,7 +493,7 @@ function TrendingAnalysis() {
               }}
               className="text-xs text-red-600 hover:text-red-800 underline"
             >
-              মুছে ফেলুন
+              Clear Search
             </button>
           </div>
         )}
@@ -561,6 +601,15 @@ function TrendingAnalysis() {
     </div>
   );
 
+  // Function to get frequency-based color
+  const getFrequencyColor = (frequency) => {
+    if (frequency >= 10) return 'bg-gradient-to-r from-red-500 to-red-600 text-white';
+    if (frequency >= 5) return 'bg-gradient-to-r from-orange-500 to-orange-600 text-white';
+    if (frequency >= 3) return 'bg-gradient-to-r from-yellow-500 to-yellow-600 text-white';
+    if (frequency >= 2) return 'bg-gradient-to-r from-blue-500 to-blue-600 text-white';
+    return 'bg-gradient-to-r from-gray-100 to-gray-200 text-gray-800';
+  };
+
   const renderTrendingTab = () => {
     if (loading && (!trendingData || !trendingData.phrases)) {
       return <LoadingSkeleton />;
@@ -616,16 +665,34 @@ function TrendingAnalysis() {
             {filteredPhrases.map((phrase, idx) => (
               <div key={idx} className="phrase-separator py-5 px-4 flex flex-col gap-3 hover:bg-gradient-to-r hover:from-blue-50 hover:to-indigo-50 rounded-xl transition-all duration-300 group hover:shadow-lg hover:scale-[1.01] hover:z-10 relative">
                 <div className="flex items-center gap-3">
-                  <span className="text-xl font-bold text-gray-900 group-hover:text-blue-900 transition-colors">{phrase.phrase}</span>
+                  <span 
+                    className="text-xl font-bold text-gray-900 group-hover:text-blue-900 transition-colors cursor-pointer hover:underline flex items-center gap-2"
+                    onClick={() => openPhraseGraphModal(phrase.phrase)}
+                    title="ফ্রিকোয়েন্সি গ্রাফ দেখুন"
+                  >
+                    {phrase.phrase}
+                    <BarChart3 className="w-4 h-4 text-blue-500 opacity-60 group-hover:opacity-100 transition-opacity" />
+                  </span>
                   {/* <span className={`inline-block px-3 py-1 rounded-full text-sm font-bold shadow-lg transition-all group-hover:scale-105 ${getScoreColor(phrase.score) === 'primary' ? 'bg-gradient-to-r from-blue-500 to-blue-600 text-white' : getScoreColor(phrase.score) === 'secondary' ? 'bg-gradient-to-r from-pink-500 to-pink-600 text-white' : 'bg-gradient-to-r from-gray-500 to-gray-600 text-white'}`}>{phrase.score.toFixed(2)}</span> */}
                 </div>
                 <div className="flex flex-wrap gap-2 mt-1">
-                  <span className="inline-block bg-gradient-to-r from-gray-100 to-gray-200 text-gray-800 px-3 py-1 rounded-full text-sm font-semibold shadow-md hover:shadow-lg transition-all group-hover:scale-105">ফ্রিকোয়েন্সি: {phrase.frequency}</span>
+                  <span className={`inline-block px-3 py-1 rounded-full text-sm font-semibold shadow-md hover:shadow-lg transition-all group-hover:scale-105 ${getFrequencyColor(phrase.frequency)}`}>
+                    ফ্রিকোয়েন্সি: {phrase.frequency}
+                    {phrase.frequency > 1 && (
+                      <span className="ml-1 text-xs"></span>
+                    )}
+                    {phrase.frequency >= 5 && (
+                      <span className="ml-1 text-xs"></span>
+                    )}
+                    {phrase.frequency >= 10 && (
+                      <span className="ml-1 text-xs"></span>
+                    )}
+                  </span>
                 </div>
                 {/* Admin delete button */}
                 {isAdmin && (
                   <button
-                    onClick={() => openDeleteModal(phrase.id, phrase.phrase)}
+                    onClick={() => openDeleteModal(phrase.id, phrase.phrase, phrase.frequency)}
                     className="absolute top-3 right-3 p-2 rounded-full bg-red-500 text-white shadow-md hover:bg-red-600 transition-all duration-300"
                     title="মুছে ফেলুন"
                   >
@@ -636,40 +703,99 @@ function TrendingAnalysis() {
             ))}
           </div>
           
-          {/* Pagination Controls */}
+          {/* Enhanced Pagination Controls */}
           {trendingData?.pagination && totalPages > 1 && (
-            <div className="flex justify-center items-center gap-4 mt-8 p-4">
+            <div className="flex justify-center items-center gap-2 mt-8 p-4 flex-wrap">
+              {/* Previous Button */}
               <button
-                onClick={() => {
-                  setCurrentPage(prev => Math.max(1, prev - 1));
-                }}
+                onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
                 disabled={currentPage === 1}
-                className={`px-4 py-2 rounded-lg font-semibold transition-all ${
+                className={`px-3 py-2 rounded-lg font-semibold transition-all ${
                   currentPage === 1 
                     ? 'bg-gray-200 text-gray-400 cursor-not-allowed' 
                     : 'bg-blue-600 text-white hover:bg-blue-700 shadow-md hover:shadow-lg'
                 }`}
               >
-                পূর্ববর্তী
+                ← পূর্ববর্তী
               </button>
               
-              <span className="text-gray-700 font-semibold">
-                পৃষ্ঠা {currentPage} / {totalPages} (মোট {trendingData.pagination.total}টি)
-              </span>
+              {/* Page Numbers with Improved Logic */}
+              <div className="flex gap-1 mx-2">
+                {/* Always show page 1 */}
+                <button
+                  onClick={() => setCurrentPage(1)}
+                  className={`px-3 py-2 rounded-lg font-semibold transition-all ${
+                    currentPage === 1 
+                      ? 'bg-blue-600 text-white shadow-lg' 
+                      : 'bg-gray-100 text-gray-700 hover:bg-blue-100'
+                  }`}
+                >
+                  1
+                </button>
+                
+                {/* Show dots if needed after page 1 */}
+                {currentPage > 3 && (
+                  <span className="px-2 py-2 text-gray-500">...</span>
+                )}
+                
+                {/* Show pages around current page */}
+                {Array.from({ length: totalPages }, (_, i) => i + 1)
+                  .filter(page => {
+                    // Show pages around current page (but not 1 or last page)
+                    return page > 1 && page < totalPages && Math.abs(page - currentPage) <= 1;
+                  })
+                  .map(page => (
+                    <button
+                      key={page}
+                      onClick={() => setCurrentPage(page)}
+                      className={`px-3 py-2 rounded-lg font-semibold transition-all ${
+                        page === currentPage 
+                          ? 'bg-blue-600 text-white shadow-lg' 
+                          : 'bg-gray-100 text-gray-700 hover:bg-blue-100'
+                      }`}
+                    >
+                      {page}
+                    </button>
+                  ))
+                }
+                
+                {/* Show dots if needed before last page */}
+                {currentPage < totalPages - 2 && totalPages > 2 && (
+                  <span className="px-2 py-2 text-gray-500">...</span>
+                )}
+                
+                {/* Always show last page (if more than 1 page) */}
+                {totalPages > 1 && (
+                  <button
+                    onClick={() => setCurrentPage(totalPages)}
+                    className={`px-3 py-2 rounded-lg font-semibold transition-all ${
+                      currentPage === totalPages 
+                        ? 'bg-blue-600 text-white shadow-lg' 
+                        : 'bg-gray-100 text-gray-700 hover:bg-blue-100'
+                    }`}
+                  >
+                    {totalPages}
+                  </button>
+                )}
+              </div>
               
+              {/* Next Button */}
               <button
-                onClick={() => {
-                  setCurrentPage(prev => Math.min(totalPages, prev + 1));
-                }}
+                onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
                 disabled={currentPage === totalPages}
-                className={`px-4 py-2 rounded-lg font-semibold transition-all ${
+                className={`px-3 py-2 rounded-lg font-semibold transition-all ${
                   currentPage === totalPages 
                     ? 'bg-gray-200 text-gray-400 cursor-not-allowed' 
                     : 'bg-blue-600 text-white hover:bg-blue-700 shadow-md hover:shadow-lg'
                 }`}
               >
-                পরবর্তী
+                পরবর্তী →
               </button>
+              
+              {/* Page Info */}
+              <div className="text-sm text-gray-600 ml-4">
+                মোট {trendingData.pagination.total}টি | পৃষ্ঠা {currentPage}/{totalPages}
+              </div>
             </div>
           )}
         </div>
@@ -913,23 +1039,168 @@ function TrendingAnalysis() {
         />
       )}
 
+      {/* Phrase Graph Modal */}
+      {phraseGraphModal.isOpen && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-4xl w-full max-h-[90vh] overflow-y-auto">
+            <div className="p-6 border-b border-gray-200">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="p-2 bg-gradient-to-br from-blue-500 to-blue-600 rounded-xl">
+                    <BarChart3 className="w-6 h-6 text-white" />
+                  </div>
+                  <div>
+                    <h2 className="text-xl font-bold text-gray-900">ফ্রিকোয়েন্সি গ্রাফ</h2>
+                    <p className="text-sm text-gray-600">"{phraseGraphModal.phrase}"</p>
+                  </div>
+                </div>
+                <button
+                  onClick={closePhraseGraphModal}
+                  className="p-2 rounded-full hover:bg-gray-100 transition-colors"
+                >
+                  <X className="w-6 h-6 text-gray-500" />
+                </button>
+              </div>
+            </div>
+            
+            <div className="p-6">
+              {phraseGraphLoading ? (
+                <div className="flex items-center justify-center py-20">
+                  <div className="flex flex-col items-center gap-4">
+                    <svg className="animate-spin h-12 w-12 text-blue-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"></path>
+                    </svg>
+                    <p className="text-gray-600 font-medium">ডেটা লোড হচ্ছে...</p>
+                  </div>
+                </div>
+              ) : phraseGraphModal.data.length > 0 ? (
+                <div className="space-y-6">
+                  {/* Chart */}
+                  <div className="bg-gradient-to-br from-gray-50 to-gray-100 rounded-xl p-6">
+                    <h3 className="text-lg font-semibold text-gray-900 mb-4">তারিখ অনুযায়ী ফ্রিকোয়েন্সি</h3>
+                    <div className="h-80">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <LineChart data={phraseGraphModal.data}>
+                          <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+                          <XAxis 
+                            dataKey="date" 
+                            tick={{ fontSize: 12 }}
+                            tickFormatter={(value) => {
+                              const date = new Date(value);
+                              return `${date.getMonth() + 1}/${date.getDate()}`;
+                            }}
+                          />
+                          <YAxis tick={{ fontSize: 12 }} />
+                          <Tooltip 
+                            formatter={(value, name) => [value, name === 'frequency' ? 'ফ্রিকোয়েন্সি' : 'স্কোর']}
+                            labelFormatter={(label) => `তারিখ: ${label}`}
+                            contentStyle={{
+                              backgroundColor: '#f9fafb',
+                              border: '1px solid #e5e7eb',
+                              borderRadius: '8px',
+                              fontSize: '14px'
+                            }}
+                          />
+                          <Line 
+                            type="monotone" 
+                            dataKey="frequency" 
+                            stroke="#3b82f6" 
+                            strokeWidth={3}
+                            dot={{ fill: '#3b82f6', strokeWidth: 2, r: 6 }}
+                            activeDot={{ r: 8, fill: '#1d4ed8' }}
+                          />
+                        </LineChart>
+                      </ResponsiveContainer>
+                    </div>
+                  </div>
+                  
+                  {/* Data Table */}
+                  {/* <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+                    <div className="bg-gradient-to-r from-gray-50 to-gray-100 px-6 py-4 border-b">
+                      <h3 className="text-lg font-semibold text-gray-900">বিস্তারিত ডেটা</h3>
+                    </div>
+                    <div className="overflow-x-auto">
+                      <table className="w-full">
+                        <thead className="bg-gray-50">
+                          <tr>
+                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">তারিখ</th>
+                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">ফ্রিকোয়েন্সি</th>
+                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">স্কোর</th>
+                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">উৎস</th>
+                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">ধরন</th>
+                          </tr>
+                        </thead>
+                        <tbody className="bg-white divide-y divide-gray-200">
+                          {phraseGraphModal.data.map((item, idx) => (
+                            <tr key={idx} className="hover:bg-gray-50">
+                              <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{item.date}</td>
+                              <td className="px-6 py-4 whitespace-nowrap">
+                                <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${getFrequencyColor(item.frequency)}`}>
+                                  {item.frequency}
+                                </span>
+                              </td>
+                              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{item.score}</td>
+                              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{item.source}</td>
+                              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{item.phrase_type}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div> */}
+                </div>
+              ) : (
+                <div className="text-center py-20">
+                  <div className="flex flex-col items-center gap-4">
+                    <div className="p-4 bg-gray-100 rounded-full">
+                      <BarChart3 className="w-12 h-12 text-gray-400" />
+                    </div>
+                    <div>
+                      <h3 className="text-lg font-semibold text-gray-900 mb-2">There is no frequency data available for this phrase.</h3>
+                      <p className="text-gray-600">No frequency data found for this phrase.</p>
+                      <p className="text-sm text-gray-500 mt-2">Please try again later.</p>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+      
       {/* Delete Confirmation Modal */}
       {deleteModal.isOpen && (
         <ConfirmationModal
           isOpen={deleteModal.isOpen}
-          title="You want to remove the phrase?"
-          message={`Are you sure you want to delete the phrase "${deleteModal.phraseName}"? This action cannot be undone.`}
-          confirmText="Yes, delete"
+          title="Remove the phrase"
+          message={`Are you sure you want to remove the phrase "${deleteModal.phraseName}"?
+
+Current frequency: ${deleteModal.frequency}
+
+${deleteModal.frequency > 1
+  ? `⚠️ Since the frequency is ${deleteModal.frequency}, it will not be completely removed, but rather the frequency will be decreased to ${deleteModal.frequency - 1}.`
+  : '⚠️ It will be completely removed.'
+}
+
+Please proceed with caution.`}
+          confirmText={deleteModal.frequency > 1 ? "Decrease Frequency" : "Remove Completely"}
           cancelText="Cancel"
           type="danger"
-          onClose={() => setDeleteModal({ isOpen: false, phraseId: null, phraseName: '' })}
+          onClose={() => setDeleteModal({ isOpen: false, phraseId: null, phraseName: '', frequency: 0 })}
           onConfirm={async () => {
             // Handle delete action
             try {
               setLoading(true);
-              await apiV2.deleteTrendingPhrase(deleteModal.phraseId);
-              showToast(`'${deleteModal.phraseName}' has been successfully deleted`, 'success');
-              setDeleteModal({ isOpen: false, phraseId: null, phraseName: '' });
+              const response = await apiV2.deleteTrendingPhrase(deleteModal.phraseId);
+              
+              if (response.action === 'frequency_decreased') {
+                showToast(`'${deleteModal.phraseName}' frequency has been decreased to ${response.remaining_frequency}`, 'success');
+              } else {
+                showToast(`'${deleteModal.phraseName}' has been completely removed`, 'success');
+              }
+              
+              setDeleteModal({ isOpen: false, phraseId: null, phraseName: '', frequency: 0 });
               // Refetch data
               if (tabValue === 0) {
                 await fetchTrendingData();

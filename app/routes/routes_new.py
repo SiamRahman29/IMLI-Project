@@ -562,7 +562,7 @@ def delete_trending_phrase(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_admin_user)
 ):
-    """Delete a trending phrase (Admin only)"""
+    """Delete a trending phrase (Admin only) - Smart frequency handling"""
     phrase = db.query(TrendingPhrase).filter(TrendingPhrase.id == phrase_id).first()
     if not phrase:
         raise HTTPException(
@@ -570,10 +570,25 @@ def delete_trending_phrase(
             detail="Trending phrase not found"
         )
     
-    db.delete(phrase)
-    db.commit()
-    
-    return {"message": "Trending phrase deleted successfully"}
+    # If frequency > 1, just decrease frequency
+    if phrase.frequency > 1:
+        phrase.frequency -= 1
+        # Optionally adjust score proportionally
+        phrase.score = phrase.score * (phrase.frequency / (phrase.frequency + 1))
+        db.commit()
+        return {
+            "message": f"Phrase frequency decreased to {phrase.frequency}",
+            "action": "frequency_decreased",
+            "remaining_frequency": phrase.frequency
+        }
+    else:
+        # If frequency = 1, delete the entire entry
+        db.delete(phrase)
+        db.commit()
+        return {
+            "message": "Trending phrase deleted completely",
+            "action": "phrase_deleted"
+        }
 
 @router.get("/daily-trending", summary="Get daily trending summary")
 def get_daily_trending(
@@ -2221,8 +2236,10 @@ def set_category_words(
                 )
                 db.add(category_phrase)
                 
-                # Save to TrendingPhrase table for trending analysis
-                trending_phrase = TrendingPhrase(
+                # Save to TrendingPhrase table for trending analysis using smart frequency handling
+                from app.routes.helpers import add_or_update_trending_phrase
+                add_or_update_trending_phrase(
+                    db=db,
                     date=today,
                     phrase=word,
                     score=100.0,
@@ -2230,7 +2247,6 @@ def set_category_words(
                     phrase_type='selected',
                     source='user_selection'
                 )
-                db.add(trending_phrase)
                 
                 saved_count += 1
                 all_words.append(word)
@@ -2275,3 +2291,52 @@ def set_category_words(
     except Exception as e:
         db.rollback()
         raise HTTPException(status_code=500, detail=f"Error saving category words: {str(e)}")
+
+@router.get("/phrase-frequency", summary="Get phrase frequency data over time")
+def get_phrase_frequency_data(
+    phrase: str = Query(..., description="The phrase to get frequency data for"),
+    start_date: Optional[str] = Query(None, description="Start date (YYYY-MM-DD)"),
+    end_date: Optional[str] = Query(None, description="End date (YYYY-MM-DD)"),
+    db: Session = Depends(get_db)
+):
+    """Get phrase frequency data over time"""
+    try:
+        # Parse dates
+        if start_date:
+            start_date = datetime.strptime(start_date, "%Y-%m-%d").date()
+        else:
+            start_date = date.today() - timedelta(days=90)  # Default to 90 days ago to show more data
+            
+        if end_date:
+            end_date = datetime.strptime(end_date, "%Y-%m-%d").date()
+        else:
+            end_date = date.today()
+        
+        # Get phrase frequency data
+        phrase_data = db.query(TrendingPhrase).filter(
+            TrendingPhrase.phrase == phrase,
+            TrendingPhrase.date >= start_date,
+            TrendingPhrase.date <= end_date
+        ).order_by(TrendingPhrase.date.asc()).all()
+        
+        # Format data for chart
+        chart_data = []
+        for item in phrase_data:
+            chart_data.append({
+                'date': item.date.strftime('%Y-%m-%d'),
+                'frequency': item.frequency,
+                'score': round(item.score, 2),
+                'phrase_type': item.phrase_type,
+                'source': item.source
+            })
+        
+        return {
+            "phrase": phrase,
+            "start_date": start_date.strftime('%Y-%m-%d'),
+            "end_date": end_date.strftime('%Y-%m-%d'),
+            "total_records": len(chart_data),
+            "data": chart_data
+        }
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error fetching phrase frequency data: {str(e)}")

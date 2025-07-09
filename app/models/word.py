@@ -1,4 +1,4 @@
-from sqlalchemy import Column, String, Date, Float, Integer, Text, DateTime, JSON
+from sqlalchemy import Column, String, Date, Float, Integer, Text, DateTime, JSON, UniqueConstraint
 from app.db.database import Base
 from sqlalchemy import Sequence
 from datetime import datetime
@@ -17,9 +17,14 @@ class TrendingPhrase(Base):
     date = Column(Date, nullable=False, index=True)
     phrase = Column(String, nullable=False)
     score = Column(Float, nullable=False)
-    frequency = Column(Integer, nullable=False)
+    frequency = Column(Integer, nullable=False, default=1)
     phrase_type = Column(String, nullable=False)  # 'unigram', 'bigram', 'trigram'
     source = Column(String, nullable=False)  # 'news', 'social_media'
+    
+    # Add unique constraint to prevent duplicate phrases on same date with same type and source
+    __table_args__ = (
+        UniqueConstraint('date', 'phrase', 'phrase_type', 'source', name='uq_phrase_date_type_source'),
+    )
 
 class WeeklyTrendingPhrase(Base):
     __tablename__ = "weekly_trending_phrases"
