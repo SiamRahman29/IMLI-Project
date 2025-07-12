@@ -118,8 +118,13 @@ function TrendingAnalysis() {
   const openPhraseGraphModal = async (phrase) => {
     setPhraseGraphModal({ isOpen: true, phrase, data: [] });
     const data = await fetchPhraseFrequencyData(phrase);
-    console.log('🔍 Phrase frequency data received:', { phrase, data });
-    setPhraseGraphModal(prev => ({ ...prev, data }));
+    console.log('🔍 Phrase frequency data received:', { phrase, data, dataLength: data?.length });
+    
+    // Ensure data is properly formatted and sorted by date
+    const sortedData = Array.isArray(data) ? data.sort((a, b) => new Date(a.date) - new Date(b.date)) : [];
+    console.log('📊 Sorted data for graph:', sortedData);
+    
+    setPhraseGraphModal(prev => ({ ...prev, data: sortedData }));
   };
 
   const closePhraseGraphModal = () => {
@@ -319,7 +324,6 @@ function TrendingAnalysis() {
     if (tabValue === 0 && trendingData?.phrases) {
       dataToExport = trendingData.phrases.map(phrase => ({
         'ফ্রেজ': phrase.phrase,
-        'স্কোর': phrase.score,
         'ফ্রিকোয়েন্সি': phrase.frequency,
         'ধরণ': phrase.phrase_type,
         'উৎস': phrase.source,
@@ -329,7 +333,6 @@ function TrendingAnalysis() {
     } else if (tabValue === 1 && dailyData?.top_phrases) {
       dataToExport = dailyData.top_phrases.map(phrase => ({
         'ফ্রেজ': phrase.phrase,
-        'স্কোর': phrase.score,
         'ফ্রিকোয়েন্সি': phrase.frequency,
         'ধরণ': phrase.phrase_type,
         'উৎস': phrase.source
@@ -338,7 +341,6 @@ function TrendingAnalysis() {
     } else if (tabValue === 2 && weeklyData?.top_weekly_phrases) {
       dataToExport = weeklyData.top_weekly_phrases.map(phrase => ({
         'ফ্রেজ': phrase.phrase,
-        'স্কোর': phrase.score,
         'ফ্রিকোয়েন্সি': phrase.frequency,
         'ধরণ': phrase.phrase_type,
         'উৎস': phrase.source,
@@ -825,7 +827,7 @@ function TrendingAnalysis() {
             {dailyData.top_phrases.map((phrase, idx) => (
               <li key={idx} className="py-2 flex flex-col gap-1">
                 <span className="font-medium">{phrase.phrase}</span>
-                <span className="text-xs text-gray-500">স্কোর: {phrase.score.toFixed(2)} | ফ্রিকোয়েন্সি: {phrase.frequency}</span>
+                <span className="text-xs text-gray-500">ফ্রিকোয়েন্সি: {phrase.frequency}</span>
               </li>
             ))}
           </ul>
@@ -865,8 +867,6 @@ function TrendingAnalysis() {
                 <li key={idx} className="py-2 flex flex-col gap-1">
                   <span className="font-medium">{phrase.phrase}</span>
                   <div className="flex gap-2 text-xs text-gray-500">
-                    <span>স্কোর: {phrase.score.toFixed(2)}</span>
-                    <span>ফ্রিকোয়েন্সি: {phrase.frequency}</span>
                     <span>তারিখ: {phrase.date}</span>
                   </div>
                 </li>
@@ -1081,7 +1081,7 @@ function TrendingAnalysis() {
                     <h3 className="text-lg font-semibold text-gray-900 mb-4">তারিখ অনুযায়ী ফ্রিকোয়েন্সি</h3>
                     <div className="h-80">
                       <ResponsiveContainer width="100%" height="100%">
-                        <LineChart data={phraseGraphModal.data}>
+                        <LineChart data={phraseGraphModal.data} margin={{ top: 20, right: 30, left: 20, bottom: 20 }}>
                           <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
                           <XAxis 
                             dataKey="date" 
@@ -1091,9 +1091,14 @@ function TrendingAnalysis() {
                               return `${date.getMonth() + 1}/${date.getDate()}`;
                             }}
                           />
-                          <YAxis tick={{ fontSize: 12 }} />
+                          <YAxis 
+                            tick={{ fontSize: 12 }} 
+                            allowDecimals={false}
+                            domain={[0, 'dataMax + 1']}
+                            tickCount={6}
+                          />
                           <Tooltip 
-                            formatter={(value, name) => [value, name === 'frequency' ? 'ফ্রিকোয়েন্সি' : 'স্কোর']}
+                            formatter={(value, name) => [value, name === 'frequency' ? 'ফ্রিকোয়েন্সি' : 'অন্যান্য']}
                             labelFormatter={(label) => `তারিখ: ${label}`}
                             contentStyle={{
                               backgroundColor: '#f9fafb',
@@ -1109,6 +1114,7 @@ function TrendingAnalysis() {
                             strokeWidth={3}
                             dot={{ fill: '#3b82f6', strokeWidth: 2, r: 6 }}
                             activeDot={{ r: 8, fill: '#1d4ed8' }}
+                            connectNulls={false}
                           />
                         </LineChart>
                       </ResponsiveContainer>

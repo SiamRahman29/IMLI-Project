@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { Mail, Lock, Eye, EyeOff, LogIn } from 'lucide-react';
@@ -13,18 +13,60 @@ const Login = () => {
   const navigate = useNavigate();
   const { translate } = useLanguage();
 
+  // Clear error after 8 seconds
+  useEffect(() => {
+    if (error) {
+      const timer = setTimeout(() => {
+        setError('');
+      }, 8000); // 8 seconds instead of default
+
+      return () => clearTimeout(timer);
+    }
+  }, [error]);
+
+  // Prevent navigation if there's an error
+  useEffect(() => {
+    if (error) {
+      console.log('Error present, preventing any navigation:', error);
+    }
+  }, [error]);
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     setLoading(true);
     setError('');
 
-    const result = await login(credentials);
-    if (result.success) {
-      navigate('/');
-    } else {
-      setError(result.error);
+    try {
+      console.log('Attempting login with:', credentials.email);
+      const result = await login(credentials);
+      console.log('Login result:', result);
+      
+      if (result.success) {
+        console.log('Login successful, navigating...');
+        navigate('/');
+        return; // Exit here to prevent further execution
+      } else {
+        console.log('Login failed:', result.error);
+        // Handle specific error messages in English
+        let errorMessage = result.error;
+        if (errorMessage.includes('Incorrect email or password')) {
+          errorMessage = 'Incorrect email or password. Please try again.';
+        } else if (errorMessage.includes('User account is deactivated')) {
+          errorMessage = 'User account is deactivated. Please contact admin.';
+        } else if (errorMessage.includes('Login failed')) {
+          errorMessage = 'Login failed. Please try again.';
+        }
+        console.log('Setting error message:', errorMessage);
+        setError(errorMessage);
+        setLoading(false); // Only set loading false on error
+        return; // Exit here to prevent further execution
+      }
+    } catch (error) {
+      console.error('Login error:', error);
+      setError('An error occurred during login. Please try again.');
+      setLoading(false); // Only set loading false on error
+      return; // Exit here to prevent further execution
     }
-    setLoading(false);
   };
 
   const handleChange = (e) => {
@@ -49,8 +91,16 @@ const Login = () => {
         <form className="mt-8 space-y-6" onSubmit={handleSubmit}>
           {error && (
             <div className="bg-red-50 border border-red-200 rounded-md p-4">
-              <div className="flex">
-                <div className="text-sm text-red-700">{error}</div>
+              <div className="flex items-center">
+                <div className="flex-shrink-0">
+                  <svg className="h-5 w-5 text-red-400" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
+                    <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
+                  </svg>
+                </div>
+                <div className="ml-3">
+                  <h3 className="text-sm font-medium text-red-800">Login Error</h3>
+                  <div className="mt-1 text-sm text-red-700">{error}</div>
+                </div>
               </div>
             </div>
           )}
