@@ -76,7 +76,7 @@ const Navbar = () => {
               <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center">
                 <span className="text-white font-bold text-sm">IM</span>
               </div>
-              <span className="text-xl font-bold text-gray-900">BARTA-IML</span>
+              <span className="text-xl font-bold text-gray-900">BARTA-IMLI</span>
             </Link>
           </div>
 
@@ -113,7 +113,7 @@ const Navbar = () => {
                     {getInitials(user?.full_name)}
                   </div>
                   {user?.role === 'admin' && (
-                    <span className="text-sm font-medium">System Administrator</span>
+                    <span className="text-sm font-medium">{user.full_name}</span>
                   )}
                 </button>
 

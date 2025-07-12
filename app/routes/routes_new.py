@@ -543,7 +543,7 @@ def get_trending_phrases(
             source=phrase.source
         ))
     
-    return {
+    return { 
         "start_date": start_date,
         "end_date": end_date,
         "phrases": trending_phrases,

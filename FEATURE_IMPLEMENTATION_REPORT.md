@@ -1,4 +1,4 @@
-## IML Authentication System - New Features Implementation Report
+## IMLI Authentication System - New Features Implementation Report
 
 ### ✅ NEWLY IMPLEMENTED FEATURES
 
