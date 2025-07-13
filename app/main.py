@@ -16,7 +16,7 @@ warnings.filterwarnings("ignore", message=".*using PRAW in an asynchronous envir
 load_dotenv()
 
 app = FastAPI(
-    title="BARTA-IMLI trending words analyzer",
+    title="IMLI trending words analyzer",
     description="An API that serves and stores trending Bengali words and phrases from news and social media with N-gram TF-IDF analysis.",
     version="2.0.0"
 )

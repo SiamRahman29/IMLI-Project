@@ -8,6 +8,7 @@ const Login = () => {
   const [credentials, setCredentials] = useState({ email: '', password: '' });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [success, setSuccess] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const { login } = useAuth();
   const navigate = useNavigate();
@@ -18,37 +19,38 @@ const Login = () => {
     if (error) {
       const timer = setTimeout(() => {
         setError('');
-      }, 8000); // 8 seconds instead of default
+      }, 8000); // 8 seconds
 
       return () => clearTimeout(timer);
     }
   }, [error]);
 
-  // Prevent navigation if there's an error
+  // Clear success message after 3 seconds
   useEffect(() => {
-    if (error) {
-      console.log('Error present, preventing any navigation:', error);
+    if (success) {
+      const timer = setTimeout(() => {
+        setSuccess('');
+      }, 3000); // Show success message for 3 seconds
+      return () => clearTimeout(timer);
     }
-  }, [error]);
+  }, [success]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setLoading(true);
     setError('');
-
+    setSuccess('');
     try {
-      console.log('Attempting login with:', credentials.email);
       const result = await login(credentials);
-      console.log('Login result:', result);
-      
       if (result.success) {
-        console.log('Login successful, navigating...');
-        navigate('/');
-        return; // Exit here to prevent further execution
+        setSuccess('Login successful! Redirecting to the platform');
+        setTimeout(() => {
+          navigate('/');
+        }, 1500); // Show message briefly before redirect
       } else {
-        console.log('Login failed:', result.error);
-        // Handle specific error messages in English
-        let errorMessage = result.error;
+        // Defensive: always set loading false before setting error
+        setLoading(false);
+        let errorMessage = result.error || 'Login failed. Please try again.';
         if (errorMessage.includes('Incorrect email or password')) {
           errorMessage = 'Incorrect email or password. Please try again.';
         } else if (errorMessage.includes('User account is deactivated')) {
@@ -56,17 +58,15 @@ const Login = () => {
         } else if (errorMessage.includes('Login failed')) {
           errorMessage = 'Login failed. Please try again.';
         }
-        console.log('Setting error message:', errorMessage);
         setError(errorMessage);
-        setLoading(false); // Only set loading false on error
-        return; // Exit here to prevent further execution
+        return;
       }
     } catch (error) {
-      console.error('Login error:', error);
+      setLoading(false);
       setError('An error occurred during login. Please try again.');
-      setLoading(false); // Only set loading false on error
-      return; // Exit here to prevent further execution
+      return;
     }
+    setLoading(false);
   };
 
   const handleChange = (e) => {
@@ -81,7 +81,7 @@ const Login = () => {
       <div className="max-w-md w-full space-y-8 p-8 bg-white rounded-xl shadow-2xl">
         <div className="text-center">
           <h2 className="mt-6 text-3xl font-bold text-gray-900">
-            {translate('Sign in to BARTA-IMLI')}
+            {translate('Sign in to IMLI')}
           </h2>
           <p className="mt-2 text-sm text-gray-600">
             {translate('Please sign in to your account')}
@@ -89,6 +89,22 @@ const Login = () => {
         </div>
 
         <form className="mt-8 space-y-6" onSubmit={handleSubmit}>
+          {success && (
+            <div className="bg-green-50 border border-green-200 rounded-md p-4 mb-2">
+              <div className="flex items-center">
+                <div className="flex-shrink-0">
+                  {/* Professional checkmark icon */}
+                  <svg className="h-6 w-6 text-green-500" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                  </svg>
+                </div>
+                <div className="ml-3">
+                  <h3 className="text-sm font-medium text-green-800">{success}</h3>
+                </div>
+              </div>
+            </div>
+          )}
+
           {error && (
             <div className="bg-red-50 border border-red-200 rounded-md p-4">
               <div className="flex items-center">

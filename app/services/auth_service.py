@@ -92,7 +92,7 @@ class AuthService:
             msg = MIMEMultipart()
             msg['From'] = SMTP_USERNAME
             msg['To'] = email
-            msg['Subject'] = "Welcome to BARTA-IMLI Trending Words Analyzer"
+            msg['Subject'] = "Welcome to IMLI Trending Words Analyzer"
 
             permissions_text = ", ".join(permissions) if permissions else "General Access"
             role_text = "Admin" if role == UserRole.ADMIN else "User"
@@ -100,7 +100,7 @@ class AuthService:
             body = f"""
             Dear {full_name},
 
-            You are invited to the BARTA-IMLI Trending Words Analyzer system.
+            You are invited to the IMLI Trending Words Analyzer system.
 
             Your login information:
             - Email: {email}
@@ -112,7 +112,7 @@ class AuthService:
             For security, change your password after your first login.
 
             Thank you,
-            BARTA-IMLI Team
+            IMLI Team
             """
             
             msg.attach(MIMEText(body, 'plain'))

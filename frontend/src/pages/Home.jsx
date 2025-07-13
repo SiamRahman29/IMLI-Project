@@ -45,7 +45,7 @@ function Home() {
   return (
     <div className="container mx-auto px-4 py-12 bg-white min-h-[calc(100vh-4rem)] flex flex-col justify-center">
       <div className="text-center mb-10">
-        <h1 className="text-4xl md:text-3xl font-extrabold tracking-tight text-gray-900 mb-2">BARTA - IMLI</h1>
+        <h1 className="text-4xl md:text-3xl font-extrabold tracking-tight text-gray-900 mb-2">IMLI</h1>
         <p className="text-1xl text-gray-600 mb-2">বাংলা ট্রেন্ডিং শব্দ বিশ্লেষণ সিস্টেম</p>
       </div>
 

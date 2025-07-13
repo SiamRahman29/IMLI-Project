@@ -118,7 +118,7 @@ class EmailService:
                 <div class="content">
                     <p>Dear {name},</p>
 
-                    <p>You have requested to reset the password for your BARTA-IMLI account.</p>
+                    <p>You have requested to reset the password for your IMLI account.</p>
 
                     <div class="otp-box">
                         <p>Your OTP code:</p>
@@ -147,7 +147,7 @@ class EmailService:
         """
         
         message = MessageSchema(
-            subject="🔐 Password Reset OTP - BARTA-IMLI",
+            subject="🔐 Password Reset OTP - IMLI",
             recipients=[email],
             body=html,
             subtype="html"

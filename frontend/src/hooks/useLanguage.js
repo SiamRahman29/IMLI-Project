@@ -25,7 +25,7 @@ const translations = {
   'শীর্ষ ট্রেন্ডিং ক্রেজ': 'Top Trending Phrases',
   'Export CSV': 'Export CSV',
   // Login page translations - always keep in English
-  'Sign in to BARTA-IMLI': 'Sign in to BARTA-IMLI',
+  'Sign in to IMLI': 'Sign in to IMLI',
   'Please sign in to your account': 'Please sign in to your account',
   // UI elements that should always stay in English
   'ফিল্টার অপশন': 'Filter Options',
