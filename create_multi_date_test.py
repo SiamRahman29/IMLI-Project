@@ -24,8 +24,12 @@ def create_multi_date_phrases():
         test_phrase = "বাংলাদেশ ক্রিকেট"
         
         # Add same phrase for last 5 days with different frequencies
+        used_dates = set()
         for i in range(5):
             target_date = today - timedelta(days=i)
+            if target_date in used_dates:
+                continue  # Skip duplicate date
+            used_dates.add(target_date)
             frequency = i + 1  # 1, 2, 3, 4, 5
             score = 80.0 + (i * 5)  # 80, 85, 90, 95, 100
             
