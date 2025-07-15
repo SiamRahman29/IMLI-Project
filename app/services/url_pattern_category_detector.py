@@ -222,6 +222,50 @@ class URLPatternCategoryDetector:
            'Web Stories': [
                r'/web-stories',
                r'/stories'
+           ],
+           
+           # Literature/Culture
+           'Literature/Culture': [
+               r'/literature',
+               r'/sahitya',
+               r'/সাহিত্য',
+               r'/culture',
+               r'/sangskriti',
+               r'/সংস্কৃতি',
+               r'/arts',
+               r'/art-literature',
+               r'/arts-and-literature',
+               r'/sahitto-o-sangskriti',
+               r'/সাহিত্য-সংস্কৃতি',
+               r'/topic/literature',
+               r'/catcn/literature',
+               r'/newscat/literature',
+               r'/category/literature',
+               r'/category/সাহিত্য',
+               r'/topic/সাহিত্য',
+               r'/categories/সাহিত্য-ও-সংস্কৃতি'
+           ],
+           
+           # Ethnic Minorities
+           'Ethnic Minorities': [
+               r'/ক্ষুদ্র.*নৃ.*গোষ্ঠী',
+               r'/আদিবাসী',
+               r'/upjati',
+               r'/উপজাতি',
+               r'/tribe',
+               r'/tribal',
+               r'/ethnic',
+               r'/minority',
+               r'/minorities',
+               r'/indigenous',
+               r'/topic/ক্ষুদ্র.*নৃ.*গোষ্ঠী',
+               r'/topic/আদিবাসী',
+               r'/tags/tribe',
+               r'/topic/3942',
+               r'/topic/ক্ষুদ্র%20নৃ-গোষ্ঠী',
+               r'/topic/ক্ষুদ্র-জাতিগোষ্ঠী',
+               r'/tag/ক্ষুদ্র-নৃ-গোষ্ঠী',
+               r'/news/category/ক্ষুদ্র-নৃ-গোষ্ঠী'
            ]
        }
       

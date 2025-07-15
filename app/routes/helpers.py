@@ -29,6 +29,25 @@ from app.services.stopwords import STOP_WORDS
 
 load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), '../../.env'))
 
+# Custom stopwords for newspaper article filtering
+NEWSPAPER_STOPWORDS = {
+    'ক্যাম্পাস', 'ক্যারিয়ার', 'বিনোদন', 'আন্তর্জাতিক', 'গণমাধ্যম', 'কলাম', 
+    'আইন-আদালত', 'ধর্ম', 'প্রবাস', 'সারাদেশ', 'ফিচার', 'খেলাধুলা', 'ভিডিও',
+    'আড্ডা', 'পরিবেশ', 'স্বাস্থ্য', 'প্রযুক্তি', 'শিক্ষা', 'ল–র–ব–য–হ', 
+    'বিশ্লেষণ', 'নারী', 'মতামত', 'ছবি', 'চাকরি', 'জীবনধারা', 'অর্থনীতি', 
+    'ইসলাম', 'বিশ্ব', 'ফ্যাক্টচেক', 'বিনোদন', 'রাজনীতি', 'জাতীয়'
+}
+
+def clean_heading_text(text: str) -> str:
+    """Clean and filter heading text by removing stopwords"""
+    if not text:
+        return text
+    
+    # Remove stopwords
+    words = text.split()
+    cleaned_words = [word for word in words if word not in NEWSPAPER_STOPWORDS]
+    return ' '.join(cleaned_words)
+
 # Download required NLTK data
 try:
     nltk.data.find('tokenizers/punkt')
@@ -498,10 +517,10 @@ BANGLA_NEWS_SITES = [
 # Modular news scraping functions for each site (add more as needed)
 def scrape_prothom_alo():
     articles = []
+    seen_urls = set()
     try:
         feed_url = "https://www.prothomalo.com/feed/"
         feed = feedparser.parse(feed_url)
-        seen_urls = set()
         for entry in feed.entries:
             url = entry.get('link', '')
             if not url or url in seen_urls:
@@ -511,13 +530,16 @@ def scrape_prothom_alo():
                 res = robust_request(url)
                 if not res:
                     continue
+                res.encoding = 'utf-8'  # Fix encoding
                 soup = BeautifulSoup(res.text, "html.parser")
                 # Only use h1 tags for headings
                 headings = [tag.text.strip() for tag in soup.find_all('h1') if tag.text.strip()]
                 heading_text = ' '.join(headings)
+                # Apply stopword filtering
+                cleaned_heading = clean_heading_text(heading_text)
                 articles.append({
                     'title': headings[0] if headings else entry.get('title', ''),
-                    'heading': heading_text,
+                    'heading': cleaned_heading,
                     'url': url,
                     'published_date': datetime.now().date(),
                     'source': 'prothom_alo'
@@ -957,33 +979,53 @@ def scrape_sangbad():
 
 def scrape_noya_diganta():
     articles = []
+    seen_urls = set()
     try:
         homepage = "https://www.dailynayadiganta.com/"
         res = robust_request(homepage)
         if not res:
             return articles
+        
+        # Fix encoding issue - explicitly set UTF-8
+        res.encoding = 'utf-8'
         soup = BeautifulSoup(res.text, "html.parser")
-        seen_urls = set()
+        
         for link in soup.select("h2 a, h3 a, a[href*='/news/']"):
             url = link.get('href')
             if url and not url.startswith('http'):
                 url = homepage.rstrip('/') + '/' + url.lstrip('/')
+            
+            if url in seen_urls:
+                continue
+            seen_urls.add(url)
+            
             article_res = robust_request(url)
             if not article_res:
                 continue
             try:
+                # Fix encoding for article page too
+                article_res.encoding = 'utf-8'
                 article_soup = BeautifulSoup(article_res.text, "html.parser")
-                # Only use h1 tags for headings
-                headings = [tag.text.strip() for tag in article_soup.find_all('h1') if tag.text.strip()]
-                heading_text = ' '.join(headings)
-                print(f"[scrape_noya_diganta] url: {url}\n  headings: {headings}")
-                articles.append({
-                    "title": headings[0] if headings else "",
-                    "heading": heading_text,
-                    "url": url,
-                    "published_date": datetime.now().date(),
-                    "source": "noya_diganta"
-                })
+                
+                # Extract headings from h1, h2, h3 tags
+                headings = []
+                for tag in article_soup.find_all(['h1', 'h2', 'h3']):
+                    if tag.text.strip():
+                        headings.append(tag.text.strip())
+                
+                if headings:
+                    heading_text = ' '.join(headings)
+                    # Apply stopword filtering
+                    cleaned_heading = clean_heading_text(heading_text)
+                    
+                    print(f"[scrape_noya_diganta] url: {url}\n  headings: {headings[:2]}")
+                    articles.append({
+                        "title": headings[0],
+                        "heading": cleaned_heading,
+                        "url": url,
+                        "published_date": datetime.now().date(),
+                        "source": "noya_diganta"
+                    })
             except Exception as e:
                 print(f"Error scraping Noya Diganta article: {e}")
     except Exception as e:
@@ -1079,8 +1121,8 @@ def scrape_ajkaler_khobor():
                 continue
             try:
                 article_soup = BeautifulSoup(article_res.text, "html.parser")
-                # Only use h1 tags for headings
-                headings = [tag.text.strip() for tag in article_soup.find_all('h1') if tag.text.strip()]
+                # Only use h1 and h2 tags for headings
+                headings = [tag.text.strip() for tag in article_soup.find_all(['h1', 'h2']) if tag.text.strip()]
                 heading_text = ' '.join(headings)
                 print(f"[scrape_ajkaler_khobor] url: {url}\n  headings: {headings}")
                 articles.append({
@@ -1118,8 +1160,8 @@ def scrape_ajker_patrika():
                 continue
             try:
                 article_soup = BeautifulSoup(article_res.text, "html.parser")
-                # Only use h1 tags for headings
-                headings = [tag.text.strip() for tag in article_soup.find_all('h1') if tag.text.strip()]
+                # Only use h1 and h2 tags for headings
+                headings = [tag.text.strip() for tag in article_soup.find_all(['h1', 'h2']) if tag.text.strip()]
                 heading_text = ' '.join(headings)
                 print(f"[scrape_ajker_patrika] url: {url}\n  headings: {headings}")
                 articles.append({
@@ -1262,6 +1304,9 @@ def scrape_bengali_news() -> List[Dict]:
             # ("ajkaler_khobor", scrape_ajkaler_khobor),
         ("ajker_patrika", scrape_ajker_patrika),
         ("protidiner_sangbad", scrape_protidiner_sangbad),
+        # New category scrapers
+        ("sahitya_sanskriti", scrape_sahitya_sanskriti),
+        ("ethnic_minorities", scrape_ethnic_minorities),
         # ("bangladesher_khabor", scrape_bangladesher_khabor),
         # ("bangladesh_journal", scrape_bangladesh_journal)
     ]
@@ -1476,3 +1521,193 @@ def add_or_update_trending_phrase(db: Session, date, phrase, score, frequency, p
             
         # If we get here, something went wrong
         return None
+
+def scrape_sahitya_sanskriti():
+    """Scrape সাহিত্য-সংস্কৃতি (Literature & Culture) news from multiple sources"""
+    articles = []
+    seen_urls = set()
+    
+    # URLs provided for সাহিত্য-সংস্কৃতি category
+    category_urls = [
+        "https://www.prothomalo.com/arts",
+        "https://www.kalerkantho.com/print-edition/literary-page",
+        "https://www.jugantor.com/literature",
+        "https://www.ittefaq.com.bd/literature",
+        "https://www.bd-pratidin.com/literature",
+        "https://www.samakal.com/arts-culture",
+        "https://www.janakantha.com/arts-culture",
+        "https://www.inqilab.com/arts-culture",
+        "https://www.dailynayadiganta.com/arts-culture",
+        "https://www.manobkantha.com.bd/arts-culture",
+        "https://www.ajkerpatrika.com/arts-culture",
+        "https://www.protidinersangbad.com/arts-culture"
+    ]
+    
+    print(f"[scrape_sahitya_sanskriti] Starting with {len(category_urls)} URLs")
+    
+    for url in category_urls:
+        if url in seen_urls:
+            continue
+        seen_urls.add(url)
+        
+        try:
+            print(f"[scrape_sahitya_sanskriti] Scraping: {url}")
+            res = robust_request(url)
+            if not res:
+                print(f"[scrape_sahitya_sanskriti] Failed to fetch: {url}")
+                continue
+            
+            # Set encoding explicitly to handle Bengali text properly
+            res.encoding = 'utf-8'
+            soup = BeautifulSoup(res.text, "html.parser")
+            
+            # Extract article links from common selectors
+            article_links = soup.select("h2 a, h3 a, h4 a, .title a, .headline a, a[href*='/news/'], a[href*='/article/'], a[href*='/story/']")
+            
+            for link in article_links[:5]:  # Limit to 5 articles per source
+                article_url = link.get('href')
+                if not article_url:
+                    continue
+                    
+                # Convert relative URLs to absolute
+                if not article_url.startswith('http'):
+                    base_url = '/'.join(url.split('/')[:3])
+                    article_url = base_url + '/' + article_url.lstrip('/')
+                
+                if article_url in seen_urls:
+                    continue
+                seen_urls.add(article_url)
+                
+                # Scrape individual article
+                article_res = robust_request(article_url)
+                if not article_res:
+                    continue
+                
+                try:
+                    article_res.encoding = 'utf-8'
+                    article_soup = BeautifulSoup(article_res.text, "html.parser")
+                    
+                    # Extract headings
+                    headings = []
+                    for tag in article_soup.find_all(['h1', 'h2', 'h3']):
+                        if tag.text.strip():
+                            headings.append(tag.text.strip())
+                    
+                    if headings:
+                        heading_text = ' '.join(headings)
+                        # Apply stopword filtering
+                        cleaned_heading = clean_heading_text(heading_text)
+                        
+                        articles.append({
+                            "title": headings[0],
+                            "heading": cleaned_heading,
+                            "url": article_url,
+                            "published_date": datetime.now().date(),
+                            "source": "sahitya_sanskriti",
+                            "category": "সাহিত্য-সংস্কৃতি"
+                        })
+                        print(f"[scrape_sahitya_sanskriti] Added article: {headings[0][:50]}...")
+                
+                except Exception as e:
+                    print(f"[scrape_sahitya_sanskriti] Error scraping article {article_url}: {e}")
+                    
+        except Exception as e:
+            print(f"[scrape_sahitya_sanskriti] Error scraping {url}: {e}")
+    
+    print(f"[scrape_sahitya_sanskriti] Total articles scraped: {len(articles)}")
+    return articles
+
+def scrape_ethnic_minorities():
+    """Scrape ক্ষুদ্র নৃগোষ্ঠী (Ethnic Minorities) news from multiple sources"""
+    articles = []
+    seen_urls = set()
+    
+    # URLs provided for ক্ষুদ্র নৃগোষ্ঠী category
+    category_urls = [
+        "https://www.prothomalo.com/bangladesh/district",
+        "https://www.kalerkantho.com/print-edition/country",
+        "https://www.jugantor.com/country",
+        "https://www.ittefaq.com.bd/country",
+        "https://www.bd-pratidin.com/country",
+        "https://www.samakal.com/country",
+        "https://www.janakantha.com/country",
+        "https://www.inqilab.com/country",
+        "https://www.dailynayadiganta.com/country",
+        "https://www.manobkantha.com.bd/country",
+        "https://www.ajkerpatrika.com/country",
+        "https://www.protidinersangbad.com/country"
+    ]
+    
+    print(f"[scrape_ethnic_minorities] Starting with {len(category_urls)} URLs")
+    
+    for url in category_urls:
+        if url in seen_urls:
+            continue
+        seen_urls.add(url)
+        
+        try:
+            print(f"[scrape_ethnic_minorities] Scraping: {url}")
+            res = robust_request(url)
+            if not res:
+                print(f"[scrape_ethnic_minorities] Failed to fetch: {url}")
+                continue
+            
+            # Set encoding explicitly to handle Bengali text properly
+            res.encoding = 'utf-8'
+            soup = BeautifulSoup(res.text, "html.parser")
+            
+            # Extract article links from common selectors
+            article_links = soup.select("h2 a, h3 a, h4 a, .title a, .headline a, a[href*='/news/'], a[href*='/article/'], a[href*='/story/']")
+            
+            for link in article_links[:5]:  # Limit to 5 articles per source
+                article_url = link.get('href')
+                if not article_url:
+                    continue
+                    
+                # Convert relative URLs to absolute
+                if not article_url.startswith('http'):
+                    base_url = '/'.join(url.split('/')[:3])
+                    article_url = base_url + '/' + article_url.lstrip('/')
+                
+                if article_url in seen_urls:
+                    continue
+                seen_urls.add(article_url)
+                
+                # Scrape individual article
+                article_res = robust_request(article_url)
+                if not article_res:
+                    continue
+                
+                try:
+                    article_res.encoding = 'utf-8'
+                    article_soup = BeautifulSoup(article_res.text, "html.parser")
+                    
+                    # Extract headings
+                    headings = []
+                    for tag in article_soup.find_all(['h1', 'h2', 'h3']):
+                        if tag.text.strip():
+                            headings.append(tag.text.strip())
+                    
+                    if headings:
+                        heading_text = ' '.join(headings)
+                        # Apply stopword filtering
+                        cleaned_heading = clean_heading_text(heading_text)
+                        
+                        articles.append({
+                            "title": headings[0],
+                            "heading": cleaned_heading,
+                            "url": article_url,
+                            "published_date": datetime.now().date(),
+                            "source": "ethnic_minorities",
+                            "category": "ক্ষুদ্র নৃগোষ্ঠী"
+                        })
+                        print(f"[scrape_ethnic_minorities] Added article: {headings[0][:50]}...")
+                
+                except Exception as e:
+                    print(f"[scrape_ethnic_minorities] Error scraping article {article_url}: {e}")
+                    
+        except Exception as e:
+            print(f"[scrape_ethnic_minorities] Error scraping {url}: {e}")
+    
+    print(f"[scrape_ethnic_minorities] Total articles scraped: {len(articles)}")
+    return articles

@@ -110,7 +110,9 @@ class CategoryLLMAnalyzer:
             'স্বাস্থ্য': 'চিকিৎসা, রোগ-ব্যাধি, স্বাস্থ্য সেবা, মেডিকেল',
             'মতামত': 'সম্পাদকীয়, মতামত, বিশ্লেষণ, কলাম',
             'বিজ্ঞান': 'বৈজ্ঞানিক আবিষ্কার, গবেষণা, প্রযুক্তি, উদ্ভাবন',
-            'প্রযুক্তি': 'তথ্যপ্রযুক্তি, নতুন প্রযুক্তি, উদ্ভাবন, গ্যাজেট, সফটওয়্যার'
+            'প্রযুক্তি': 'তথ্যপ্রযুক্তি, নতুন প্রযুক্তি, উদ্ভাবন, গ্যাজেট, সফটওয়্যার',
+            'সাহিত্য-সংস্কৃতি': 'সাহিত্য, কবিতা, গল্প, উপন্যাস, সাংস্কৃতিক অনুষ্ঠান, ঐতিহ্য, শিল্পকলা',
+            'ক্ষুদ্র নৃগোষ্ঠী': 'আদিবাসী, ক্ষুদ্র জাতিগোষ্ঠী, উপজাতি, তাদের অধিকার, সংস্কৃতি, সমস্যা'
         }
         
         category_context = category_instructions.get(category, 'সাধারণ সংবাদ ও তথ্য')
@@ -284,6 +286,14 @@ def get_বিজ্ঞান_trending_words(articles: List[Dict]) -> List[str]:
 def get_প্রযুক্তি_trending_words(articles: List[Dict]) -> List[str]:
     """Get trending words for প্রযুক্তি category"""
     return get_category_trending_words('প্রযুক্তি', articles)
+
+def get_সাহিত্য_সংস্কৃতি_trending_words(articles: List[Dict]) -> List[str]:
+    """Get trending words for সাহিত্য-সংস্কৃতি category"""
+    return get_category_trending_words('সাহিত্য-সংস্কৃতি', articles)
+
+def get_ক্ষুদ্র_নৃগোষ্ঠী_trending_words(articles: List[Dict]) -> List[str]:
+    """Get trending words for ক্ষুদ্র নৃগোষ্ঠী category"""
+    return get_category_trending_words('ক্ষুদ্র নৃগোষ্ঠী', articles)
 
 
 if __name__ == "__main__":
