@@ -274,13 +274,19 @@ function GenerateWords() {
     }
   };
 
-  // Utility to strip leading numbers, dots, and titles (like ড., ডঃ, ড:)
+  // Utility to clean candidates - only remove excessive formatting, preserve meaningful text
   const cleanCandidate = (candidate) => {
+    // Convert object to string if needed
+    if (typeof candidate === 'object' && candidate.word) {
+      candidate = candidate.word;
+    }
+    
+    // Only remove excessive formatting, preserve the actual content
     let cleaned = candidate
-      .replace(/^\d+[.:][\s\-–—]*/u, '') // Remove leading numbers and dot/colon
-      .replace(/^[\d\u09E6-\u09EF]+[.:][\s\-–—]*/u, '') // Bengali digits
-      .replace(/^(\u09a1\.|\u09a1\u0983|\u09a1:)[\s\-–—]*/u, '') // Remove Bengali "Dr." titles
+      .replace(/^[\d\u09E6-\u09EF]+[.)]\s*/u, '') // Remove only the number prefix (1. 2. etc.)
+      .replace(/^(\u09a1\.|\u09a1\u0983|\u09a1:)[\s\-–—]*/u, '') // Remove Bengali "Dr." titles  
       .trim();
+    
     return cleaned;
   };
 

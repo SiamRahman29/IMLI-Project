@@ -1951,7 +1951,7 @@ async def hybrid_generate_candidates(
                         trending_func = category_functions[category]
                         trending_words = trending_func(articles)  # Remove await and limit parameter
                         # Ensure only 8 words (functions should return 8 but just in case)
-                        trending_words = trending_words[:8] if trending_words else []
+                        trending_words = trending_words if trending_words else []
                         category_wise_trending[category] = trending_words
                         all_trending_words.extend(trending_words)
                         llm_responses[category] = trending_words
@@ -1983,7 +1983,7 @@ async def hybrid_generate_candidates(
                 "selected_words": len(final_trending_words),
                 "categories_processed": len(category_wise_final) if category_wise_final else 0,
                 "selection_method": "Category-wise LLM (8 per category, 50s delay)",
-                "llm_response": str(category_wise_final)[:500]  # Truncated for brevity
+                "llm_response": str(category_wise_final)  # Truncated for brevity
             }
             print(f"✅ Final selection complete. Returning results.")
             return {
@@ -2237,71 +2237,20 @@ async def hybrid_generate_candidates(
                 print(f"✅ Successfully parsed text response with {len(category_wise_final)} categories")
                 
                 # Calculate frequency for each phrase from scraped articles
-                print(f"🔢 Calculating frequency for phrases from scraped articles...")
-                
-                # Get scraped articles data for frequency calculation
-                scraped_articles = {}
-                if "newspaper" in results["results"]:
-                    newspaper_result = results["results"]["newspaper"]
-                    if "scraping_info" in newspaper_result and "category_wise_articles" in newspaper_result:
-                        scraped_articles = newspaper_result.get("category_wise_articles", {})
-                        print(f"📰 Found scraped articles for {len(scraped_articles)} categories")
-                
-                # Calculate frequency for each phrase
-                for category, phrases in category_wise_final.items():
-                    if category in scraped_articles:
-                        category_articles = scraped_articles[category]
-                        enhanced_phrases = []
-                        
-                        for phrase in phrases:
-                            # Calculate frequency from scraped articles
-                            frequency = 0
-                            phrase_lower = phrase.lower().strip()
-                            
-                            for article in category_articles:
-                                article_text = ""
-                                # Combine title, heading, and content for searching
-                                for field in ['title', 'heading', 'content', 'description']:
-                                    if article.get(field):
-                                        article_text += " " + str(article[field])
-                                
-                                article_text = article_text.lower()
-                                
-                                # Count if phrase appears in this article
-                                if phrase_lower in article_text:
-                                    frequency += 1
-                            
-                            # Create enhanced phrase object with frequency
-                            enhanced_phrase = {
-                                'word': phrase,
-                                'frequency': frequency,
-                                'category': category,
-                                'source': 'final_llm_selection'
-                            }
-                            enhanced_phrases.append(enhanced_phrase)
-                            
-                            print(f"📊 {category} - '{phrase}': frequency = {frequency}")
-                        
-                        # Update with enhanced phrases
-                        category_wise_final[category] = enhanced_phrases
-                    else:
-                        # If no articles found, set default frequency of 1
-                        enhanced_phrases = []
-                        for phrase in phrases:
-                            enhanced_phrase = {
-                                'word': phrase,
-                                'frequency': 1,
-                                'category': category,
-                                'source': 'final_llm_selection'
-                            }
-                            enhanced_phrases.append(enhanced_phrase)
-                        category_wise_final[category] = enhanced_phrases
-                        print(f"⚠️ No articles found for {category}, using default frequency")
+                print(f"🔢 Frequency calculation already done during LLM parsing phase...")
+                print(f"✅ Each phrase already has frequency information from the main LLM processing")
                 
                 print(f"\n🎯 Final Integration Complete!")
                 print(f"📊 Categories created: {len(category_wise_final)}")
                 for category, words in category_wise_final.items():
-                    print(f"   {category}: {len(words)} words - {', '.join(words[:3])}...")
+                    # Extract word text for display since words are now dictionaries
+                    word_texts = []
+                    for word_info in words[:3]:
+                        if isinstance(word_info, dict) and 'word' in word_info:
+                            word_texts.append(word_info['word'])
+                        else:
+                            word_texts.append(str(word_info))
+                    print(f"   {category}: {len(words)} words - {', '.join(word_texts)}...")
                 
                 # Add category_wise_final to results for frontend consumption
                 results["category_wise_final"] = category_wise_final
@@ -2313,12 +2262,12 @@ async def hybrid_generate_candidates(
                 if newspaper_category_data:
                     fallback_categories = {}
                     for category, words in newspaper_category_data.items():
-                        fallback_categories[category] = words[:5]  # Take first 5 words
+                        fallback_categories[category] = words[:10]  # Take first 10 words
                     results["category_wise_final"] = fallback_categories
                 else:
                     results["category_wise_final"] = {
-                        "সাধারণ": unique_final_words[:5],
-                        "ট্রেন্ডিং": unique_final_words[5:10] if len(unique_final_words) > 5 else []
+                        "সাধারণ": unique_final_words[:10],
+                        "ট্রেন্ডিং": unique_final_words[10:20] if len(unique_final_words) > 10 else []
                     }
         else:
             print("⚠️ No category-wise data available for final integration")
