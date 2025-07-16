@@ -30,7 +30,8 @@ try:
     from app.routes.helpers import (
         scrape_prothom_alo, scrape_kaler_kantho, scrape_jugantor,
         scrape_samakal, scrape_janakantha, scrape_inqilab,
-        scrape_manobkantha, scrape_ajker_patrika, scrape_protidiner_sangbad
+        scrape_manobkantha, scrape_ajker_patrika, scrape_protidiner_sangbad,
+        scrape_sahitya_sanskriti, scrape_ethnic_minorities
     )
     from app.services.url_pattern_category_detector import URLPatternCategoryDetector
 except ImportError as e:
@@ -39,7 +40,8 @@ except ImportError as e:
         from routes.helpers import (
             scrape_prothom_alo, scrape_kaler_kantho, scrape_jugantor,
             scrape_samakal, scrape_janakantha, scrape_inqilab,
-            scrape_manobkantha, scrape_ajker_patrika, scrape_protidiner_sangbad
+            scrape_manobkantha, scrape_ajker_patrika, scrape_protidiner_sangbad,
+            scrape_sahitya_sanskriti, scrape_ethnic_minorities
         )
         from app.services.url_pattern_category_detector import URLPatternCategoryDetector
     except ImportError:
@@ -170,14 +172,24 @@ class FilteredNewspaperScraper:
             # Filter articles by target categories
             filtered_articles = []
             for article in articles:
-                category = self.is_target_category(article['url'])
-                if category:
-                    article['category'] = category
+                # Check if article already has a category set (for new category-specific scrapers)
+                if 'category' in article and article['category'] in self.target_categories:
+                    category = article['category']
                     filtered_articles.append(article)
                     
                     # Add to categorized list
                     self.categorized_articles[category].append(article)
                     self.statistics['category_counts'][category] += 1
+                else:
+                    # Use URL pattern detection for traditional scrapers
+                    category = self.is_target_category(article['url'])
+                    if category:
+                        article['category'] = category
+                        filtered_articles.append(article)
+                        
+                        # Add to categorized list
+                        self.categorized_articles[category].append(article)
+                        self.statistics['category_counts'][category] += 1
             
             # Update source statistics
             self.statistics['source_counts'][source_name] = len(filtered_articles)
@@ -211,7 +223,9 @@ class FilteredNewspaperScraper:
             'inqilab': scrape_inqilab,
             'manobkantha': scrape_manobkantha,
             'ajker_patrika': scrape_ajker_patrika,
-            'protidiner_sangbad': scrape_protidiner_sangbad
+            'protidiner_sangbad': scrape_protidiner_sangbad,
+            'sahitya_sanskriti': scrape_sahitya_sanskriti,
+            'ethnic_minorities': scrape_ethnic_minorities
         }
         
         # Scrape each newspaper

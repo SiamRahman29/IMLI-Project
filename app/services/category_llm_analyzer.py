@@ -10,6 +10,11 @@ import traceback
 from typing import List, Dict, Optional
 from dotenv import load_dotenv
 
+# Import the clean_heading_text function from helpers
+import sys
+sys.path.append('/home/bs01127/IMLI-Project')
+from app.routes.helpers import clean_heading_text, NEWSPAPER_STOPWORDS
+
 load_dotenv()
 
 class CategoryLLMAnalyzer:
@@ -66,7 +71,7 @@ class CategoryLLMAnalyzer:
             return []
     
     def _prepare_content_from_articles(self, articles: List[Dict]) -> str:
-        """Prepare text content from articles for LLM analysis"""
+        """Prepare text content from articles for LLM analysis with stopword filtering"""
         content_pieces = []
         
         for article in articles:
@@ -75,13 +80,19 @@ class CategoryLLMAnalyzer:
             headings = article.get('headings', [])
             
             if title:
-                content_pieces.append(f"শিরোনাম: {title}")
+                # Apply stopword filtering to title
+                cleaned_title = clean_heading_text(title)
+                if cleaned_title:
+                    content_pieces.append(f"শিরোনাম: {cleaned_title}")
             
             if headings:
-                # Take first few headings to avoid token limit
-                for heading in headings[:5]:
+                # Take all headings
+                for heading in headings:
                     if heading and heading.strip():
-                        content_pieces.append(f"সংবাদ: {heading.strip()}")
+                        # Apply stopword filtering to heading
+                        cleaned_heading = clean_heading_text(heading.strip())
+                        if cleaned_heading:
+                            content_pieces.append(f"সংবাদ: {cleaned_heading}")
         
         # Combine all content
         combined_content = "\n".join(content_pieces)
@@ -118,7 +129,7 @@ class CategoryLLMAnalyzer:
         category_context = category_instructions.get(category, 'সাধারণ সংবাদ ও তথ্য')
         # **ক্যাটাগরি প্রসঙ্গ:** {category_context}
 
-        prompt = f"""তুমি একজন বিশেষজ্ঞ বাংলাদেশি সংবাদ বিশ্লেষক। তোমার কাজ হল '{category}' ক্যাটাগরির সংবাদ থেকে বর্তমানে সবচেয়ে ট্রেন্ডিং ও গুরুত্বপূর্ণ ৮টি শব্দ/বাক্যাংশ চিহ্নিত করা।
+        prompt = f"""তুমি একজন বিশেষজ্ঞ বাংলাদেশি সংবাদ বিশ্লেষক। তোমার কাজ হল '{category}' ক্যাটাগরির সংবাদ থেকে বর্তমানে সবচেয়ে ট্রেন্ডিং ও গুরুত্বপূর্ণ ১৫টি শব্দ/বাক্যাংশ চিহ্নিত করা।
         যে Topic(২-৪ শব্দের) নিয়ে বেশি আলোচনা হচ্ছে (beshi headings a royeche), সেটা ট্রেন্ডিং টপিক। এমন শব্দ/বাক্যাংশ দাও যেটা শুনলে মানুষ বুঝতে পারবে যে এটা কীসের সাথে সম্পর্কিত। 
         যার একটা অর্থ থাকবে, এমন কিছু দেবে না যেটা অর্থহীন এবং যেটা দেখলে কনটেক্সট বোঝা যাবে না।
 
@@ -128,24 +139,24 @@ class CategoryLLMAnalyzer:
 3. ২-৪ শব্দের মধ্যে স্পষ্ট বাংলা শব্দ/বাক্যাংশ
 4. ব্যক্তিনাম নয়: সাধারণত ব্যক্তির নাম এড়িয়ে বিষয়বস্তুর উপর ফোকাস করো
 5. Stop words এড়াও
-6. ঠিক ৮টি: অবশ্যই ৮টি ট্রেন্ডিং শব্দ/বাক্যাংশ দিতে হবে
+6. ঠিক ১৫টি শব্দ/বাক্যাংশ
 
 {category} ক্যাটাগরির সংবাদ বিষয়বস্তু:**
 {content_text}
 
-**আউটপুট ফরম্যাট (শুধুমাত্র বাংলায়):**
-{category} ট্রেন্ডিং শব্দ/বাক্যাংশ (৮টি):
-১. [বাংলা ট্রেন্ডিং শব্দ/বাক্যাংশ]
-২. [বাংলা ট্রেন্ডিং শব্দ/বাক্যাংশ]  
-৩. [বাংলা ট্রেন্ডিং শব্দ/বাক্যাংশ]
-৪. [বাংলা ট্রেন্ডিং শব্দ/বাক্যাংশ]
-৫. [বাংলা ট্রেন্ডিং শব্দ/বাক্যাংশ]
-৬. [বাংলা ট্রেন্ডিং শব্দ/বাক্যাংশ]
-৭. [বাংলা ট্রেন্ডিং শব্দ/বাক্যাংশ]
-৮. [বাংলা ট্রেন্ডিং শব্দ/বাক্যাংশ]
+উত্তর শুধুমাত্র এই ফরম্যাটে দাও:
+{{
+  "trending_words": [
+    "শব্দ১",
+    "শব্দ২", 
+    "....",
+    "শব্দ১৩",
+    "শব্দ১৪",
+    "শব্দ১৫"
+  ]
+}}
 
-গুরুত্বপূর্ণ: শুধুমাত্র উপরের নির্দিষ্ট ফরম্যাটে উত্তর দাও। অতিরিক্ত ব্যাখ্যা বা মন্তব্য যোগ করো না।
-"""
+গুরুত্বপূর্ণ: অন্য কোনো টেক্সট লিখো না, শুধু JSON দাও।"""
         return prompt
     
     def _call_groq_llm(self, prompt: str) -> List[str]:
@@ -163,7 +174,7 @@ class CategoryLLMAnalyzer:
                     }
                 ],
                 temperature=0.3,
-                max_tokens=1000,
+                max_tokens=5000,
                 top_p=0.9
             )
             
@@ -181,34 +192,69 @@ class CategoryLLMAnalyzer:
             return []
     
     def _parse_trending_words(self, llm_response: str) -> List[str]:
-        """Parse trending words from LLM response"""
-        trending_words = []
+        """Parse trending words from LLM response - simplified approach for better flow"""
+        phrases = []
+        
+        print(f"🔍 Parsing LLM response for category trending words...")
         
         try:
-            lines = llm_response.strip().split('\n')
+            # Clean the response text first
+            cleaned_text = llm_response.strip()
             
-            for line in lines:
-                line = line.strip()
-                
-                # Look for numbered items (১., ২., 1., 2., etc.) up to 8
-                if re.match(r'^[১২৩৪৫৬৭৮৯০1-8][\.\)]\s*', line):
-                    # Extract the text after the number
-                    word = re.sub(r'^[১২৩৪৫৬৭৮৯০1-8][\.\)]\s*', '', line).strip()
-                    
-                    # Clean up the word
-                    word = word.replace('[', '').replace(']', '').strip()
-                    
-                    if word and len(word) > 1:
-                        trending_words.append(word)
+            # Look for JSON-like structure
+            json_start = cleaned_text.find('{')
+            json_end = cleaned_text.rfind('}') + 1
             
-            print(f"🔍 Parsed {len(trending_words)} trending words from LLM response")
-            for i, word in enumerate(trending_words, 1):
-                print(f"   {i}. {word}")
+            if json_start != -1 and json_end > json_start:
+                json_part = cleaned_text[json_start:json_end]
                 
-        except Exception as e:
-            print(f"❌ Error parsing trending words: {e}")
+                data = json.loads(json_part)
+                if isinstance(data, dict) and 'trending_words' in data:
+                    phrases = data['trending_words'][:15]  # Limit to 15 words per category
+                    print(f"✅ Successfully parsed JSON: {len(phrases)} words")
+                    return phrases
+            
+            # If no valid JSON found, try manual extraction
+            print("⚠️ No valid JSON found, trying manual extraction...")
+            
+        except json.JSONDecodeError as e:
+            print(f"⚠️ JSON parsing failed ({e}), trying manual extraction...")
+            
+        # Manual extraction using regex patterns for Bengali text
+        bengali_patterns = [
+            r'"([^"]*[\u0980-\u09FF][^"]*)"',  # Bengali text in double quotes
+            r'[""]([^""]*[\u0980-\u09FF][^""]*)[""]',  # Bengali text in smart quotes
+            r'([^\s,\[\]]+[\u0980-\u09FF][^\s,\[\]]*)',  # Bengali words/phrases
+        ]
         
-        return trending_words
+        for pattern in bengali_patterns:
+            matches = re.findall(pattern, llm_response)
+            for match in matches:
+                match = match.strip()
+                if match and len(match) >= 3 and len(match) <= 50:
+                    phrases.append(match)
+            
+            if len(phrases) >= 15:  # Stop when we have enough
+                break
+        
+        # Clean and filter phrases
+        cleaned_phrases = []
+        seen = set()
+        
+        for phrase in phrases:
+            phrase = phrase.strip()
+            # Only keep Bengali phrases with proper length
+            if (phrase and 
+                len(phrase) >= 3 and 
+                len(phrase) <= 50 and
+                any('\u0980' <= char <= '\u09FF' for char in phrase) and
+                phrase not in seen):
+                cleaned_phrases.append(phrase)
+                seen.add(phrase)
+                
+        result = cleaned_phrases[:15]  # Limit to 15 words per category
+        print(f"✅ Manual extraction completed: {len(result)} unique phrases")
+        return result
 
 
 def get_category_trending_words(category: str, articles: List[Dict]) -> List[str]:
@@ -294,6 +340,58 @@ def get_সাহিত্য_সংস্কৃতি_trending_words(articles: 
 def get_ক্ষুদ্র_নৃগোষ্ঠী_trending_words(articles: List[Dict]) -> List[str]:
     """Get trending words for ক্ষুদ্র নৃগোষ্ঠী category"""
     return get_category_trending_words('ক্ষুদ্র নৃগোষ্ঠী', articles)
+
+
+# parse_llm_response_robust function moved inline for better flow
+# This function is no longer needed as a separate entity since final selection uses text format
+
+def calculate_phrase_frequency_in_articles(phrase: str, articles: List[Dict]) -> Dict[str, any]:
+    """
+    Calculate frequency of a phrase across articles and sources
+    This function is called AFTER final phrase selection to determine frequency
+    
+    Args:
+        phrase: The phrase to count frequency for
+        articles: List of articles from the category
+    
+    Returns:
+        Dictionary with frequency statistics
+    """
+    total_count = 0
+    articles_with_phrase = 0
+    sources_with_phrase = set()
+    
+    phrase_lower = phrase.lower().strip()
+    
+    for article in articles:
+        article_text = ""
+        # Combine title, heading, and other text fields for searching
+        for field in ['title', 'heading', 'content', 'description']:
+            if article.get(field):
+                article_text += " " + str(article[field])
+        
+        article_text = article_text.lower()
+        
+        # Count occurrences in this article
+        count_in_article = article_text.count(phrase_lower)
+        if count_in_article > 0:
+            total_count += count_in_article
+            articles_with_phrase += 1
+            
+            # Track source
+            source = article.get('source', 'unknown')
+            sources_with_phrase.add(source)
+    
+    return {
+        'total_count': total_count,
+        'article_count': articles_with_phrase, 
+        'source_count': len(sources_with_phrase),
+        'sources': list(sources_with_phrase),
+        'frequency': articles_with_phrase  # Main frequency metric
+    }
+
+# Final word selection will be handled in the main pipeline
+# This function is kept for future use when implementing final selection logic
 
 
 if __name__ == "__main__":

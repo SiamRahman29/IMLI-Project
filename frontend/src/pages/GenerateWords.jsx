@@ -25,6 +25,10 @@ function GenerateWords() {
   const [selectedCategoryWords, setSelectedCategoryWords] = useState({});
   const [finalSelectedWords, setFinalSelectedWords] = useState([]);
   
+  // Frequency hover states
+  const [hoveredWord, setHoveredWord] = useState(null);
+  const [hoveredWordData, setHoveredWordData] = useState(null);
+  
   // Source selection handlers
   const handleSourceChange = (source) => {
     setSources(prev => 
@@ -32,6 +36,61 @@ function GenerateWords() {
         ? prev.filter(s => s !== source)
         : [...prev, source]
     );
+  };
+  
+  // Frequency hover handlers
+  const handleWordHover = (word, category, wordData) => {
+    setHoveredWord(`${category}_${word}`);
+    setHoveredWordData({
+      word: word,
+      category: category,
+      frequency: wordData?.frequency || 1,
+      source: wordData?.source || 'unknown'
+    });
+  };
+
+  const handleWordLeave = () => {
+    setHoveredWord(null);
+    setHoveredWordData(null);
+  };
+
+  const getFrequencyBadgeColor = (frequency) => {
+    if (frequency >= 10) return '#4CAF50'; // Green for high frequency
+    if (frequency >= 5) return '#FF9800';  // Orange for medium frequency
+    return '#F44336'; // Red for low frequency
+  };
+
+  const getCategoryColor = (category) => {
+    const colors = {
+      'জাতীয়': '#2196F3',
+      'আন্তর্জাতিক': '#4CAF50',
+      'অর্থনীতি': '#FF9800',
+      'রাজনীতি': '#9C27B0',
+      'বিনোদন': '#E91E63',
+      'খেলাধুলা': '#00BCD4',
+      'শিক্ষা': '#795548',
+      'স্বাস্থ্য': '#8BC34A',
+      'বিজ্ঞান': '#3F51B5',
+      'প্রযুক্তি': '#607D8B',
+      'সাহিত্য-সংস্কৃতি': '#FF5722',
+      'ক্ষুদ্র নৃগোষ্ঠী': '#009688',
+      'trivia': '#9E9E9E',
+      'sports': '#00BCD4',
+      'web-stories': '#E91E63',
+      'islam': '#8BC34A',
+      'job': '#795548',
+      'picture': '#FF5722',
+      'op-ed': '#9C27B0',
+      'adda': '#607D8B',
+      'women': '#E91E63',
+      'science': '#3F51B5',
+      'environment': '#4CAF50',
+      'analysis': '#9C27B0',
+      'education': '#795548',
+      'health': '#8BC34A',
+      'technology': '#607D8B'
+    };
+    return colors[category] || '#666666';
   };
   
   const navigate = useNavigate();
@@ -688,7 +747,7 @@ function GenerateWords() {
               <div className="flex items-center justify-between mb-6">
                 <h2 className="text-2xl font-bold flex items-center gap-2">
                   <Sparkles className="w-6 h-6 text-yellow-500" />
-                  দ্রুত শব্দ নির্বাচন - প্রতি ক্যাটেগরি থেকে ৫টি শব্দ
+                  দ্রুত শব্দ নির্বাচন - প্রতি ক্যাটেগরি থেকে ১০টি শব্দ
                 </h2>
                 <div className="text-sm text-gray-500 bg-green-100 px-3 py-1 rounded-full">
                   নির্বাচিত: {getSelectedCategoriesCount()}/{Object.keys(categoryWiseWords).length} (মোট {getTotalSelectedWords()}টি শব্দ)
@@ -697,7 +756,7 @@ function GenerateWords() {
               
               <div className="mb-4 p-4 bg-blue-50 border-l-4 border-blue-400 rounded">
                 <p className="text-blue-800 font-medium text-sm">
-                  📋 প্রতিটি ক্যাটেগরি থেকে একটি করে শব্দ নির্বাচন করুন (প্রতি কলামে ৫টি শব্দ থেকে নির্বাচন)
+                  📋 প্রতিটি ক্যাটেগরি থেকে একটি করে শব্দ নির্বাচন করুন (প্রতি কলামে ১০টি শব্দ থেকে নির্বাচন)
                 </p>
                 <p className="text-blue-600 text-xs mt-1">
                   💡 নির্বাচিত শব্দগুলো ক্যাটেগরি তথ্যসহ সংরক্ষিত হবে
@@ -711,39 +770,73 @@ function GenerateWords() {
                     {/* Category Header */}
                     <div className="text-center mb-4 pb-3 border-b-2 border-blue-300">
                       <h3 className="font-bold text-lg text-gray-800">{category}</h3>
-                      <span className="text-xs text-blue-600 bg-blue-100 px-2 py-1 rounded-full">৫টি শব্দ</span>
+                      <span className="text-xs text-blue-600 bg-blue-100 px-2 py-1 rounded-full">১০টি শব্দ</span>
                     </div>
                     
-                    {/* 5 Words for this category */}
-                    <div className="space-y-3">                        {words.slice(0, 5).map((word, idx) => {
-                          const isSelected = selectedCategoryWords[category] && 
-                            (Array.isArray(selectedCategoryWords[category]) 
-                              ? selectedCategoryWords[category].includes(word)
-                              : selectedCategoryWords[category] === word);
-                          
-                          return (
-                            <button
-                              key={idx}
-                              type="button"
-                              className={`w-full text-left px-4 py-3 rounded-lg border-2 text-sm transition-all duration-300 transform ${
-                                isSelected
-                                  ? 'bg-blue-600 text-white border-blue-600 shadow-lg scale-105'
-                                  : 'bg-white text-gray-700 border-gray-300 hover:bg-blue-50 hover:border-blue-400 hover:scale-102'
-                              }`}
-                              onClick={() => handleCategoryWordSelect(category, word)}
-                              title={`"${category}" ক্যাটেগরি থেকে "${cleanCandidate(word)}" ${isSelected ? 'অপসারণ' : 'নির্বাচন'} করুন`}
-                            >
-                              <div className="flex items-center gap-2">
-                                <span className={`text-xs font-bold w-6 h-6 rounded-full flex items-center justify-center ${
-                                  isSelected ? 'bg-white text-blue-600' : 'bg-gray-200 text-gray-600'
-                                }`}>
-                                  {isSelected ? '✓' : idx + 1}
+                    {/* 10 Words for this category */}
+                    <div className="space-y-3">
+                      {words.slice(0, 10).map((word, idx) => {
+                        const isSelected = selectedCategoryWords[category] && 
+                          (Array.isArray(selectedCategoryWords[category]) 
+                            ? selectedCategoryWords[category].includes(word)
+                            : selectedCategoryWords[category] === word);
+                        
+                        // Extract word data if it's an object with frequency info
+                        let wordText = word;
+                        let wordData = { frequency: 1, source: 'unknown' };
+                        
+                        if (typeof word === 'object' && word.word) {
+                          wordText = word.word;
+                          wordData = {
+                            frequency: word.frequency || 1,
+                            source: word.source || 'unknown'
+                          };
+                        } else if (typeof word === 'string') {
+                          wordText = word;
+                        }
+                        
+                        return (
+                          <button
+                            key={idx}
+                            type="button"
+                            className={`w-full text-left px-4 py-3 rounded-lg border-2 text-sm transition-all duration-300 transform relative ${
+                              isSelected
+                                ? 'bg-blue-600 text-white border-blue-600 shadow-lg scale-105'
+                                : 'bg-white text-gray-700 border-gray-300 hover:bg-blue-50 hover:border-blue-400 hover:scale-102'
+                            }`}
+                            onClick={() => handleCategoryWordSelect(category, word)}
+                            onMouseEnter={() => handleWordHover(wordText, category, wordData)}
+                            onMouseLeave={handleWordLeave}
+                            title={`"${category}" ক্যাটেগরি থেকে "${cleanCandidate(wordText)}" ${isSelected ? 'অপসারণ' : 'নির্বাচন'} করুন`}
+                          >
+                            <div className="flex items-center gap-2">
+                              <span className={`text-xs font-bold w-6 h-6 rounded-full flex items-center justify-center ${
+                                isSelected ? 'bg-white text-blue-600' : 'bg-gray-200 text-gray-600'
+                              }`}>
+                                {isSelected ? '✓' : idx + 1}
+                              </span>
+                              <span className="font-medium flex-1">{cleanCandidate(wordText)}</span>
+                              
+                              {/* Frequency Badge */}
+                              {wordData.frequency > 1 && (
+                                <span 
+                                  className="text-xs font-bold px-2 py-1 rounded-full text-white"
+                                  style={{ backgroundColor: getFrequencyBadgeColor(wordData.frequency) }}
+                                >
+                                  {wordData.frequency}
                                 </span>
-                                <span className="font-medium flex-1">{cleanCandidate(word)}</span>
-                              </div>
-                            </button>
-                          );
-                        })}
+                              )}
+                              
+                              {/* Source Badge */}
+                              {wordData.source === 'llm_selection' && (
+                                <span className="text-xs px-2 py-1 rounded-full bg-purple-600 text-white font-bold">
+                                  LLM
+                                </span>
+                              )}
+                            </div>
+                          </button>
+                        );
+                      })}
                     </div>
                     
                     {/* Selection status */}
@@ -813,22 +906,63 @@ function GenerateWords() {
                 </h2>
                 <p className="text-gray-700 mb-3 font-medium">প্রস্তাবিত শব্দসমূহ ({parseCandidates(aiCandidates).length}টি):</p>
                 <div className="flex flex-wrap gap-2 mb-4">
-                  {parseCandidates(aiCandidates).map((candidate, idx) => (
-                    <button
-                      key={idx}
-                      type="button"
-                      className={`px-4 py-2 rounded-full border text-sm font-medium transition-all duration-200 ${selectedWord === cleanCandidate(candidate) ? 'bg-blue-600 text-white border-blue-600 shadow-md' : 'bg-gray-100 text-gray-700 border-gray-300 hover:bg-blue-50 hover:border-blue-300'}`}
-                      onClick={() => setSelectedWord(cleanCandidate(candidate))}
-                    >
-                      {candidate}
-                    </button>
-                  ))}
+                  {parseCandidates(aiCandidates).map((candidate, idx) => {
+                    const cleanedCandidate = cleanCandidate(candidate);
+                    return (
+                      <button
+                        key={idx}
+                        type="button"
+                        className={`px-4 py-2 rounded-full border text-sm font-medium transition-all duration-200 relative ${
+                          selectedWord === cleanedCandidate 
+                            ? 'bg-blue-600 text-white border-blue-600 shadow-md' 
+                            : 'bg-gray-100 text-gray-700 border-gray-300 hover:bg-blue-50 hover:border-blue-300'
+                        }`}
+                        onClick={() => setSelectedWord(cleanedCandidate)}
+                        onMouseEnter={() => handleWordHover(cleanedCandidate, 'ম্যানুয়াল নির্বাচন', { frequency: 1, source: 'fallback' })}
+                        onMouseLeave={handleWordLeave}
+                        title={`"${cleanedCandidate}" নির্বাচন করুন`}
+                      >
+                        {candidate}
+                      </button>
+                    );
+                  })}
                 </div>
               </div>
             )
           )}
 
           
+        </div>
+      )}
+
+      {/* Frequency Hover Tooltip */}
+      {hoveredWordData && (
+        <div className="fixed top-1/2 right-5 transform -translate-y-1/2 z-50 bg-gray-900 bg-opacity-95 text-white p-4 rounded-lg shadow-xl max-w-xs backdrop-blur-sm border border-gray-600">
+          <div className="border-b border-gray-600 pb-2 mb-2">
+            <strong className="text-blue-300 text-lg">{hoveredWordData.word}</strong>
+            <span className="text-gray-300 text-sm ml-2">({hoveredWordData.category})</span>
+          </div>
+          <div className="space-y-1 text-sm">
+            <div className="flex justify-between items-center">
+              <span className="text-gray-300">আবৃত্তি:</span>
+              <span className="text-blue-300 font-bold">{hoveredWordData.frequency} বার</span>
+            </div>
+            <div className="flex justify-between items-center">
+              <span className="text-gray-300">উৎস:</span>
+              <span className="text-blue-300 font-bold">
+                {hoveredWordData.source === 'llm_selection' ? 'এআই নির্বাচিত' : 
+                 hoveredWordData.source === 'fallback' ? 'স্বয়ংক্রিয়' : 
+                 hoveredWordData.source}
+              </span>
+            </div>
+            <div className="flex justify-between items-center">
+              <span className="text-gray-300">জনপ্রিয়তা:</span>
+              <span className="text-blue-300 font-bold">
+                {hoveredWordData.frequency >= 10 ? 'অত্যন্ত জনপ্রিয়' :
+                 hoveredWordData.frequency >= 5 ? 'মাঝারি জনপ্রিয়' : 'কম জনপ্রিয়'}
+              </span>
+            </div>
+          </div>
         </div>
       )}
 
