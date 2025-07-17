@@ -130,16 +130,15 @@ class CategoryLLMAnalyzer:
         # **ক্যাটাগরি প্রসঙ্গ:** {category_context}
 
         prompt = f"""তুমি একজন বিশেষজ্ঞ বাংলাদেশি সংবাদ বিশ্লেষক। তোমার কাজ হল '{category}' ক্যাটাগরির সংবাদ থেকে বর্তমানে সবচেয়ে ট্রেন্ডিং ও গুরুত্বপূর্ণ ১৫টি শব্দ/বাক্যাংশ চিহ্নিত করা।
-        যে Topic(২-৪ শব্দের) নিয়ে বেশি আলোচনা হচ্ছে (beshi headings a royeche), সেটা ট্রেন্ডিং টপিক। এমন শব্দ/বাক্যাংশ দাও যেটা শুনলে মানুষ বুঝতে পারবে যে এটা কীসের সাথে সম্পর্কিত। 
+        যে Topic (২-৪ শব্দের) নিয়ে বেশি আলোচনা হচ্ছে (beshi headings a royeche), সেটা ট্রেন্ডিং টপিক। এমন শব্দ/বাক্যাংশ দাও যেটা শুনলে মানুষ বুঝতে পারবে যে এটা কীসের সাথে সম্পর্কিত। 
         যার একটা অর্থ থাকবে, এমন কিছু দেবে না যেটা অর্থহীন এবং যেটা দেখলে কনটেক্সট বোঝা যাবে না।
 
 বিশ্লেষণের নিয়মাবলী:
 1. ক্যাটাগরি ফোকাস: শুধুমাত্র '{category}' সম্পর্কিত ট্রেন্ডিং topic নিয়ে কাজ করো
 2. ট্রেন্ডিং অগ্রাধিকার: যে topic (২-৪ শব্দের) গুলো বারবার আসছে এবং আলোচিত হচ্ছে
-3. ২-৪ শব্দের মধ্যে স্পষ্ট বাংলা শব্দ/বাক্যাংশ
+3. ২-৪ শব্দের (must be 2-4 words) মধ্যে স্পষ্ট বাংলা শব্দ/বাক্যাংশ
 4. ব্যক্তিনাম নয়: সাধারণত ব্যক্তির নাম এড়িয়ে বিষয়বস্তুর উপর ফোকাস করো
-5. Stop words এড়াও
-6. ঠিক ১৫টি শব্দ/বাক্যাংশ
+5. ঠিক ১৫টি শব্দ/বাক্যাংশ
 
 {category} ক্যাটাগরির সংবাদ বিষয়বস্তু:**
 {content_text}
@@ -363,17 +362,37 @@ def calculate_phrase_frequency_in_articles(phrase: str, articles: List[Dict]) ->
     
     phrase_lower = phrase.lower().strip()
     
-    for article in articles:
+    # Also try to match individual words from the phrase for better matching
+    phrase_words = phrase_lower.split()
+    
+    print(f"🔍 DEBUG: Calculating frequency for phrase: '{phrase}'")
+    print(f"🔍 DEBUG: Phrase words: {phrase_words}")
+    print(f"🔍 DEBUG: Total articles to search: {len(articles)}")
+    
+    for i, article in enumerate(articles):
         article_text = ""
-        # Combine title, heading, and other text fields for searching
-        for field in ['title', 'heading', 'content', 'description']:
+        # ONLY use heading/title fields for frequency calculation (as per user requirement)
+        for field in ['title', 'heading']:
             if article.get(field):
                 article_text += " " + str(article[field])
         
-        article_text = article_text.lower()
+        article_text = article_text.lower().strip()
         
-        # Count occurrences in this article
-        count_in_article = article_text.count(phrase_lower)
+        if i < 3:  # Debug first 3 articles
+            print(f"🔍 DEBUG: Article {i+1} text: '{article_text}'")
+        
+        # Count exact phrase occurrences
+        exact_count = article_text.count(phrase_lower)
+        
+        # Also check if all words from phrase appear in the article (partial matching)
+        partial_match = 0
+        if len(phrase_words) > 1:
+            words_found = sum(1 for word in phrase_words if word in article_text)
+            if words_found == len(phrase_words):
+                partial_match = 1
+        
+        count_in_article = max(exact_count, partial_match)
+        
         if count_in_article > 0:
             total_count += count_in_article
             articles_with_phrase += 1
@@ -381,14 +400,20 @@ def calculate_phrase_frequency_in_articles(phrase: str, articles: List[Dict]) ->
             # Track source
             source = article.get('source', 'unknown')
             sources_with_phrase.add(source)
+            
+            if i < 5:  # Debug first 5 matches
+                print(f"🔍 DEBUG: Found match in article {i+1}: exact={exact_count}, partial={partial_match}, total={count_in_article}")
     
-    return {
+    result = {
         'total_count': total_count,
         'article_count': articles_with_phrase, 
         'source_count': len(sources_with_phrase),
         'sources': list(sources_with_phrase),
         'frequency': articles_with_phrase  # Main frequency metric
     }
+    
+    print(f"🔍 DEBUG: Final frequency result: {result}")
+    return result
 
 # Final word selection will be handled in the main pipeline
 # This function is kept for future use when implementing final selection logic

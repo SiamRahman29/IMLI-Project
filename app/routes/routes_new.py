@@ -99,42 +99,10 @@ async def generate_candidates(
         
         print(f"🚀 Starting trending word generation for {len(TARGET_CATEGORIES)} categories...")
         
-        # Load saved newspaper data from JSON file for faster testing
-        json_file_path = "/home/bs01127/IMLI-Project/all_newspapers_by_category.json"
-        
-        if os.path.exists(json_file_path):
-            print(f"📂 Loading newspaper data from saved JSON file for faster testing...")
-            with open(json_file_path, 'r', encoding='utf-8') as f:
-                saved_data = json.load(f)
-            
-            # Extract articles by category from saved data
-            results = {
-                'category_wise_articles': {},
-                'scraping_info': {
-                    'total_articles': 0,
-                    'source': 'saved_json_for_testing',
-                    'timestamp': datetime.now().isoformat(),
-                    'scraping_time_seconds': 0.1
-                }
-            }
-            
-            for category in TARGET_CATEGORIES:
-                if category in saved_data:
-                    articles = saved_data[category]
-                    results['category_wise_articles'][category] = articles
-                    results['scraping_info']['total_articles'] += len(articles)
-                    print(f"   {category}: {len(articles)} articles loaded")
-                else:
-                    results['category_wise_articles'][category] = []
-                    print(f"   {category}: No articles found")
-            
-            print(f"📊 Total {results['scraping_info']['total_articles']} articles loaded from JSON")
-            
-        else:
-            print(f"⚠️ JSON file not found at {json_file_path}, using fresh scraping...")
-            # Fresh scraping
-            scraper = FilteredNewspaperScraper(TARGET_CATEGORIES)
-            results = scraper.scrape_all_newspapers()
+        # Always use live scraping for frequency calculation
+        print(f"🔴 LIVE SCRAPING: Using fresh scraping for accurate frequency calculation...")
+        scraper = FilteredNewspaperScraper(TARGET_CATEGORIES)
+        results = scraper.scrape_all_newspapers()
         
         print(f"📊 Scraped {results['scraping_info']['total_articles']} articles")
         print(f"📂 Category-wise breakdown:")
@@ -393,15 +361,11 @@ Reddit Content from r/{subreddit}:
                         print(f"✅ Found category: '{current_category}'")
                         continue
                     
-                    # Extract numbered items for current category (support both English and Bengali numbers)
-                    if current_category and re.match(r'^[১২৩৪৫৬৭৮৯১০1-9][\.\)]\s*', line):
-                        # Skip if we already have 10 words for this category
-                        if len(category_wise_final[current_category]) >= 10:
-                            print(f"⚠️ Category '{current_category}' already has 10 words, skipping...")
-                            continue
-                            
-                        # Remove number prefix and clean up
-                        word = re.sub(r'^[১২৩৪৫৬৭৮৯১০1-9][\.\)]\s*', '', line).strip()
+                    # Extract numbered items for current category (support both English and Bengali numbers, including 10)
+                    if current_category and (re.match(r'^([১২৩৪৫৬৭৮৯১০]|1[0]|[1-9])[\.\)]\s*', line) or re.match(r'^১০[\.\)]\s*', line)):
+                        # Remove number prefix and clean up (handle both single digits and 10)
+                        word = re.sub(r'^([১২৩৪৫৬৭৮৯১০]|1[0]|[1-9])[\.\)]\s*', '', line).strip()
+                        word = re.sub(r'^১০[\.\)]\s*', '', word).strip()  # Extra cleanup for Bengali 10
                         # Remove any trailing punctuation or extra spaces
                         word = re.sub(r'[।\.]+$', '', word).strip()
                         
@@ -420,14 +384,28 @@ Reddit Content from r/{subreddit}:
                                 # Calculate frequency from scraped articles for this phrase
                                 frequency = 1  # Default frequency
                                 
+                                print(f"🔍 DEBUG: Starting frequency calculation for '{word}' in category '{current_category}'")
+                                
                                 # Get articles for this category to calculate frequency
                                 if results and 'category_wise_articles' in results:
                                     category_articles = results['category_wise_articles'].get(current_category, [])
-                                    if category_articles:
+                                    print(f"🔍 DEBUG: Found {len(category_articles)} articles for category '{current_category}'")
+                                    
+                                    if category_articles and len(category_articles) > 0:
+                                        # Check article structure
+                                        sample_article = category_articles[0]
+                                        print(f"🔍 DEBUG: Sample article fields: {list(sample_article.keys()) if isinstance(sample_article, dict) else 'Not a dict'}")
+                                        
                                         # Use our frequency calculation function
                                         from app.services.category_llm_analyzer import calculate_phrase_frequency_in_articles
                                         freq_stats = calculate_phrase_frequency_in_articles(word, category_articles)
                                         frequency = freq_stats.get('frequency', 1)
+                                        print(f"🔍 DEBUG: Calculated frequency for '{word}': {frequency} (full stats: {freq_stats})")
+                                    else:
+                                        print(f"🔍 DEBUG: No articles found for category '{current_category}' or articles list is empty")
+                                else:
+                                    print(f"🔍 DEBUG: No 'category_wise_articles' in results or results is None")
+                                    print(f"🔍 DEBUG: Available keys in results: {list(results.keys()) if results else 'results is None'}")
                                 
                                 # Add word with frequency information
                                 word_info = {
@@ -2220,25 +2198,17 @@ async def hybrid_generate_candidates(
                         continue
                     
                     # Extract numbered items for current category (support both English and Bengali numbers)
-                    if current_category and re.match(r'^[১২৩৪৫৬৭৮৯১০1-9][\.\)]\s*', line):
-                        # Skip if we already have 10 words for this category
-                        if len(category_wise_final[current_category]) >= 10:
-                            continue
-                            
+                    if current_category and re.match(r'^[১২৩৪৫৬৭৮৯১০][\.\)]\s*|^1[0][\.\)]\s*|^[1-9][\.\)]\s*', line):
                         # Remove number prefix and clean up
-                        word = re.sub(r'^[১২৩৪৫৬৭৮৯১০1-9][\.\)]\s*', '', line).strip()
+                        word = re.sub(r'^[১২৩৪৫৬৭৮৯১০][\.\)]\s*|^1[0][\.\)]\s*|^[1-9][\.\)]\s*', '', line).strip()
                         # Remove any trailing punctuation or extra spaces
                         word = re.sub(r'[।\.]+$', '', word).strip()
                         
                         if word and len(word) > 1:
                             category_wise_final[current_category].append(word)
-                            print(f"✅ Added word to {current_category}: '{word}' ({len(category_wise_final[current_category])}/10)")
+                            print(f"✅ Added word to {current_category}: '{word}' ({len(category_wise_final[current_category])}/total)")
                 
                 print(f"✅ Successfully parsed text response with {len(category_wise_final)} categories")
-                
-                # Calculate frequency for each phrase from scraped articles
-                print(f"🔢 Frequency calculation already done during LLM parsing phase...")
-                print(f"✅ Each phrase already has frequency information from the main LLM processing")
                 
                 print(f"\n🎯 Final Integration Complete!")
                 print(f"📊 Categories created: {len(category_wise_final)}")
