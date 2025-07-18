@@ -99,8 +99,9 @@ async def generate_candidates(
         
         print(f"🚀 Starting trending word generation for {len(TARGET_CATEGORIES)} categories...")
         
-        # Always use live scraping for frequency calculation
+        # Always use live scraping for frequency calculation (temporary in-memory storage)
         print(f"🔴 LIVE SCRAPING: Using fresh scraping for accurate frequency calculation...")
+        print(f"🧠 MEMORY OPTIMIZATION: Storing articles temporarily in memory only (not in DB)")
         scraper = FilteredNewspaperScraper(TARGET_CATEGORIES)
         results = scraper.scrape_all_newspapers()
         
@@ -381,36 +382,10 @@ Reddit Content from r/{subreddit}:
                                     break
                             
                             if not word_exists:
-                                # Calculate frequency from scraped articles for this phrase
-                                frequency = 1  # Default frequency
-                                
-                                print(f"🔍 DEBUG: Starting frequency calculation for '{word}' in category '{current_category}'")
-                                
-                                # Get articles for this category to calculate frequency
-                                if results and 'category_wise_articles' in results:
-                                    category_articles = results['category_wise_articles'].get(current_category, [])
-                                    print(f"🔍 DEBUG: Found {len(category_articles)} articles for category '{current_category}'")
-                                    
-                                    if category_articles and len(category_articles) > 0:
-                                        # Check article structure
-                                        sample_article = category_articles[0]
-                                        print(f"🔍 DEBUG: Sample article fields: {list(sample_article.keys()) if isinstance(sample_article, dict) else 'Not a dict'}")
-                                        
-                                        # Use our frequency calculation function
-                                        from app.services.category_llm_analyzer import calculate_phrase_frequency_in_articles
-                                        freq_stats = calculate_phrase_frequency_in_articles(word, category_articles)
-                                        frequency = freq_stats.get('frequency', 1)
-                                        print(f"🔍 DEBUG: Calculated frequency for '{word}': {frequency} (full stats: {freq_stats})")
-                                    else:
-                                        print(f"🔍 DEBUG: No articles found for category '{current_category}' or articles list is empty")
-                                else:
-                                    print(f"🔍 DEBUG: No 'category_wise_articles' in results or results is None")
-                                    print(f"🔍 DEBUG: Available keys in results: {list(results.keys()) if results else 'results is None'}")
-                                
-                                # Add word with frequency information
+                                # Add word without frequency calculation (will be calculated later in batch)
                                 word_info = {
                                     'word': word,
-                                    'frequency': frequency,
+                                    'frequency': 1,  # Temporary default, will be calculated later
                                     'category': current_category,
                                     'source': 'final_llm_selection'
                                 }
@@ -420,7 +395,7 @@ Reddit Content from r/{subreddit}:
                                 # Also add to final_trending_words for backward compatibility
                                 final_trending_words.append(word)
                                 
-                                print(f"✅ Added word to {current_category}: '{word}' (frequency: {frequency}) ({len(category_wise_final[current_category])}/10)")
+                                print(f"✅ Added word to {current_category}: '{word}' (temp frequency: 1) ({len(category_wise_final[current_category])}/10)")
                             else:
                                 print(f"❌ Skipped duplicate word: '{word}'")
                         else:
@@ -454,23 +429,15 @@ Reddit Content from r/{subreddit}:
                                     break
                             
                             if not word_exists:
-                                # Calculate frequency for fallback word using proper frequency function
-                                frequency = 1
-                                if results and 'category_wise_articles' in results:
-                                    category_articles = results['category_wise_articles'].get(category, [])
-                                    if category_articles:
-                                        from app.services.category_llm_analyzer import calculate_phrase_frequency_in_articles
-                                        freq_stats = calculate_phrase_frequency_in_articles(word_text, category_articles)
-                                        frequency = freq_stats.get('frequency', 1)
-                                
+                                # Add fallback word without frequency calculation (will be calculated later in batch)
                                 word_info = {
                                     'word': word_text,
-                                    'frequency': frequency,
+                                    'frequency': 1,  # Temporary default, will be calculated later
                                     'category': category,
                                     'source': 'fallback_selection'
                                 }
                                 words.append(word_info)
-                                print(f"🔄 Added fallback word to {category}: '{word_text}' (frequency: {frequency})")
+                                print(f"🔄 Added fallback word to {category}: '{word_text}' (temp frequency: 1)")
                     
                     # Ensure exactly 10 words
                     category_wise_final[category] = words[:10]
@@ -504,24 +471,16 @@ Reddit Content from r/{subreddit}:
         
         except Exception as e:
             print(f"⚠️ Could not use LLM for final selection: {e}")
-            # Fallback: Use top words from each category with frequency info
+            # Fallback: Use top words from each category without frequency calculation (will be calculated later)
             for category, words in category_wise_trending.items():
                 if words:
                     fallback_words_with_freq = []
                     for word in words[:10]:
-                        # Calculate frequency for each word
-                        frequency = 1
                         word_text = word if isinstance(word, str) else str(word)
-                        if results and 'category_wise_articles' in results:
-                            category_articles = results['category_wise_articles'].get(category, [])
-                            if category_articles:
-                                from app.services.category_llm_analyzer import calculate_phrase_frequency_in_articles
-                                freq_stats = calculate_phrase_frequency_in_articles(word_text, category_articles)
-                                frequency = freq_stats.get('frequency', 1)
                         
                         word_info = {
                             'word': word_text,
-                            'frequency': frequency,
+                            'frequency': 1,  # Temporary default, will be calculated later in batch
                             'category': category,
                             'source': 'fallback_primary'
                         }
@@ -540,20 +499,78 @@ Reddit Content from r/{subreddit}:
         print(f"🎉 Total trending words extracted: {len(all_trending_words)}")
         print(f"🎯 Final selected words: {len(final_trending_words)}")
         
+        # 🔍 FREQUENCY CALCULATION: Calculate frequency for all selected phrases in batch
+        print(f"🔍 FREQUENCY CALCULATION: Calculating frequency for all selected phrases...")
+        
+        total_phrases_to_calculate = sum(len(words) for words in category_wise_final.values())
+        phrases_calculated = 0
+        
+        from app.services.category_llm_analyzer import calculate_phrase_frequency_in_articles
+        
+        for category, words in category_wise_final.items():
+            print(f"🔍 Processing category '{category}' with {len(words)} words...")
+            
+            # Get articles for this category
+            category_articles = results.get('category_wise_articles', {}).get(category, []) if results else []
+            
+            for word_info in words:
+                if isinstance(word_info, dict):
+                    word_text = word_info.get('word', '')
+                    
+                    if word_text and category_articles:
+                        # Calculate frequency for this phrase
+                        freq_stats = calculate_phrase_frequency_in_articles(word_text, category_articles)
+                        actual_frequency = freq_stats.get('frequency', 1)
+                        
+                        # Update frequency in word_info
+                        word_info['frequency'] = actual_frequency
+                        
+                        phrases_calculated += 1
+                        print(f"🔍 [{phrases_calculated}/{total_phrases_to_calculate}] '{word_text}' → frequency: {actual_frequency}")
+                    else:
+                        # Keep default frequency if no articles or invalid word
+                        word_info['frequency'] = 1
+                        phrases_calculated += 1
+                        print(f"🔍 [{phrases_calculated}/{total_phrases_to_calculate}] '{word_text}' → default frequency: 1 (no articles)")
+        
+        print(f"✅ FREQUENCY CALCULATION COMPLETE: {phrases_calculated} phrases processed")
+        
+        # 🧠 MEMORY OPTIMIZATION: Clear scraped articles from memory after frequency calculation
+        print(f"🗑️ MEMORY CLEANUP: Removing {results['scraping_info']['total_articles']} scraped articles from memory...")
+        
+        # Clear category-wise articles (main memory consumer)
+        if 'category_wise_articles' in results:
+            for category in results['category_wise_articles']:
+                results['category_wise_articles'][category].clear()
+            results['category_wise_articles'].clear()
+        
+        # Keep only essential data for response (statistics and metadata)
+        scraping_stats = results['scraping_info'].copy()
+        
+        # Clear the full results object
+        results.clear()
+        
+        print(f"✅ MEMORY CLEANUP: Articles removed from memory, DB size optimized")
+        
         return {
             "message": "Category-wise trending words generated successfully using filtered newspaper scraping and LLM analysis!",
-            "scraping_info": results['scraping_info'],
+            "scraping_info": scraping_stats,
             "category_wise_trending_words": category_wise_trending,
             "all_trending_words": all_trending_words,
             "category_wise_final": category_wise_final,
             "final_trending_words": final_trending_words,
             "llm_selection": llm_selection_stats,
             "statistics": {
-                "total_articles_scraped": results['scraping_info']['total_articles'],
+                "total_articles_scraped": scraping_stats['total_articles'],
                 "categories_processed": len([c for c in TARGET_CATEGORIES if category_wise_trending.get(c, [])]),
                 "total_trending_words": len(all_trending_words),
                 "final_selected_words": len(final_trending_words),
-                "scraping_time_seconds": results['scraping_info'].get('scraping_time_seconds', 0)
+                "scraping_time_seconds": scraping_stats.get('scraping_time_seconds', 0)
+            },
+            "memory_optimization": {
+                "articles_removed_from_memory": scraping_stats['total_articles'],
+                "memory_optimized": True,
+                "db_storage_skipped": True
             }
         }
         
@@ -761,12 +778,11 @@ async def run_progressive_analysis(
             news_articles = fetch_news()
             print(f"=== Fetched {len(news_articles)} news articles ===")
             
-            # Step 3: Store articles in database  
-            yield f"data: {json.dumps({'step': 3, 'message': 'সংগৃহীত কন্টেন্ট ডেটাবেসে সংরক্ষণ করা হচ্ছে...', 'progress': 25, 'details': {'storing': 'articles', 'articles_collected': len(news_articles)}})}\n\n"
-            print("=== Storing articles in database ===")
+            # Step 3: Analyze articles in memory (no DB storage needed)
+            yield f"data: {json.dumps({'step': 3, 'message': 'মেমরিতে কন্টেন্ট বিশ্লেষণ প্রস্তুত করা হচ্ছে...', 'progress': 25, 'details': {'analyzing': 'articles', 'articles_collected': len(news_articles)}})}\n\n"
+            print("=== Analyzing articles in memory for trending word extraction ===")
             
-            from app.routes.helpers import store_news
-            store_news(db, news_articles)
+            # Note: Articles are kept in memory only, no database storage to optimize DB size
             
             # Step 4: Initialize advanced Bengali NLP analyzer
             yield f"data: {json.dumps({'step': 4, 'message': 'উন্নত বাংলা এনএলপি সিস্টেম চালু করা হচ্ছে...', 'progress': 35, 'details': {'initializing': 'bengali_nlp'}})}\n\n"
