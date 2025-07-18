@@ -37,6 +37,7 @@ class URLPatternCategoryDetector:
                r'/chittagong',
                r'/barisal',
                r'/rangpur',
+               r'/samagrabangladesh',
                r'/sylhet',
                r'/khulna',
                r'/rajshahi',
