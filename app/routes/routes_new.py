@@ -498,20 +498,31 @@ Reddit Content from r/{subreddit}:
 
         print(f"🎉 Total trending words extracted: {len(all_trending_words)}")
         print(f"🎯 Final selected words: {len(final_trending_words)}")
+        print(f"🔧 DEBUG: About to start frequency calculation section...")
+        print(f"🔧 DEBUG: category_wise_final has {len(category_wise_final)} categories")
         
         # 🔍 FREQUENCY CALCULATION: Calculate frequency for all selected phrases in batch
         print(f"🔍 FREQUENCY CALCULATION: Calculating frequency for all selected phrases...")
+        print(f"🔍 DEBUG: results object exists: {bool(results)}")
+        print(f"🔍 DEBUG: category_wise_articles exists: {bool(results.get('category_wise_articles') if results else False)}")
         
         total_phrases_to_calculate = sum(len(words) for words in category_wise_final.values())
         phrases_calculated = 0
         
+        print(f"🔧 DEBUG: About to import calculate_phrase_frequency_in_articles...")
         from app.services.category_llm_analyzer import calculate_phrase_frequency_in_articles
+        print(f"🔧 DEBUG: Import successful!")
         
         for category, words in category_wise_final.items():
             print(f"🔍 Processing category '{category}' with {len(words)} words...")
             
-            # Get articles for this category
-            category_articles = results.get('category_wise_articles', {}).get(category, []) if results else []
+            # Get articles for this category with better debugging
+            category_articles = []
+            if results and 'category_wise_articles' in results:
+                category_articles = results['category_wise_articles'].get(category, [])
+                print(f"🔍 DEBUG: Found {len(category_articles)} articles for category '{category}'")
+            else:
+                print(f"🔍 DEBUG: No articles found for category '{category}' - results or category_wise_articles missing")
             
             for word_info in words:
                 if isinstance(word_info, dict):
@@ -531,7 +542,7 @@ Reddit Content from r/{subreddit}:
                         # Keep default frequency if no articles or invalid word
                         word_info['frequency'] = 1
                         phrases_calculated += 1
-                        print(f"🔍 [{phrases_calculated}/{total_phrases_to_calculate}] '{word_text}' → default frequency: 1 (no articles)")
+                        print(f"🔍 [{phrases_calculated}/{total_phrases_to_calculate}] '{word_text}' → default frequency: 1 (no articles available)")
         
         print(f"✅ FREQUENCY CALCULATION COMPLETE: {phrases_calculated} phrases processed")
         
@@ -1302,9 +1313,6 @@ def get_monthly_trending(
         "top_monthly_phrases": top_monthly_phrases
     }
 
-# ==========================================
-# CATEGORY-BASED TRENDING ANALYSIS ENDPOINTS
-# ==========================================
 
 @router.get("/categories/detect", summary="🏷️ Test category detection for a URL", tags=["Category Analysis"])
 def test_category_detection(
@@ -1984,6 +1992,7 @@ async def hybrid_generate_candidates(
                 "message": "Category-wise trending words generated successfully using filtered newspaper scraping and LLM analysis!",
                 "scraping_info": results['scraping_info'],
                 "category_wise_trending_words": category_wise_trending,
+                "category_wise_articles": results['category_wise_articles'],  # Include articles for frequency calculation
                 "all_trending_words": all_trending_words,
                 "category_wise_final": category_wise_final,
                 "final_trending_words": final_trending_words,
@@ -2225,6 +2234,74 @@ async def hybrid_generate_candidates(
                             print(f"✅ Added word to {current_category}: '{word}' ({len(category_wise_final[current_category])}/total)")
                 
                 print(f"✅ Successfully parsed text response with {len(category_wise_final)} categories")
+                
+                # 🔍 FREQUENCY CALCULATION: Calculate frequency for all selected phrases
+                print(f"\n🔍 FREQUENCY CALCULATION: Calculating frequency for category-wise phrases...")
+                print(f"🔍 DEBUG: Total categories to process: {len(category_wise_final)}")
+                
+                # Convert words to dictionary format with frequency
+                from app.services.category_llm_analyzer import calculate_phrase_frequency_in_articles
+                
+                category_wise_final_with_freq = {}
+                total_phrases_calculated = 0
+                
+                # Get all articles from newspaper result for frequency calculation
+                all_articles = []
+                if "newspaper" in results["results"] and "category_wise_articles" in results["results"]["newspaper"]:
+                    print(f"🔍 DEBUG: Found newspaper category_wise_articles")
+                    newspaper_articles = results["results"]["newspaper"]["category_wise_articles"]
+                    # Collect all articles from all categories
+                    for cat_name, cat_articles in newspaper_articles.items():
+                        all_articles.extend(cat_articles)
+                    print(f"🔍 DEBUG: Total articles collected for frequency calculation: {len(all_articles)}")
+                else:
+                    print(f"🔍 DEBUG: No newspaper articles found for frequency calculation")
+                
+                for category, words in category_wise_final.items():
+                    print(f"🔍 Processing category '{category}' with {len(words)} words...")
+                    
+                    # Get category-specific articles if available, else use all articles
+                    category_articles = []
+                    if "newspaper" in results["results"] and "category_wise_articles" in results["results"]["newspaper"]:
+                        category_articles = results["results"]["newspaper"]["category_wise_articles"].get(category, [])
+                        print(f"🔍 DEBUG: Found {len(category_articles)} category-specific articles for '{category}'")
+                    
+                    # If no category-specific articles, use all articles as fallback
+                    if not category_articles and all_articles:
+                        category_articles = all_articles
+                        print(f"🔍 DEBUG: Using all {len(all_articles)} articles as fallback for '{category}'")
+                    
+                    category_wise_final_with_freq[category] = []
+                    
+                    for word_text in words:
+                        if isinstance(word_text, str) and word_text.strip():
+                            actual_frequency = 1  # Default frequency
+                            
+                            # Calculate actual frequency if articles are available
+                            if category_articles:
+                                try:
+                                    freq_stats = calculate_phrase_frequency_in_articles(word_text, category_articles)
+                                    actual_frequency = freq_stats.get('frequency', 1)
+                                    print(f"🔍 [{total_phrases_calculated+1}] '{word_text}' → calculated frequency: {actual_frequency}")
+                                except Exception as e:
+                                    print(f"🔍 [{total_phrases_calculated+1}] '{word_text}' → frequency calculation failed: {e}, using default: 1")
+                            else:
+                                print(f"🔍 [{total_phrases_calculated+1}] '{word_text}' → no articles available, using default frequency: 1")
+                            
+                            # Create word info dictionary
+                            word_info = {
+                                'word': word_text,
+                                'frequency': actual_frequency,
+                                'category': category,
+                                'source': 'hybrid_llm_selection'
+                            }
+                            
+                            category_wise_final_with_freq[category].append(word_info)
+                            total_phrases_calculated += 1
+                
+                # Replace the original category_wise_final with frequency-enhanced version
+                category_wise_final = category_wise_final_with_freq
+                print(f"✅ FREQUENCY CALCULATION COMPLETE: {total_phrases_calculated} phrases processed")
                 
                 print(f"\n🎯 Final Integration Complete!")
                 print(f"📊 Categories created: {len(category_wise_final)}")

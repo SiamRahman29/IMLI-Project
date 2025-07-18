@@ -381,17 +381,34 @@ def calculate_phrase_frequency_in_articles(phrase: str, articles: List[Dict]) ->
         if i < 3:  # Debug first 3 articles
             print(f"🔍 DEBUG: Article {i+1} text: '{article_text}'")
         
-        # Count exact phrase occurrences
+        # Count exact phrase occurrences only (more accurate)
         exact_count = article_text.count(phrase_lower)
         
-        # Also check if all words from phrase appear in the article (partial matching)
-        partial_match = 0
-        if len(phrase_words) > 1:
-            words_found = sum(1 for word in phrase_words if word in article_text)
-            if words_found == len(phrase_words):
-                partial_match = 1
+        # For multi-word phrases, check for sequential pattern matching
+        # Words must appear in exact order with minimal separation
+        proximity_match = 0
+        if len(phrase_words) > 1 and exact_count == 0:
+            # Use regex-like pattern matching for sequential word occurrence
+            import re
+            
+            # Create a pattern that matches the words in sequence with reasonable separation
+            # Allow whitespace, punctuation, and common Bengali connectors between words
+            pattern_parts = []
+            for i, word in enumerate(phrase_words):
+                pattern_parts.append(re.escape(word))
+                if i < len(phrase_words) - 1:
+                    # Between words, allow whitespace, punctuation, and short connector words
+                    # Common Bengali connectors: ও, এবং, এর, ও, -
+                    pattern_parts.append(r'\s*(?:[।,\-\s]|ও|এবং|এর)*\s*')
+            
+            pattern = ''.join(pattern_parts)
+            
+            # Search for this pattern in the article
+            matches = re.findall(pattern, article_text, re.IGNORECASE)
+            if matches:
+                proximity_match = len(matches)
         
-        count_in_article = max(exact_count, partial_match)
+        count_in_article = exact_count + proximity_match
         
         if count_in_article > 0:
             total_count += count_in_article
@@ -402,7 +419,7 @@ def calculate_phrase_frequency_in_articles(phrase: str, articles: List[Dict]) ->
             sources_with_phrase.add(source)
             
             if i < 5:  # Debug first 5 matches
-                print(f"🔍 DEBUG: Found match in article {i+1}: exact={exact_count}, partial={partial_match}, total={count_in_article}")
+                print(f"🔍 DEBUG: Found match in article {i+1}: exact={exact_count}, proximity={proximity_match}, total={count_in_article}")
     
     result = {
         'total_count': total_count,
