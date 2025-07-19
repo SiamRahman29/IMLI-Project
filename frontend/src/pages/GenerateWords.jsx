@@ -117,6 +117,26 @@ function GenerateWords() {
       console.log("Response data exists:", !!response.data);
       console.log("Full response.data:", response.data);
       
+      // CRITICAL DEBUG: Check category_wise_final structure
+      if (response.data && response.data.category_wise_final) {
+        console.log("✅ category_wise_final found:", response.data.category_wise_final);
+        console.log("✅ Number of categories:", Object.keys(response.data.category_wise_final).length);
+        
+        // Log each category structure
+        Object.entries(response.data.category_wise_final).forEach(([category, words]) => {
+          console.log(`🏷️ Category "${category}":`, words);
+          console.log(`   📝 Type of words:`, typeof words, Array.isArray(words) ? 'Array' : 'Not Array');
+          console.log(`   📊 Length:`, words?.length || 0);
+          if (words && words.length > 0) {
+            console.log(`   📋 First word:`, words[0]);
+            console.log(`   📋 First word type:`, typeof words[0]);
+          }
+        });
+      } else {
+        console.log("❌ category_wise_final NOT found in response.data");
+        console.log("Available keys in response.data:", response.data ? Object.keys(response.data) : 'response.data is null');
+      }
+      
       // Safe property access with null checks
       if (response.data) {
         console.log("merge_prompt:", response.data.merge_prompt || 'N/A');
@@ -256,8 +276,17 @@ function GenerateWords() {
       setAiCandidates(candidatesText);
       
       // Parse category-wise words for selection
-      const categoryWords = parseCategoryWiseWords(candidatesText);
+      console.log("🔄 About to parse category-wise words...");
+      console.log("🔄 hybridResults state before parsing:", hybridResults);
+      console.log("🔄 response.data before parsing:", response.data);
+      
+      // Pass response.data directly to parsing function
+      const categoryWords = parseCategoryWiseWords(candidatesText, response.data);
+      console.log("🔄 Parsed category words:", categoryWords);
+      console.log("🔄 Number of categories parsed:", Object.keys(categoryWords).length);
+      
       setCategoryWiseWords(categoryWords);
+      console.log("✅ setCategoryWiseWords called with:", categoryWords);
       
     } catch (err) {
       let msg = 'বিশ্লেষণ চালাতে ব্যর্থ';
@@ -368,14 +397,63 @@ function GenerateWords() {
   };
 
   // Parse category-wise words from AI response - prioritize direct dictionary approach
-  const parseCategoryWiseWords = (candidatesText) => {
-    if (!candidatesText) return {};
+  const parseCategoryWiseWords = (candidatesText, responseData = null) => {
+    console.log("🔍 parseCategoryWiseWords called with candidatesText:", !!candidatesText);
+    console.log("🔍 responseData provided:", !!responseData);
+    console.log("🔍 hybridResults exists:", !!hybridResults);
     
-    // FIRST PRIORITY: Use direct category_wise_final dictionary from backend (as requested)
-    if (hybridResults && hybridResults.category_wise_final) {
-      console.log("✅ Using category_wise_final dictionary from backend:", hybridResults.category_wise_final);
-      return hybridResults.category_wise_final;
+    if (!candidatesText) {
+      console.log("❌ No candidatesText provided");
+      return {};
     }
+    
+    // PRIORITY 1: Use responseData if provided (fresh from API call)
+    if (responseData && responseData.category_wise_final) {
+      console.log("✅ Using category_wise_final from responseData:", responseData.category_wise_final);
+      
+      const categoryWords = responseData.category_wise_final;
+      
+      // Log structure for debugging
+      Object.entries(categoryWords).forEach(([category, words]) => {
+        console.log(`📂 Category: ${category}, Words:`, words);
+        console.log(`📂 Category: ${category}, Words count:`, words?.length || 0);
+        if (words && words.length > 0) {
+          console.log(`   📝 First word structure:`, words[0]);
+          console.log(`   📝 First word type:`, typeof words[0]);
+          if (typeof words[0] === 'object') {
+            console.log(`   📝 First word keys:`, Object.keys(words[0]));
+          }
+        }
+      });
+      
+      console.log("🎯 Returning categoryWords from responseData:", categoryWords);
+      return categoryWords;
+    }
+    
+    // PRIORITY 2: Use hybridResults state if available
+    if (hybridResults && hybridResults.category_wise_final) {
+      console.log("✅ Using category_wise_final from hybridResults:", hybridResults.category_wise_final);
+      
+      const categoryWords = hybridResults.category_wise_final;
+      
+      // Log structure for debugging
+      Object.entries(categoryWords).forEach(([category, words]) => {
+        console.log(`📂 Category: ${category}, Words:`, words);
+        console.log(`📂 Category: ${category}, Words count:`, words?.length || 0);
+        if (words && words.length > 0) {
+          console.log(`   📝 First word structure:`, words[0]);
+          console.log(`   📝 First word type:`, typeof words[0]);
+          if (typeof words[0] === 'object') {
+            console.log(`   📝 First word keys:`, Object.keys(words[0]));
+          }
+        }
+      });
+      
+      console.log("🎯 Returning categoryWords from hybridResults:", categoryWords);
+      return categoryWords;
+    }
+    
+    console.log("⚠️ category_wise_final not found, falling back to text parsing...");
     
     // FALLBACK: Parse from text if dictionary not available
     console.log("⚠️ Falling back to text parsing...");
@@ -747,6 +825,11 @@ function GenerateWords() {
 
       {analysisComplete && aiCandidates && (
         <div className="mt-10 max-w-6xl mx-auto">
+          {/* DEBUG: Log category state */}
+          {console.log("🖥️ Render Debug: categoryWiseWords:", categoryWiseWords)}
+          {console.log("🖥️ Render Debug: categoryWiseWords keys:", Object.keys(categoryWiseWords))}
+          {console.log("🖥️ Render Debug: categoryWiseWords length:", Object.keys(categoryWiseWords).length)}
+          
           {/* Category-wise word selection */}
           {Object.keys(categoryWiseWords).length > 0 ? (
             <div className="bg-white shadow-lg rounded-lg p-6 mb-6 border-2 border-gray-200">
@@ -904,7 +987,10 @@ function GenerateWords() {
             </div>
           ) : (
             /* Fallback: Original quick selection if no categories found */
-            parseCandidates(aiCandidates).length > 0 && (
+            <>
+              {console.log("🖥️ FALLBACK: No category words found, falling back to original quick selection")}
+              {console.log("🖥️ FALLBACK: parseCandidates result:", parseCandidates(aiCandidates))}
+              {parseCandidates(aiCandidates).length > 0 && (
               <div className="bg-white shadow-lg rounded-lg p-6 mb-6 border-2 border-gray-200">
                 <h2 className="text-2xl font-bold flex items-center gap-2 mb-4">
                   <Sparkles className="w-6 h-6 text-yellow-500" />
@@ -934,7 +1020,8 @@ function GenerateWords() {
                   })}
                 </div>
               </div>
-            )
+              )}
+            </>
           )}
 
           

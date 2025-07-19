@@ -2235,73 +2235,109 @@ async def hybrid_generate_candidates(
                 
                 print(f"✅ Successfully parsed text response with {len(category_wise_final)} categories")
                 
-                # 🔍 FREQUENCY CALCULATION: Calculate frequency for all selected phrases
-                print(f"\n🔍 FREQUENCY CALCULATION: Calculating frequency for category-wise phrases...")
+                # 🔍 LLM-BASED FREQUENCY CALCULATION: Ask LLM to assign popularity-based frequency scores
+                print(f"\n🔍 LLM-BASED FREQUENCY CALCULATION: Assigning frequency scores for category-wise phrases...")
                 print(f"🔍 DEBUG: Total categories to process: {len(category_wise_final)}")
-                
-                # Convert words to dictionary format with frequency
-                from app.services.category_llm_analyzer import calculate_phrase_frequency_in_articles
                 
                 category_wise_final_with_freq = {}
                 total_phrases_calculated = 0
                 
-                # Get all articles from newspaper result for frequency calculation
-                all_articles = []
-                if "newspaper" in results["results"] and "category_wise_articles" in results["results"]["newspaper"]:
-                    print(f"🔍 DEBUG: Found newspaper category_wise_articles")
-                    newspaper_articles = results["results"]["newspaper"]["category_wise_articles"]
-                    # Collect all articles from all categories
-                    for cat_name, cat_articles in newspaper_articles.items():
-                        all_articles.extend(cat_articles)
-                    print(f"🔍 DEBUG: Total articles collected for frequency calculation: {len(all_articles)}")
-                else:
-                    print(f"🔍 DEBUG: No newspaper articles found for frequency calculation")
-                
                 for category, words in category_wise_final.items():
-                    print(f"🔍 Processing category '{category}' with {len(words)} words...")
+                    print(f"🔍 Processing category '{category}' with {len(words)} words for LLM frequency scoring...")
                     
-                    # Get category-specific articles if available, else use all articles
-                    category_articles = []
-                    if "newspaper" in results["results"] and "category_wise_articles" in results["results"]["newspaper"]:
-                        category_articles = results["results"]["newspaper"]["category_wise_articles"].get(category, [])
-                        print(f"🔍 DEBUG: Found {len(category_articles)} category-specific articles for '{category}'")
+                    # Prepare words list for LLM frequency scoring
+                    words_text = "\n".join([f"{i+1}. {word}" for i, word in enumerate(words)])
                     
-                    # If no category-specific articles, use all articles as fallback
-                    if not category_articles and all_articles:
-                        category_articles = all_articles
-                        print(f"🔍 DEBUG: Using all {len(all_articles)} articles as fallback for '{category}'")
+                    # LLM prompt for frequency scoring
+                    frequency_prompt = f"""আপনি একজন বাংলাদেশি মিডিয়া বিশেষজ্ঞ। নিচের "{category}" ক্যাটেগরির ট্রেন্ডিং শব্দগুলোর জন্য প্রতিটির জনপ্রিয়তা এবং ব্যবহারের ভিত্তিতে ৫-৮ এর মধ্যে একটি ফ্রিকোয়েন্সি স্কোর দিন।
+
+স্কোরিং গাইডলাইন:
+- ৮ = খুব জনপ্রিয় এবং প্রায়ই ব্যবহৃত (শুধুমাত্র maximum ৩-৪টি ফ্রেজকে ৮ স্কোর দিন, যেগুলো শুনলে মনে হবে এগুলো ট্রেন্ডিং হওয়ার জন্য পারফেক্ট এবং সম্পূর্ণ একটি টপিকের মতো)
+- ৭ = জনপ্রিয় এবং নিয়মিত ব্যবহৃত
+- ৬ = মাঝারি জনপ্রিয় এবং মাঝে মাঝে ব্যবহৃত
+- ৫ = কম জনপ্রিয় কিন্তু প্রাসঙ্গিক
+
+"{category}" ক্যাটেগরির শব্দসমূহ:
+{words_text}
+
+আউটপুট ফরম্যাট (শুধুমাত্র এই ফরম্যাটে উত্তর দিন):
+1. শব্দ১: ৭
+2. শব্দ২: ৮
+3. শব্দ৩: ৬
+...
+
+শুধুমাত্র উপরের ফরম্যাটে উত্তর দিন, অতিরিক্ত ব্যাখ্যা যোগ করবেন না।"""
                     
+                    try:
+                        # Call LLM for frequency scoring
+                        client = Groq(api_key=os.getenv('GROQ_API_KEY_COMBINE'))
+                        completion = client.chat.completions.create(
+                            model="llama-3.3-70b-versatile",
+                            messages=[{"role": "user", "content": frequency_prompt}],
+                            temperature=0.3,
+                            max_tokens=6000
+                        )
+                        
+                        llm_frequency_response = completion.choices[0].message.content.strip()
+                        print(f"🤖 LLM Frequency Response for {category}:\n{llm_frequency_response}")
+                        
+                        # Parse LLM frequency response
+                        frequency_scores = {}
+                        lines = llm_frequency_response.split('\n')
+                        
+                        for line in lines:
+                            line = line.strip()
+                            if not line:
+                                continue
+                            
+                            # Match pattern like "1. শব্দ: ৭" or "1. শব্দ: 7"
+                            match = re.match(r'^\d+\.\s*(.+?):\s*([৫-৯5-9])', line)
+                            if match:
+                                word = match.group(1).strip()
+                                freq_str = match.group(2).strip()
+                                
+                                # Convert Bengali numbers to English
+                                bengali_to_english = {'৫': '5', '৬': '6', '৭': '7', '৮': '8', '৯': '9'}
+                                if freq_str in bengali_to_english:
+                                    freq_str = bengali_to_english[freq_str]
+                                
+                                try:
+                                    frequency = int(freq_str)
+                                    frequency_scores[word] = frequency
+                                    print(f"✅ Parsed frequency for '{word}': {frequency}")
+                                except ValueError:
+                                    print(f"⚠️ Could not parse frequency for '{word}': {freq_str}")
+                        
+                        print(f"� Successfully parsed {len(frequency_scores)} frequency scores for {category}")
+                        
+                    except Exception as e:
+                        print(f"⚠️ LLM frequency scoring failed for {category}: {e}")
+                        frequency_scores = {}
+                    
+                    # Create word info dictionaries with LLM-assigned frequencies
                     category_wise_final_with_freq[category] = []
                     
                     for word_text in words:
                         if isinstance(word_text, str) and word_text.strip():
-                            actual_frequency = 1  # Default frequency
-                            
-                            # Calculate actual frequency if articles are available
-                            if category_articles:
-                                try:
-                                    freq_stats = calculate_phrase_frequency_in_articles(word_text, category_articles)
-                                    actual_frequency = freq_stats.get('frequency', 1)
-                                    print(f"🔍 [{total_phrases_calculated+1}] '{word_text}' → calculated frequency: {actual_frequency}")
-                                except Exception as e:
-                                    print(f"🔍 [{total_phrases_calculated+1}] '{word_text}' → frequency calculation failed: {e}, using default: 1")
-                            else:
-                                print(f"🔍 [{total_phrases_calculated+1}] '{word_text}' → no articles available, using default frequency: 1")
+                            # Get LLM-assigned frequency or default to 6
+                            llm_frequency = frequency_scores.get(word_text, 6)
                             
                             # Create word info dictionary
                             word_info = {
                                 'word': word_text,
-                                'frequency': actual_frequency,
+                                'frequency': llm_frequency,
                                 'category': category,
-                                'source': 'hybrid_llm_selection'
+                                'source': 'llm_frequency_scoring'
                             }
                             
                             category_wise_final_with_freq[category].append(word_info)
                             total_phrases_calculated += 1
+                            
+                            print(f"🔍 [{total_phrases_calculated}] '{word_text}' → LLM frequency: {llm_frequency}")
                 
                 # Replace the original category_wise_final with frequency-enhanced version
                 category_wise_final = category_wise_final_with_freq
-                print(f"✅ FREQUENCY CALCULATION COMPLETE: {total_phrases_calculated} phrases processed")
+                print(f"✅ LLM-BASED FREQUENCY CALCULATION COMPLETE: {total_phrases_calculated} phrases processed")
                 
                 print(f"\n🎯 Final Integration Complete!")
                 print(f"📊 Categories created: {len(category_wise_final)}")
