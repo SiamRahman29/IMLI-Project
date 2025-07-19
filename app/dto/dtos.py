@@ -1,11 +1,11 @@
 from pydantic import BaseModel
-from typing import List, Optional, Dict, Any
+from typing import List, Optional, Dict, Any, Union
 from datetime import date
 
 class TrendingWordsResponse(BaseModel):
     date: str
-    words: str
-    selected_words: Optional[List[Dict[str, str]]] = None  # Array of {word, category, originalText}
+    words: Optional[str] = None
+    selected_words: Optional[List[Dict[str, Any]]] = None  # Support flexible structure with word, frequency, category, source
 
 class TrendingPhraseResponse(BaseModel):
     id: int

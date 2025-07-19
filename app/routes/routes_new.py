@@ -54,10 +54,21 @@ def get_word_of_the_day(db: Session = Depends(get_db)):
     word_entry = db.query(Word).filter(Word.date == today).first()
     
     if word_entry:
+        # Ensure selected_words is properly formatted for Pydantic
+        selected_words = word_entry.selected_words
+        if isinstance(selected_words, str):
+            import json
+            try:
+                selected_words = json.loads(selected_words)
+            except:
+                selected_words = []
+        elif selected_words is None:
+            selected_words = []
+            
         return TrendingWordsResponse(
             date=str(word_entry.date),
-            words=word_entry.word,
-            selected_words=word_entry.selected_words
+            words=str(word_entry.word),  # Ensure it's a string
+            selected_words=selected_words
         )
     else:
         # Instead of raising 404, return a default response
@@ -2431,6 +2442,14 @@ def set_category_words(
         for word_info in selected_words:
             word = word_info.get('word', '').strip()
             category = word_info.get('category', 'অজানা').strip()
+            # Extract frequency from the nested originalText structure if available
+            frequency = 1  # Default frequency
+            if 'originalText' in word_info and isinstance(word_info['originalText'], dict):
+                frequency = word_info['originalText'].get('frequency', 1)
+            elif 'frequency' in word_info:
+                frequency = word_info.get('frequency', 1)
+            
+            print(f"🔍 Processing word: {word}, category: {category}, frequency: {frequency}")
             
             if word and category:
                 # Save to CategoryTrendingPhrase table
@@ -2439,7 +2458,7 @@ def set_category_words(
                     category=category,
                     phrase=word,
                     score=100.0,  # High score for selected words
-                    frequency=1,
+                    frequency=frequency,  # Use LLM-assigned frequency
                     phrase_type='selected',
                     source='user_selection'
                 )
@@ -2452,7 +2471,7 @@ def set_category_words(
                     date=today,
                     phrase=word,
                     score=100.0,
-                    frequency=1,
+                    frequency=frequency,  # Use LLM-assigned frequency
                     phrase_type='selected',
                     source='user_selection'
                 )
