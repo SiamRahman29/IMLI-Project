@@ -4,27 +4,13 @@ from sqlalchemy.orm import Session
 from sqlalchemy import desc, and_
 from datetime import date, datetime, timedelta
 from typing import Optional, List
-import os
 import re
 import json
-import asyncio
-import traceback
-import os
-import json
-import re
 import asyncio
 import traceback
 import time
-import builtins
 import os
-import json
-import re
-import traceback
-import time
 import builtins
-import asyncio
-import io
-import sys
 import io
 import sys
 import random
@@ -39,7 +25,6 @@ from app.auth.dependencies import get_current_admin_user, get_optional_current_u
 
 router = APIRouter()
 
-# Dependency for getting DB session
 def get_db():
     db = SessionLocal()
     try:
@@ -609,6 +594,7 @@ def get_trending_phrases(
     offset: int = Query(0, description="Number of results to skip for pagination (default: 0)"),
     source: Optional[str] = Query(None, description="Filter by source (news, social_media, etc.)"),
     phrase_type: Optional[str] = Query(None, description="Filter by phrase type"),
+    search: Optional[str] = Query(None, description="Search term to filter phrases"),
     db: Session = Depends(get_db)
 ):
     """Get trending phrases for a specific date range with filtering options"""
@@ -638,6 +624,9 @@ def get_trending_phrases(
         query = query.filter(TrendingPhrase.source == source)
     if phrase_type:
         query = query.filter(TrendingPhrase.phrase_type == phrase_type)
+    if search:
+        # Search in phrase text (case-insensitive)
+        query = query.filter(TrendingPhrase.phrase.ilike(f"%{search}%"))
     
     # Get total count for pagination
     total_count = query.count()
