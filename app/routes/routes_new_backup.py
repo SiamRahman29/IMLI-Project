@@ -182,7 +182,7 @@ async def generate_candidates(
 
         # --- Reddit Per-Subreddit Processing (AFTER newspaper processing) ---
         try:
-            from enhanced_reddit_category_scraper import EnhancedRedditCategoryScraper
+            from app.services.enhanced_reddit_category_scraper import EnhancedRedditCategoryScraper
             
             reddit_scraper = EnhancedRedditCategoryScraper()
             reddit_client = Groq(api_key=os.getenv('GROQ_API_KEY_NEWSPAPER'))
