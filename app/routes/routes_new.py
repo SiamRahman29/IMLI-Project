@@ -4,13 +4,27 @@ from sqlalchemy.orm import Session
 from sqlalchemy import desc, and_
 from datetime import date, datetime, timedelta
 from typing import Optional, List
+import os
 import re
 import json
 import asyncio
 import traceback
-import time
 import os
+import json
+import re
+import asyncio
+import traceback
+import time
 import builtins
+import os
+import json
+import re
+import traceback
+import time
+import builtins
+import asyncio
+import io
+import sys
 import io
 import sys
 import random
@@ -25,6 +39,7 @@ from app.auth.dependencies import get_current_admin_user, get_optional_current_u
 
 router = APIRouter()
 
+# Dependency for getting DB session
 def get_db():
     db = SessionLocal()
     try:
@@ -156,7 +171,7 @@ async def generate_candidates(
 
         # --- Reddit Per-Subreddit Processing (AFTER newspaper processing) ---
         try:
-            from app.services.enhanced_reddit_category_scraper import EnhancedRedditCategoryScraper
+            from enhanced_reddit_category_scraper import EnhancedRedditCategoryScraper
             
             reddit_scraper = EnhancedRedditCategoryScraper()
             reddit_client = Groq(api_key=os.getenv('GROQ_API_KEY_NEWSPAPER'))
@@ -599,25 +614,36 @@ def get_trending_phrases(
 ):
     """Get trending phrases for a specific date range with filtering options"""
     
-    # Set default date range (last 7 days)
-    if not start_date:
-        start_date = (date.today() - timedelta(days=7)).strftime("%Y-%m-%d")
-    if not end_date:
-        end_date = date.today().strftime("%Y-%m-%d")
-    
-    try:
-        start_date_obj = datetime.strptime(start_date, "%Y-%m-%d").date()
-        end_date_obj = datetime.strptime(end_date, "%Y-%m-%d").date()
-    except ValueError:
-        raise HTTPException(status_code=400, detail="Invalid date format. Use YYYY-MM-DD")
+    # Set default date range (last 7 days) only if both dates are None/empty
+    # If start_date is "all" or both are empty strings, show all data
+    if start_date == "all" or (not start_date and not end_date):
+        # Show all data - don't set date filters
+        start_date_obj = None
+        end_date_obj = None
+    else:
+        # Set default date range (last 7 days) for normal filtering
+        if not start_date:
+            start_date = (date.today() - timedelta(days=7)).strftime("%Y-%m-%d")
+        if not end_date:
+            end_date = date.today().strftime("%Y-%m-%d")
+        
+        try:
+            start_date_obj = datetime.strptime(start_date, "%Y-%m-%d").date()
+            end_date_obj = datetime.strptime(end_date, "%Y-%m-%d").date()
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Invalid date format. Use YYYY-MM-DD")
     
     # Build query
-    query = db.query(TrendingPhrase).filter(
-        and_(
-            TrendingPhrase.date >= start_date_obj,
-            TrendingPhrase.date <= end_date_obj
+    query = db.query(TrendingPhrase)
+    
+    # Apply date filters only if dates are provided
+    if start_date_obj and end_date_obj:
+        query = query.filter(
+            and_(
+                TrendingPhrase.date >= start_date_obj,
+                TrendingPhrase.date <= end_date_obj
+            )
         )
-    )
     
     # Apply filters
     if source:

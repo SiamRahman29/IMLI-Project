@@ -505,6 +505,12 @@ function TrendingAnalysis() {
       <div className="mb-6">
         <label className="block text-sm font-bold text-gray-800 mb-3 tracking-wide">{translate('সর্ব তারিখ নির্বাচন')}</label>
         <div className="flex flex-wrap gap-2">
+           <button 
+             onClick={() => setFilters(prev => ({ ...prev, start_date: 'all', end_date: 'all' }))} 
+             className="px-4 py-2 bg-gradient-to-r from-gray-500 to-gray-600 text-white rounded-lg text-sm font-semibold shadow-md hover:shadow-lg transition-all hover:scale-105"
+           >
+             {translate('সব')}
+           </button>
           <button 
             onClick={() => setDateRange(1)} 
             className="px-4 py-2 bg-gradient-to-r from-blue-500 to-blue-600 text-white rounded-lg text-sm font-semibold shadow-md hover:shadow-lg transition-all hover:scale-105"
@@ -531,9 +537,9 @@ function TrendingAnalysis() {
           <label className="block text-sm font-bold text-gray-800 mb-3 tracking-wide">{translate('ভর তারিখ')}</label>
           <input 
             type="date" 
-            value={filters.start_date} 
+            value={filters.start_date === 'all' ? '' : filters.start_date} 
             onChange={e => handleFilterChange('start_date', e.target.value)} 
-            max={filters.end_date || formatDate(new Date())}
+            max={filters.end_date && filters.end_date !== 'all' ? filters.end_date : formatDate(new Date())}
             className="w-full border-2 border-gray-300 rounded-xl px-4 py-3 focus:outline-none focus:ring-4 focus:ring-blue-400/50 focus:border-blue-500 transition-all duration-300 bg-white text-slate-800 shadow-lg hover:shadow-xl font-medium"
           />
         </div>
@@ -541,9 +547,9 @@ function TrendingAnalysis() {
           <label className="block text-sm font-bold text-gray-800 mb-3 tracking-wide">{translate('শেষ তারিখ')}</label>
           <input 
             type="date" 
-            value={filters.end_date} 
+            value={filters.end_date === 'all' ? '' : filters.end_date} 
             onChange={e => handleFilterChange('end_date', e.target.value)} 
-            min={filters.start_date}
+            min={filters.start_date && filters.start_date !== 'all' ? filters.start_date : undefined}
             max={formatDate(new Date())}
             className="w-full border-2 border-gray-300 rounded-xl px-4 py-3 focus:outline-none focus:ring-4 focus:ring-blue-400/50 focus:border-blue-500 transition-all duration-300 bg-white text-slate-800 shadow-lg hover:shadow-xl font-medium"
           />
@@ -556,7 +562,6 @@ function TrendingAnalysis() {
             className="w-full border-2 border-gray-300 rounded-xl px-4 py-3 focus:outline-none focus:ring-4 focus:ring-blue-400/50 focus:border-blue-500 transition-all duration-300 bg-white text-slate-800 shadow-lg hover:shadow-xl font-medium cursor-pointer"
           >
             <option value="" className="text-slate-600 font-medium">{translate('সব')}</option>
-            {sources.sources.map(source => <option key={source} value={source} className="text-slate-800 font-medium">{source}</option>)}
           </select>
         </div>
         <div>
@@ -567,7 +572,6 @@ function TrendingAnalysis() {
             className="w-full border-2 border-gray-300 rounded-xl px-4 py-3 focus:outline-none focus:ring-4 focus:ring-blue-400/50 focus:border-blue-500 transition-all duration-300 bg-white text-slate-800 shadow-lg hover:shadow-xl font-medium cursor-pointer"
           >
             <option value="" className="text-slate-600 font-medium">{translate('সব')}</option>
-            {sources.phrase_types.map(type => <option key={type} value={type} className="text-slate-800 font-medium">{type}</option>)}
           </select>
         </div>
         <div>
@@ -625,8 +629,7 @@ function TrendingAnalysis() {
         </div>
       </div>;
     }
-    const phrasesByType = groupPhrasesByType(trendingData.phrases);
-    const phrasesBySource = groupPhrasesBySource(trendingData.phrases);
+  // ...existing code...
     
     // Filter phrases based on search term
     const filteredPhrases = trendingData.phrases.filter(phrase => 
@@ -642,7 +645,21 @@ function TrendingAnalysis() {
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-2xl font-black text-gray-900 tracking-tight">{translate('শীর্ষ ট্রেন্ডিং ক্রেজ')}</h2>
             <button
-              onClick={exportData}
+              onClick={() => {
+                // Export only phrase, frequency, date
+                const csvRows = [
+                  ['phrase', 'frequency', 'date'],
+                  ...filteredPhrases.map(p => [p.phrase, p.frequency, p.date])
+                ];
+                const csvContent = csvRows.map(e => e.join(",")).join("\n");
+                const blob = new Blob([csvContent], { type: 'text/csv' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = 'trending_phrases.csv';
+                a.click();
+                URL.revokeObjectURL(url);
+              }}
               disabled={!filteredPhrases.length || loading}
               className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold transition-all duration-300 shadow-md focus:outline-none focus:ring-2 transform hover:scale-105 ${
                 !filteredPhrases.length || loading
@@ -670,10 +687,13 @@ function TrendingAnalysis() {
                   <span 
                     className="text-xl font-bold text-gray-900 group-hover:text-blue-900 transition-colors cursor-pointer hover:underline flex items-center gap-2"
                     onClick={() => openPhraseGraphModal(phrase.phrase)}
-                    title="ফ্রিকোয়েন্সি গ্রাফ দেখুন"
+                    title={`ফ্রিকোয়েন্সি গ্রাফ দেখুন | তারিখ: ${phrase.date}`}
                   >
                     {phrase.phrase}
                     <BarChart3 className="w-4 h-4 text-blue-500 opacity-60 group-hover:opacity-100 transition-opacity" />
+                    <span className="text-xs text-gray-500 font-medium opacity-0 group-hover:opacity-100 transition-opacity bg-gray-100 px-2 py-1 rounded">
+                      {phrase.date}
+                    </span>
                   </span>
                   {/* <span className={`inline-block px-3 py-1 rounded-full text-sm font-bold shadow-lg transition-all group-hover:scale-105 ${getScoreColor(phrase.score) === 'primary' ? 'bg-gradient-to-r from-blue-500 to-blue-600 text-white' : getScoreColor(phrase.score) === 'secondary' ? 'bg-gradient-to-r from-pink-500 to-pink-600 text-white' : 'bg-gradient-to-r from-gray-500 to-gray-600 text-white'}`}>{phrase.score.toFixed(2)}</span> */}
                 </div>
