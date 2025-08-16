@@ -45,7 +45,7 @@ function Home() {
   return (
     <div className="container mx-auto px-4 py-12 bg-white min-h-[calc(100vh-4rem)] flex flex-col justify-center">
       <div className="text-center mb-10">
-        <h1 className="text-4xl md:text-3xl font-extrabold tracking-tight text-gray-900 mb-2">BARTA - IML</h1>
+        <h1 className="text-4xl md:text-3xl font-extrabold tracking-tight text-gray-900 mb-2">IMLI</h1>
         <p className="text-1xl text-gray-600 mb-2">বাংলা ট্রেন্ডিং শব্দ বিশ্লেষণ সিস্টেম</p>
       </div>
 
@@ -77,11 +77,21 @@ function Home() {
                     <div key={category} className="border-l-4 border-blue-500 pl-4">
                       <h3 className="text-lg font-semibold text-gray-700 mb-2">{category}</h3>
                       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-                        {words.map((wordObj, index) => (
-                          <div key={index} className="bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-lg p-3 text-center">
-                            <div className="text-lg font-bold text-blue-800">{wordObj.word}</div>
-                          </div>
-                        ))}
+                        {words.map((wordObj, index) => {
+                          // Extract frequency from originalText if available
+                          const frequency = wordObj.originalText?.frequency || wordObj.frequency || 1;
+                          
+                          return (
+                            <div key={index} className="bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-lg p-3 text-center">
+                              <div className="text-lg font-bold text-blue-800">{wordObj.word}</div>
+                              {frequency && frequency > 1 && (
+                                <div className="text-sm text-blue-600 font-semibold mt-1">
+                                  ফ্রিকোয়েন্সি: {frequency}
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
                       </div>
                     </div>
                   ))}

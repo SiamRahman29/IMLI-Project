@@ -140,6 +140,15 @@ export const apiV2 = {
   
   // Trending phrases management
   deleteTrendingPhrase: (phraseId) => apiV2Client.delete(`/trending-phrases/${phraseId}`),
+  
+  // Get phrase frequency data over time
+  getPhraseFrequencyData: (phrase, startDate, endDate) => {
+    const params = new URLSearchParams();
+    if (phrase) params.append('phrase', phrase);
+    if (startDate) params.append('start_date', startDate);
+    if (endDate) params.append('end_date', endDate);
+    return apiV2Client.get(`/phrase-frequency?${params.toString()}`);
+  },
 };
 
 // Helper functions

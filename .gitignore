@@ -11,3 +11,5 @@ fb_*.html
 demo_*.py
 test_*.py
 **/*.json
+!README.md
+**/*.md

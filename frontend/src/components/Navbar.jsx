@@ -76,7 +76,7 @@ const Navbar = () => {
               <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center">
                 <span className="text-white font-bold text-sm">IM</span>
               </div>
-              <span className="text-xl font-bold text-gray-900">BARTA-IML</span>
+              <span className="text-xl font-bold text-gray-900">IMLI</span>
             </Link>
           </div>
 
@@ -113,7 +113,7 @@ const Navbar = () => {
                     {getInitials(user?.full_name)}
                   </div>
                   {user?.role === 'admin' && (
-                    <span className="text-sm font-medium">System Administrator</span>
+                    <span className="text-sm font-medium">{user.full_name}</span>
                   )}
                 </button>
 
@@ -133,6 +133,14 @@ const Navbar = () => {
                     >
                       <User className="h-4 w-4" />
                       <span>Profile</span>
+                    </Link>
+                    <Link
+                      to="/forgot-password"
+                      onClick={() => setShowUserMenu(false)}
+                      className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 flex items-center space-x-2"
+                    >
+                      <Settings className="h-4 w-4" />
+                      <span>Change Password</span>
                     </Link>
                     <button
                       onClick={handleLogout}

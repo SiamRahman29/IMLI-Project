@@ -4,22 +4,13 @@ from sqlalchemy.orm import Session
 from sqlalchemy import desc, and_
 from datetime import date, datetime, timedelta
 from typing import Optional, List
-import os
-import json
 import re
+import json
 import asyncio
 import traceback
 import time
-import builtins
 import os
-import json
-import re
-import traceback
-import time
 import builtins
-import asyncio
-import io
-import sys
 import io
 import sys
 import random
@@ -34,7 +25,6 @@ from app.auth.dependencies import get_current_admin_user, get_optional_current_u
 
 router = APIRouter()
 
-# Dependency for getting DB session
 def get_db():
     db = SessionLocal()
     try:
@@ -49,10 +39,21 @@ def get_word_of_the_day(db: Session = Depends(get_db)):
     word_entry = db.query(Word).filter(Word.date == today).first()
     
     if word_entry:
+        # Ensure selected_words is properly formatted for Pydantic
+        selected_words = word_entry.selected_words
+        if isinstance(selected_words, str):
+            import json
+            try:
+                selected_words = json.loads(selected_words)
+            except:
+                selected_words = []
+        elif selected_words is None:
+            selected_words = []
+            
         return TrendingWordsResponse(
             date=str(word_entry.date),
-            words=word_entry.word,
-            selected_words=word_entry.selected_words
+            words=str(word_entry.word),  # Ensure it's a string
+            selected_words=selected_words
         )
     else:
         # Instead of raising 404, return a default response
@@ -80,54 +81,25 @@ async def generate_candidates(
         get_বিনোদন_trending_words, get_খেলাধুলা_trending_words,
         get_শিক্ষা_trending_words,
         get_স্বাস্থ্য_trending_words, get_বিজ্ঞান_trending_words,
-        get_আন্তর্জাতিক_trending_words, get_প্রযুক্তি_trending_words
+        get_আন্তর্জাতিক_trending_words, get_প্রযুক্তি_trending_words,
+        get_সাহিত্য_সংস্কৃতি_trending_words, get_ক্ষুদ্র_নৃগোষ্ঠী_trending_words
     )
     
     try:
         # Target categories as requested
         TARGET_CATEGORIES = [
             'জাতীয়', 'আন্তর্জাতিক', 'অর্থনীতি', 'রাজনীতি', 'বিনোদন', 
-            'খেলাধুলা',  'শিক্ষা', 'স্বাস্থ্য',  'বিজ্ঞান', 'প্রযুক্তি'
+            'খেলাধুলা',  'শিক্ষা', 'স্বাস্থ্য',  'বিজ্ঞান', 'প্রযুক্তি',
+            'সাহিত্য-সংস্কৃতি', 'ক্ষুদ্র নৃগোষ্ঠী'
         ]
         
         print(f"🚀 Starting trending word generation for {len(TARGET_CATEGORIES)} categories...")
         
-        # Load saved newspaper data from JSON file for faster testing
-        json_file_path = "/home/bs01127/IMLI-Project/all_newspapers_by_category.json"
-        
-        if os.path.exists(json_file_path):
-            print(f"📂 Loading newspaper data from saved JSON file for faster testing...")
-            with open(json_file_path, 'r', encoding='utf-8') as f:
-                saved_data = json.load(f)
-            
-            # Extract articles by category from saved data
-            results = {
-                'category_wise_articles': {},
-                'scraping_info': {
-                    'total_articles': 0,
-                    'source': 'saved_json_for_testing',
-                    'timestamp': datetime.now().isoformat(),
-                    'scraping_time_seconds': 0.1
-                }
-            }
-            
-            for category in TARGET_CATEGORIES:
-                if category in saved_data:
-                    articles = saved_data[category]
-                    results['category_wise_articles'][category] = articles
-                    results['scraping_info']['total_articles'] += len(articles)
-                    print(f"   {category}: {len(articles)} articles loaded")
-                else:
-                    results['category_wise_articles'][category] = []
-                    print(f"   {category}: No articles found")
-            
-            print(f"📊 Total {results['scraping_info']['total_articles']} articles loaded from JSON")
-            
-        else:
-            print(f"⚠️ JSON file not found at {json_file_path}, using fresh scraping...")
-            # Fresh scraping
-            scraper = FilteredNewspaperScraper(TARGET_CATEGORIES)
-            results = scraper.scrape_all_newspapers()
+        # Always use live scraping for frequency calculation (temporary in-memory storage)
+        print(f"🔴 LIVE SCRAPING: Using fresh scraping for accurate frequency calculation...")
+        print(f"🧠 MEMORY OPTIMIZATION: Storing articles temporarily in memory only (not in DB)")
+        scraper = FilteredNewspaperScraper(TARGET_CATEGORIES)
+        results = scraper.scrape_all_newspapers()
         
         print(f"📊 Scraped {results['scraping_info']['total_articles']} articles")
         print(f"📂 Category-wise breakdown:")
@@ -150,7 +122,9 @@ async def generate_candidates(
             'স্বাস্থ্য': get_স্বাস্থ্য_trending_words,
             # 'মতামত': get_মতামত_trending_words,
             'বিজ্ঞান': get_বিজ্ঞান_trending_words,
-            'প্রযুক্তি': get_প্রযুক্তি_trending_words
+            'প্রযুক্তি': get_প্রযুক্তি_trending_words,
+            'সাহিত্য-সংস্কৃতি': get_সাহিত্য_সংস্কৃতি_trending_words,
+            'ক্ষুদ্র নৃগোষ্ঠী': get_ক্ষুদ্র_নৃগোষ্ঠী_trending_words
         }
 
         # Category-wise LLM trending word extraction (sequential, with delay)
@@ -162,10 +136,10 @@ async def generate_candidates(
                 # Call the LLM function for this category, requesting 8 trending words
                 try:
                     trending_func = category_functions[category]
-                    # Pass articles and set limit=8 if supported
+                    # Pass articles and set limit=15 if supported
                     trending_words = trending_func(articles)  # Remove await since functions are synchronous
-                    # Ensure only 8 words
-                    trending_words = trending_words[:8]
+                    # Ensure only 15 words
+                    trending_words = trending_words[:15]
                     category_wise_trending[category] = trending_words
                     all_trending_words.extend(trending_words)
                     print(f"✅ [{category}] Got {len(trending_words)} trending words: {trending_words}")
@@ -182,7 +156,7 @@ async def generate_candidates(
 
         # --- Reddit Per-Subreddit Processing (AFTER newspaper processing) ---
         try:
-            from enhanced_reddit_category_scraper import EnhancedRedditCategoryScraper
+            from app.services.enhanced_reddit_category_scraper import EnhancedRedditCategoryScraper
             
             reddit_scraper = EnhancedRedditCategoryScraper()
             reddit_client = Groq(api_key=os.getenv('GROQ_API_KEY_NEWSPAPER'))
@@ -301,8 +275,8 @@ Reddit Content from r/{subreddit}:
             
             for category, words in category_wise_trending.items():
                 if words and len(words) > 0:
-                    # Take up to 8 words per category (or 16 for আন্তর্জাতিক)
-                    word_limit = 16 if category == 'আন্তর্জাতিক' else 8
+                    # Take up to 15 words per category (or 25 for আন্তর্জাতিক)
+                    word_limit = 25 if category == 'আন্তর্জাতিক' else 15
                     limited_words = words[:word_limit]
                     total_input_words += len(limited_words)
                     
@@ -315,11 +289,11 @@ Reddit Content from r/{subreddit}:
                 
                 client = Groq(api_key=os.getenv('GROQ_API_KEY_NEWSPAPER'))
                     
-                final_selection_prompt = f"""তুমি একজন বিশেষজ্ঞ বাংলাদেশি সংবাদ বিশ্লেষক।আপনাকে নিম্নলিখিত ক্যাটেগরি অনুযায়ী ট্রেন্ডিং শব্দগুলো থেকে প্রতিটি ক্যাটেগরি থেকে সবচেয়ে গুরুত্বপূর্ণ ৫টি করে শব্দ বেছে নিতে হবে। এমন শব্দ/বাক্যাংশ দাও যেটা শুনলে মানুষ বুঝতে পারবে যে এটা কীসের সাথে সম্পর্কিত। যার একটা অর্থ থাকবে, এমন কিছু দেবে না যেটা অর্থহীন এবং যেটা দেখলে কনটেক্সট বোঝা যাবে না।
+                final_selection_prompt = f"""তুমি একজন বিশেষজ্ঞ বাংলাদেশি সংবাদ বিশ্লেষক।আপনাকে নিম্নলিখিত ক্যাটেগরি অনুযায়ী ট্রেন্ডিং শব্দগুলো থেকে প্রতিটি ক্যাটেগরি থেকে সবচেয়ে গুরুত্বপূর্ণ 10টি করে শব্দ বেছে নিতে হবে। এমন শব্দ/বাক্যাংশ দাও যেটা শুনলে মানুষ বুঝতে পারবে যে এটা কীসের সাথে সম্পর্কিত। যার একটা অর্থ থাকবে, এমন কিছু দেবে না যেটা অর্থহীন এবং যেটা দেখলে কনটেক্সট বোঝা যাবে না।
 ক্যাটেগরি অনুযায়ী ট্রেন্ডিং শব্দ:
 {categories_text}
 নির্বাচনের নিয়মাবলী:
-1. প্রতিটি ক্যাটেগরি থেকে সবচেয়ে প্রাসঙ্গিক ৫টি শব্দ নির্বাচন করুন
+1. প্রতিটি ক্যাটেগরি থেকে সবচেয়ে প্রাসঙ্গিক ১০টি শব্দ নির্বাচন করুন
 2. প্রতিটি শব্দ/বাক্যাংশ ২-৪ শব্দের মধ্যে এবং স্পষ্ট অর্থবোধক হতে হবে
 3. এক ক্যাটেগরিতে একই টপিক বা অর্থের কাছাকাছি শব্দ থাকবে না, প্রতিটি শব্দ ইউনিক ও প্রসঙ্গভিত্তিক অর্থবহ হতে হবে
 4. response শুধুমাত্র bangla language a deo
@@ -334,19 +308,20 @@ Reddit Content from r/{subreddit}:
 2. শব্দ২
 3. শব্দ৩
 4. শব্দ৪
-5. শব্দ৫
+...
+10. শব্দ১০
 
 অন্য ক্যাটেগরি নাম:
 1. শব্দ১
 2. শব্দ২
 ...
 ...
-5. শব্দ৫
+10. শব্দ১০
 
 শুধুমাত্র উপরের ফরম্যাটে উত্তর দিন। অতিরিক্ত ব্যাখ্যা বা মন্তব্য যোগ করবেন না।"""
                 
                 print(f"🤖 Generating final category-wise selection from {len(category_prompt_sections)} categories using LLM...")
-                
+                print(f"🔍 Final selection prompt: {final_selection_prompt}...")
                 completion = client.chat.completions.create(
                     model="llama-3.3-70b-versatile",
                     messages=[
@@ -376,31 +351,51 @@ Reddit Content from r/{subreddit}:
                     print(f"Processing line {i}: '{line}'")
                     
                     # Check if this is a category header (ends with colon and doesn't start with number)
-                    if line.endswith(':') and not re.match(r'^[১২ৃ৩৪৫1-5][\.\)]\s*', line):
+                    if line.endswith(':') and not re.match(r'^[১২৩৪৫৬৭৮৯১০1-9][\.\)]\s*', line):
                         current_category = line.replace(':', '').strip()
                         if current_category not in category_wise_final:
                             category_wise_final[current_category] = []
                         print(f"✅ Found category: '{current_category}'")
                         continue
                     
-                    # Extract numbered items for current category (support both English and Bengali numbers)
-                    if current_category and re.match(r'^[১২৩৪৫1-5][\.\)]\s*', line):
-                        # Skip if we already have 5 words for this category
-                        if len(category_wise_final[current_category]) >= 5:
-                            print(f"⚠️ Category '{current_category}' already has 5 words, skipping...")
-                            continue
-                            
-                        # Remove number prefix and clean up
-                        word = re.sub(r'^[১২৩৪৫1-5][\.\)]\s*', '', line).strip()
+                    # Extract numbered items for current category (support both English and Bengali numbers, including 10)
+                    if current_category and (re.match(r'^([১২৩৪৫৬৭৮৯১০]|1[0]|[1-9])[\.\)]\s*', line) or re.match(r'^১০[\.\)]\s*', line)):
+                        # Remove number prefix and clean up (handle both single digits and 10)
+                        word = re.sub(r'^([১২৩৪৫৬৭৮৯১০]|1[0]|[1-9])[\.\)]\s*', '', line).strip()
+                        word = re.sub(r'^১০[\.\)]\s*', '', word).strip()  # Extra cleanup for Bengali 10
                         # Remove any trailing punctuation or extra spaces
                         word = re.sub(r'[।\.]+$', '', word).strip()
                         
-                        if word and len(word) > 1 and word not in category_wise_final[current_category]:
-                            category_wise_final[current_category].append(word)
-                            final_trending_words.append(word)
-                            print(f"✅ Added word to {current_category}: '{word}' ({len(category_wise_final[current_category])}/5)")
+                        if word and len(word) > 1:
+                            # Check if word already exists in the list
+                            word_exists = False
+                            for existing_word_info in category_wise_final[current_category]:
+                                if isinstance(existing_word_info, dict) and existing_word_info.get('word') == word:
+                                    word_exists = True
+                                    break
+                                elif isinstance(existing_word_info, str) and existing_word_info == word:
+                                    word_exists = True
+                                    break
+                            
+                            if not word_exists:
+                                # Add word without frequency calculation (will be calculated later in batch)
+                                word_info = {
+                                    'word': word,
+                                    'frequency': 1,  # Temporary default, will be calculated later
+                                    'category': current_category,
+                                    'source': 'final_llm_selection'
+                                }
+                                
+                                category_wise_final[current_category].append(word_info)
+                                
+                                # Also add to final_trending_words for backward compatibility
+                                final_trending_words.append(word)
+                                
+                                print(f"✅ Added word to {current_category}: '{word}' (temp frequency: 1) ({len(category_wise_final[current_category])}/10)")
+                            else:
+                                print(f"❌ Skipped duplicate word: '{word}'")
                         else:
-                            print(f"❌ Skipped invalid/duplicate word: '{word}'")
+                            print(f"❌ Skipped invalid word: '{word}'")
                 
                 # Final validation and cleanup for frontend consumption
                 print("\n🎯 Final Category-wise Results (Before Cleanup):")
@@ -409,28 +404,51 @@ Reddit Content from r/{subreddit}:
                     for j, word in enumerate(words, 1):
                         print(f"  {j}. {word}")
                 
-                # Ensure each category has exactly 5 words (pad with fallback if needed)
+                # Ensure each category has exactly 10 words (pad with fallback if needed)
                 for category in list(category_wise_final.keys()):
                     words = category_wise_final[category]
-                    if len(words) < 5:
+                    if len(words) < 10:
                         # Try to get fallback words from category_wise_trending
                         fallback_words = category_wise_trending.get(category, [])
                         for fallback_word in fallback_words:
-                            if len(words) >= 5:
+                            if len(words) >= 10:
                                 break
-                            if fallback_word not in words:
-                                words.append(fallback_word)
-                                print(f"🔄 Added fallback word to {category}: '{fallback_word}'")
+                            
+                            # Check if word already exists
+                            word_text = fallback_word if isinstance(fallback_word, str) else fallback_word.get('word', '') if isinstance(fallback_word, dict) else str(fallback_word)
+                            
+                            word_exists = False
+                            for existing_word_info in words:
+                                existing_word_text = existing_word_info.get('word') if isinstance(existing_word_info, dict) else str(existing_word_info)
+                                if existing_word_text == word_text:
+                                    word_exists = True
+                                    break
+                            
+                            if not word_exists:
+                                # Add fallback word without frequency calculation (will be calculated later in batch)
+                                word_info = {
+                                    'word': word_text,
+                                    'frequency': 1,  # Temporary default, will be calculated later
+                                    'category': category,
+                                    'source': 'fallback_selection'
+                                }
+                                words.append(word_info)
+                                print(f"🔄 Added fallback word to {category}: '{word_text}' (temp frequency: 1)")
                     
-                    # Ensure exactly 5 words
-                    category_wise_final[category] = words[:5]
+                    # Ensure exactly 10 words
+                    category_wise_final[category] = words[:10]
                 
                 
                 print("\n🎯 Final Category-wise Results (After Cleanup):")
                 for category, words in category_wise_final.items():
                     print(f"📂 {category}: {len(words)} words")
-                    for j, word in enumerate(words, 1):
-                        print(f"  {j}. {word}")
+                    for j, word_info in enumerate(words, 1):
+                        if isinstance(word_info, dict):
+                            word_text = word_info.get('word', '')
+                            frequency = word_info.get('frequency', 1)
+                            print(f"  {j}. {word_text} (freq: {frequency})")
+                        else:
+                            print(f"  {j}. {word_info} (freq: N/A)")
                 print("=" * 50)
                 
                 # Store LLM selection statistics
@@ -449,11 +467,24 @@ Reddit Content from r/{subreddit}:
         
         except Exception as e:
             print(f"⚠️ Could not use LLM for final selection: {e}")
-            # Fallback: Use top words from each category
+            # Fallback: Use top words from each category without frequency calculation (will be calculated later)
             for category, words in category_wise_trending.items():
                 if words:
-                    category_wise_final[category] = words[:5]  # Take top 5 from each
-                    final_trending_words.extend(words[:5])
+                    fallback_words_with_freq = []
+                    for word in words[:10]:
+                        word_text = word if isinstance(word, str) else str(word)
+                        
+                        word_info = {
+                            'word': word_text,
+                            'frequency': 1,  # Temporary default, will be calculated later in batch
+                            'category': category,
+                            'source': 'fallback_primary'
+                        }
+                        fallback_words_with_freq.append(word_info)
+                    
+                    category_wise_final[category] = fallback_words_with_freq
+                    # Extract just word text for final_trending_words backward compatibility
+                    final_trending_words.extend([w['word'] for w in fallback_words_with_freq])
             
             llm_selection_stats = {
                 "selection_method": "Fallback: Top 5 per category without LLM",
@@ -463,21 +494,90 @@ Reddit Content from r/{subreddit}:
 
         print(f"🎉 Total trending words extracted: {len(all_trending_words)}")
         print(f"🎯 Final selected words: {len(final_trending_words)}")
+        print(f"🔧 DEBUG: About to start frequency calculation section...")
+        print(f"🔧 DEBUG: category_wise_final has {len(category_wise_final)} categories")
+        
+        # 🔍 FREQUENCY CALCULATION: Calculate frequency for all selected phrases in batch
+        print(f"🔍 FREQUENCY CALCULATION: Calculating frequency for all selected phrases...")
+        print(f"🔍 DEBUG: results object exists: {bool(results)}")
+        print(f"🔍 DEBUG: category_wise_articles exists: {bool(results.get('category_wise_articles') if results else False)}")
+        
+        total_phrases_to_calculate = sum(len(words) for words in category_wise_final.values())
+        phrases_calculated = 0
+        
+        print(f"🔧 DEBUG: About to import calculate_phrase_frequency_in_articles...")
+        from app.services.category_llm_analyzer import calculate_phrase_frequency_in_articles
+        print(f"🔧 DEBUG: Import successful!")
+        
+        for category, words in category_wise_final.items():
+            print(f"🔍 Processing category '{category}' with {len(words)} words...")
+            
+            # Get articles for this category with better debugging
+            category_articles = []
+            if results and 'category_wise_articles' in results:
+                category_articles = results['category_wise_articles'].get(category, [])
+                print(f"🔍 DEBUG: Found {len(category_articles)} articles for category '{category}'")
+            else:
+                print(f"🔍 DEBUG: No articles found for category '{category}' - results or category_wise_articles missing")
+            
+            for word_info in words:
+                if isinstance(word_info, dict):
+                    word_text = word_info.get('word', '')
+                    
+                    if word_text and category_articles:
+                        # Calculate frequency for this phrase
+                        freq_stats = calculate_phrase_frequency_in_articles(word_text, category_articles)
+                        actual_frequency = freq_stats.get('frequency', 1)
+                        
+                        # Update frequency in word_info
+                        word_info['frequency'] = actual_frequency
+                        
+                        phrases_calculated += 1
+                        print(f"🔍 [{phrases_calculated}/{total_phrases_to_calculate}] '{word_text}' → frequency: {actual_frequency}")
+                    else:
+                        # Keep default frequency if no articles or invalid word
+                        word_info['frequency'] = 1
+                        phrases_calculated += 1
+                        print(f"🔍 [{phrases_calculated}/{total_phrases_to_calculate}] '{word_text}' → default frequency: 1 (no articles available)")
+        
+        print(f"✅ FREQUENCY CALCULATION COMPLETE: {phrases_calculated} phrases processed")
+        
+        # 🧠 MEMORY OPTIMIZATION: Clear scraped articles from memory after frequency calculation
+        print(f"🗑️ MEMORY CLEANUP: Removing {results['scraping_info']['total_articles']} scraped articles from memory...")
+        
+        # Clear category-wise articles (main memory consumer)
+        if 'category_wise_articles' in results:
+            for category in results['category_wise_articles']:
+                results['category_wise_articles'][category].clear()
+            results['category_wise_articles'].clear()
+        
+        # Keep only essential data for response (statistics and metadata)
+        scraping_stats = results['scraping_info'].copy()
+        
+        # Clear the full results object
+        results.clear()
+        
+        print(f"✅ MEMORY CLEANUP: Articles removed from memory, DB size optimized")
         
         return {
             "message": "Category-wise trending words generated successfully using filtered newspaper scraping and LLM analysis!",
-            "scraping_info": results['scraping_info'],
+            "scraping_info": scraping_stats,
             "category_wise_trending_words": category_wise_trending,
             "all_trending_words": all_trending_words,
             "category_wise_final": category_wise_final,
             "final_trending_words": final_trending_words,
             "llm_selection": llm_selection_stats,
             "statistics": {
-                "total_articles_scraped": results['scraping_info']['total_articles'],
+                "total_articles_scraped": scraping_stats['total_articles'],
                 "categories_processed": len([c for c in TARGET_CATEGORIES if category_wise_trending.get(c, [])]),
                 "total_trending_words": len(all_trending_words),
                 "final_selected_words": len(final_trending_words),
-                "scraping_time_seconds": results['scraping_info'].get('scraping_time_seconds', 0)
+                "scraping_time_seconds": scraping_stats.get('scraping_time_seconds', 0)
+            },
+            "memory_optimization": {
+                "articles_removed_from_memory": scraping_stats['total_articles'],
+                "memory_optimized": True,
+                "db_storage_skipped": True
             }
         }
         
@@ -494,6 +594,7 @@ def get_trending_phrases(
     offset: int = Query(0, description="Number of results to skip for pagination (default: 0)"),
     source: Optional[str] = Query(None, description="Filter by source (news, social_media, etc.)"),
     phrase_type: Optional[str] = Query(None, description="Filter by phrase type"),
+    search: Optional[str] = Query(None, description="Search term to filter phrases"),
     db: Session = Depends(get_db)
 ):
     """Get trending phrases for a specific date range with filtering options"""
@@ -523,12 +624,15 @@ def get_trending_phrases(
         query = query.filter(TrendingPhrase.source == source)
     if phrase_type:
         query = query.filter(TrendingPhrase.phrase_type == phrase_type)
+    if search:
+        # Search in phrase text (case-insensitive)
+        query = query.filter(TrendingPhrase.phrase.ilike(f"%{search}%"))
     
     # Get total count for pagination
     total_count = query.count()
     
-    # Order by score descending and apply pagination
-    phrases = query.order_by(desc(TrendingPhrase.score)).offset(offset).limit(limit).all()
+    # Order by date descending (latest first), then by score descending
+    phrases = query.order_by(desc(TrendingPhrase.date), desc(TrendingPhrase.score)).offset(offset).limit(limit).all()
     
     # Convert to response format
     trending_phrases = []
@@ -543,7 +647,7 @@ def get_trending_phrases(
             source=phrase.source
         ))
     
-    return {
+    return { 
         "start_date": start_date,
         "end_date": end_date,
         "phrases": trending_phrases,
@@ -562,7 +666,7 @@ def delete_trending_phrase(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_admin_user)
 ):
-    """Delete a trending phrase (Admin only)"""
+    """Delete a trending phrase (Admin only) - Smart frequency handling"""
     phrase = db.query(TrendingPhrase).filter(TrendingPhrase.id == phrase_id).first()
     if not phrase:
         raise HTTPException(
@@ -570,10 +674,25 @@ def delete_trending_phrase(
             detail="Trending phrase not found"
         )
     
-    db.delete(phrase)
-    db.commit()
-    
-    return {"message": "Trending phrase deleted successfully"}
+    # If frequency > 1, just decrease frequency
+    if phrase.frequency > 1:
+        phrase.frequency -= 1
+        # Optionally adjust score proportionally
+        phrase.score = phrase.score * (phrase.frequency / (phrase.frequency + 1))
+        db.commit()
+        return {
+            "message": f"Phrase frequency decreased to {phrase.frequency}",
+            "action": "frequency_decreased",
+            "remaining_frequency": phrase.frequency
+        }
+    else:
+        # If frequency = 1, delete the entire entry
+        db.delete(phrase)
+        db.commit()
+        return {
+            "message": "Trending phrase deleted completely",
+            "action": "phrase_deleted"
+        }
 
 @router.get("/daily-trending", summary="Get daily trending summary")
 def get_daily_trending(
@@ -670,12 +789,11 @@ async def run_progressive_analysis(
             news_articles = fetch_news()
             print(f"=== Fetched {len(news_articles)} news articles ===")
             
-            # Step 3: Store articles in database  
-            yield f"data: {json.dumps({'step': 3, 'message': 'সংগৃহীত কন্টেন্ট ডেটাবেসে সংরক্ষণ করা হচ্ছে...', 'progress': 25, 'details': {'storing': 'articles', 'articles_collected': len(news_articles)}})}\n\n"
-            print("=== Storing articles in database ===")
+            # Step 3: Analyze articles in memory (no DB storage needed)
+            yield f"data: {json.dumps({'step': 3, 'message': 'মেমরিতে কন্টেন্ট বিশ্লেষণ প্রস্তুত করা হচ্ছে...', 'progress': 25, 'details': {'analyzing': 'articles', 'articles_collected': len(news_articles)}})}\n\n"
+            print("=== Analyzing articles in memory for trending word extraction ===")
             
-            from app.routes.helpers import store_news
-            store_news(db, news_articles)
+            # Note: Articles are kept in memory only, no database storage to optimize DB size
             
             # Step 4: Initialize advanced Bengali NLP analyzer
             yield f"data: {json.dumps({'step': 4, 'message': 'উন্নত বাংলা এনএলপি সিস্টেম চালু করা হচ্ছে...', 'progress': 35, 'details': {'initializing': 'bengali_nlp'}})}\n\n"
@@ -1039,20 +1157,19 @@ def get_weekly_trending(
     target_week: Optional[str] = Query(None, description="Target week start date in YYYY-MM-DD format"),
     db: Session = Depends(get_db)
 ):
-    """Get trending phrases summary for a specific week"""
+    """Get trending phrases summary for previous 7 days (default) or a specific week"""
     
     if not target_week:
-        # Current week start (Monday)
+        # Previous 7 days from today
         today = date.today()
-        days_since_monday = today.weekday()
-        week_start = today - timedelta(days=days_since_monday)
+        week_end = today
+        week_start = today - timedelta(days=6)  # Previous 7 days including today
     else:
         try:
             week_start = datetime.strptime(target_week, "%Y-%m-%d").date()
+            week_end = week_start + timedelta(days=6)
         except ValueError:
             raise HTTPException(status_code=400, detail="Invalid date format. Use YYYY-MM-DD")
-    
-    week_end = week_start + timedelta(days=6)
     
     # Get phrases for the target week
     phrases = db.query(TrendingPhrase).filter(
@@ -1060,7 +1177,7 @@ def get_weekly_trending(
             TrendingPhrase.date >= week_start,
             TrendingPhrase.date <= week_end
         )
-    ).order_by(desc(TrendingPhrase.score)).all()
+    ).order_by(desc(TrendingPhrase.date), desc(TrendingPhrase.score)).all()
     
     # Group by day
     daily_data = {}
@@ -1196,9 +1313,6 @@ def get_monthly_trending(
         "top_monthly_phrases": top_monthly_phrases
     }
 
-# ==========================================
-# CATEGORY-BASED TRENDING ANALYSIS ENDPOINTS
-# ==========================================
 
 @router.get("/categories/detect", summary="🏷️ Test category detection for a URL", tags=["Category Analysis"])
 def test_category_detection(
@@ -1668,26 +1782,39 @@ async def update_category_wise_final_with_reddit(category_wise_trending, target_
         
         client = Groq(api_key=os.getenv('GROQ_API_KEY_NEWSPAPER'))
         
-        final_selection_prompt = f"""তুমি একজন বিশেষজ্ঞ বাংলাদেশি সংবাদ বিশ্লেষক।আপনাকে নিম্নলিখিত ক্যাটেগরি অনুযায়ী ট্রেন্ডিং শব্দগুলো থেকে প্রতিটি ক্যাটেগরি থেকে সবচেয়ে গুরুত্বপূর্ণ ৫টি করে শব্দ বেছে নিতে হবে।
+        final_selection_prompt = f"""তুমি একজন বিশেষজ্ঞ বাংলাদেশি সংবাদ বিশ্লেষক।আপনাকে নিম্নলিখিত ক্যাটেগরি অনুযায়ী ট্রেন্ডিং শব্দগুলো থেকে প্রতিটি ক্যাটেগরি থেকে সবচেয়ে গুরুত্বপূর্ণ 10টি করে শব্দ বেছে নিতে হবে। এমন শব্দ/বাক্যাংশ দাও যেটা শুনলে মানুষ বুঝতে পারবে যে এটা কীসের সাথে সম্পর্কিত। যার একটা অর্থ থাকবে, এমন কিছু দেবে না যেটা অর্থহীন এবং যেটা দেখলে কনটেক্সট বোঝা যাবে না।
 
 ক্যাটেগরি অনুযায়ী ট্রেন্ডিং শব্দ:
 {categories_text}
 
 নির্বাচনের নিয়মাবলী:
-1. প্রতিটি ক্যাটেগরি থেকে সবচেয়ে প্রাসঙ্গিক ৫টি শব্দ নির্বাচন করুন
+1. প্রতিটি ক্যাটেগরি থেকে সবচেয়ে প্রাসঙ্গিক ১০টি শব্দ নির্বাচন করুন
 2. প্রতিটি শব্দ/বাক্যাংশ ২-৪ শব্দের মধ্যে এবং স্পষ্ট অর্থবোধক হতে হবে
-3. response শুধুমাত্র bangla language a deo
-4. ব্যক্তিগত নাম এড়িয়ে চলুন, বিষয়বস্তুর উপর ফোকাস করুন
+3. এক ক্যাটেগরিতে একই টপিক বা অর্থের কাছাকাছি শব্দ থাকবে না, প্রতিটি শব্দ ইউনিক ও প্রসঙ্গভিত্তিক অর্থবহ হতে হবে
+4. response শুধুমাত্র bangla language a deo
+5. ব্যক্তিগত নাম এড়িয়ে চলুন, বিষয়বস্তুর উপর ফোকাস করুন
+6. সাম্প্রতিক ও জনপ্রিয় বিষয়গুলো অগ্রাধিকার দিন
 
 আউটপুট ফরম্যাট:
+প্রতিটি ক্যাটেগরির জন্য নিম্নরূপ ফরম্যাটে দিন:
+
 ক্যাটেগরি নাম:
 1. শব্দ১
 2. শব্দ২
 3. শব্দ৩
 4. শব্দ৪
-5. শব্দ৫
+...
+10. শব্দ১০
 
-শুধুমাত্র উপরের ফরম্যাটে উত্তর দিন।"""
+অন্য ক্যাটেগরি নাম:
+1. শব্দ১
+2. শব্দ২
+...
+...
+10. শব্দ১০
+
+শুধুমাত্র উপরের ফরম্যাটে উত্তর দিন। অতিরিক্ত ব্যাখ্যা বা মন্তব্য যোগ করবেন না।"""
+        
         
         completion = client.chat.completions.create(
             model="llama-3.3-70b-versatile",
@@ -1774,14 +1901,16 @@ async def hybrid_generate_candidates(
                 get_বিনোদন_trending_words, get_খেলাধুলা_trending_words,
                 get_শিক্ষা_trending_words,
                 get_স্বাস্থ্য_trending_words, get_বিজ্ঞান_trending_words,
-                get_আন্তর্জাতিক_trending_words, get_প্রযুক্তি_trending_words
+                get_আন্তর্জাতিক_trending_words, get_প্রযুক্তি_trending_words,
+                get_সাহিত্য_সংস্কৃতি_trending_words, get_ক্ষুদ্র_নৃগোষ্ঠী_trending_words
             )
             from groq import Groq
             import re
 
             TARGET_CATEGORIES = [
                 'জাতীয়', 'আন্তর্জাতিক', 'অর্থনীতি', 'রাজনীতি',  'বিনোদন', 
-                'খেলাধুলা', 'শিক্ষা', 'স্বাস্থ্য',  'বিজ্ঞান', 'প্রযুক্তি'
+                'খেলাধুলা', 'শিক্ষা', 'স্বাস্থ্য',  'বিজ্ঞান', 'প্রযুক্তি',
+                'সাহিত্য-সংস্কৃতি', 'ক্ষুদ্র নৃগোষ্ঠী'
             ]
             print(f"🚀 Starting filtered newspaper scraping for {len(TARGET_CATEGORIES)} categories...")
             scraper = FilteredNewspaperScraper(TARGET_CATEGORIES)
@@ -1802,7 +1931,9 @@ async def hybrid_generate_candidates(
                 'স্বাস্থ্য': get_স্বাস্থ্য_trending_words,
                 # 'মতামত': get_মতামত_trending_words,
                 'বিজ্ঞান': get_বিজ্ঞান_trending_words,
-                'প্রযুক্তি': get_প্রযুক্তি_trending_words
+                'প্রযুক্তি': get_প্রযুক্তি_trending_words,
+                'সাহিত্য-সংস্কৃতি': get_সাহিত্য_সংস্কৃতি_trending_words,
+                'ক্ষুদ্র নৃগোষ্ঠী': get_ক্ষুদ্র_নৃগোষ্ঠী_trending_words
             }
 
             all_trending_words = []
@@ -1822,7 +1953,7 @@ async def hybrid_generate_candidates(
                         trending_func = category_functions[category]
                         trending_words = trending_func(articles)  # Remove await and limit parameter
                         # Ensure only 8 words (functions should return 8 but just in case)
-                        trending_words = trending_words[:8] if trending_words else []
+                        trending_words = trending_words if trending_words else []
                         category_wise_trending[category] = trending_words
                         all_trending_words.extend(trending_words)
                         llm_responses[category] = trending_words
@@ -1854,13 +1985,14 @@ async def hybrid_generate_candidates(
                 "selected_words": len(final_trending_words),
                 "categories_processed": len(category_wise_final) if category_wise_final else 0,
                 "selection_method": "Category-wise LLM (8 per category, 50s delay)",
-                "llm_response": str(category_wise_final)[:500]  # Truncated for brevity
+                "llm_response": str(category_wise_final)  # Truncated for brevity
             }
             print(f"✅ Final selection complete. Returning results.")
             return {
                 "message": "Category-wise trending words generated successfully using filtered newspaper scraping and LLM analysis!",
                 "scraping_info": results['scraping_info'],
                 "category_wise_trending_words": category_wise_trending,
+                "category_wise_articles": results['category_wise_articles'],  # Include articles for frequency calculation
                 "all_trending_words": all_trending_words,
                 "category_wise_final": category_wise_final,
                 "final_trending_words": final_trending_words,
@@ -2028,105 +2160,196 @@ async def hybrid_generate_candidates(
                 
                 category_data_text = "\n\n".join(category_sections)
                 
-                final_integration_prompt = f"""তুমি একজন বিশেষজ্ঞ বাংলাদেশি সংবাদ বিশ্লেষক। নিচের ক্যাটেগরি-ভিত্তিক ট্রেন্ডিং শব্দ থেকে প্রতিটি ক্যাটেগরি থেকে সবচেয়ে ভালো ৫টি করে শব্দ নির্বাচন করো।
+                final_integration_prompt = f"""তুমি একজন বিশেষজ্ঞ বাংলাদেশি সংবাদ বিশ্লেষক।আপনাকে নিম্নলিখিত ক্যাটেগরি অনুযায়ী ট্রেন্ডিং শব্দগুলো থেকে প্রতিটি ক্যাটেগরি থেকে সবচেয়ে গুরুত্বপূর্ণ 10টি করে শব্দ বেছে নিতে হবে। এমন শব্দ/বাক্যাংশ দাও যেটা শুনলে মানুষ বুঝতে পারবে যে এটা কীসের সাথে সম্পর্কিত। যার একটা অর্থ থাকবে, এমন কিছু দেবে না যেটা অর্থহীন এবং যেটা দেখলে কনটেক্সট বোঝা যাবে না।
 
 ক্যাটেগরি-ভিত্তিক ট্রেন্ডিং শব্দ:
 {category_data_text}
 
-নির্দেশনা:
-1. প্রতিটি ক্যাটেগরি থেকে ঠিক ৫টি করে সবচেয়ে প্রাসঙ্গিক ও গুরুত্বপূর্ণ শব্দ নির্বাচন করো
-2. শব্দগুলো অর্থবহ ও সুস্পষ্ট হতে হবে
-3. ব্যক্তিগত নাম এড়িয়ে চলুন, বিষয়বস্তুর উপর ফোকাস করুন
-4. শুধুমাত্র JSON ফরম্যাটে উত্তর দাও
+নির্বাচনের নিয়মাবলী:
+1. প্রতিটি ক্যাটেগরি থেকে সবচেয়ে প্রাসঙ্গিক ১০টি শব্দ নির্বাচন করুন
+2. প্রতিটি শব্দ/বাক্যাংশ ২-৪ শব্দের মধ্যে এবং স্পষ্ট অর্থবোধক হতে হবে
+3. এক ক্যাটেগরিতে একই টপিক বা অর্থের কাছাকাছি শব্দ থাকবে না, প্রতিটি শব্দ ইউনিক ও প্রসঙ্গভিত্তিক অর্থবহ হতে হবে
+4. response শুধুমাত্র bangla language a deo
+5. ব্যক্তিগত নাম এড়িয়ে চলুন, বিষয়বস্তুর উপর ফোকাস করুন
+6. সাম্প্রতিক ও জনপ্রিয় বিষয়গুলো অগ্রাধিকার দিন
 
-JSON আউটপুট ফরম্যাট:
-{{
-  "জাতীয়": [
-    "শব্দ১",
-    "শব্দ২", 
-    "শব্দ৩",
-    "শব্দ৪",
-    "শব্দ৫"
-  ],
-  "আন্তর্জাতিক": [
-    "শব্দ১",
-    "শব্দ২",
-    "শব্দ৩", 
-    "শব্দ৪",
-    "শব্দ৫"
-  ],
-  "অর্থনীতি": [
-    "শব্দ১",
-    "শব্দ২",
-    "শব্দ৩",
-    "শব্দ৪", 
-    "শব্দ৫"
-  ]
-}}
+আউটপুট ফরম্যাট:
+প্রতিটি ক্যাটেগরির জন্য নিম্নরূপ ফরম্যাটে দিন:
 
-শুধুমাত্র valid JSON format এ উত্তর দাও, অন্য কোনো টেক্সট নয়।"""
+ক্যাটেগরি নাম:
+1. শব্দ১
+2. শব্দ২
+3. শব্দ৩
+4. শব্দ৪
+...
+10. শব্দ১০
+
+অন্য ক্যাটেগরি নাম:
+1. শব্দ১
+2. শব্দ২
+...
+...
+10. শব্দ১০
+
+শুধুমাত্র উপরের ফরম্যাটে উত্তর দিন। অতিরিক্ত ব্যাখ্যা বা মন্তব্য যোগ করবেন না।"""
+                
                 print("🤖 Calling final integration LLM with category-wise data...")
                 completion = client.chat.completions.create(
                     model="llama-3.3-70b-versatile",
                     messages=[{"role": "user", "content": final_integration_prompt}],
                     temperature=0.3,
-                    max_tokens=2000
+                    max_tokens=5000
                 )
                 
                 llm_response = completion.choices[0].message.content.strip()
                 print(f"🔍 Final Integration LLM Response:\n{llm_response}")
                 
-                # Parse JSON response
-                import json
-                try:
-                    # Strip markdown code blocks if present
-                    json_text = llm_response
-                    if "```json" in json_text:
-                        json_text = json_text.split("```json")[1].split("```")[0].strip()
-                    elif "```" in json_text:
-                        json_text = json_text.split("```")[1].split("```")[0].strip()
+                # Parse TEXT format response (not JSON)
+                category_wise_final = {}
+                current_category = None
+                lines = llm_response.split('\n')
+                
+                for line in lines:
+                    line = line.strip()
+                    if not line:
+                        continue
                     
-                    category_wise_final = json.loads(json_text)
-                    print(f"✅ Successfully parsed JSON response with {len(category_wise_final)} categories")
+                    # Check if this is a category header (ends with colon and doesn't start with number)
+                    if line.endswith(':') and not re.match(r'^[১২৩৪৫৬৭৮৯১০1-9][\.\)]\s*', line):
+                        current_category = line.replace(':', '').strip()
+                        if current_category not in category_wise_final:
+                            category_wise_final[current_category] = []
+                        print(f"✅ Found category: '{current_category}'")
+                        continue
                     
-                    # Validate that each category has exactly 5 words
-                    for category, words in category_wise_final.items():
-                        if len(words) != 5:
-                            print(f"⚠️ Warning: {category} has {len(words)} words instead of 5")
+                    # Extract numbered items for current category (support both English and Bengali numbers)
+                    if current_category and re.match(r'^[১২৩৪৫৬৭৮৯১০][\.\)]\s*|^1[0][\.\)]\s*|^[1-9][\.\)]\s*', line):
+                        # Remove number prefix and clean up
+                        word = re.sub(r'^[১২৩৪৫৬৭৮৯১০][\.\)]\s*|^1[0][\.\)]\s*|^[1-9][\.\)]\s*', '', line).strip()
+                        # Remove any trailing punctuation or extra spaces
+                        word = re.sub(r'[।\.]+$', '', word).strip()
                         
-                except json.JSONDecodeError as e:
-                    print(f"❌ Failed to parse JSON response: {e}")
-                    print("🔄 Attempting manual parsing as fallback...")
+                        if word and len(word) > 1:
+                            category_wise_final[current_category].append(word)
+                            print(f"✅ Added word to {current_category}: '{word}' ({len(category_wise_final[current_category])}/total)")
+                
+                print(f"✅ Successfully parsed text response with {len(category_wise_final)} categories")
+                
+                # 🔍 LLM-BASED FREQUENCY CALCULATION: Ask LLM to assign popularity-based frequency scores
+                print(f"\n🔍 LLM-BASED FREQUENCY CALCULATION: Assigning frequency scores for category-wise phrases...")
+                print(f"🔍 DEBUG: Total categories to process: {len(category_wise_final)}")
+                
+                category_wise_final_with_freq = {}
+                total_phrases_calculated = 0
+                
+                for category, words in category_wise_final.items():
+                    print(f"🔍 Processing category '{category}' with {len(words)} words for LLM frequency scoring...")
                     
-                    # Fallback: Manual parsing if JSON fails
-                    category_wise_final = {}
-                    current_category = None
-                    lines = llm_response.split('\n')
+                    # Prepare words list for LLM frequency scoring
+                    words_text = "\n".join([f"{i+1}. {word}" for i, word in enumerate(words)])
                     
-                    for line in lines:
-                        line = line.strip()
-                        if not line or line in ['{', '}', ',']:
-                            continue
+                    # LLM prompt for frequency scoring
+                    frequency_prompt = f"""আপনি একজন বাংলাদেশি মিডিয়া বিশেষজ্ঞ। নিচের "{category}" ক্যাটেগরির ট্রেন্ডিং শব্দগুলোর জন্য প্রতিটির জনপ্রিয়তা এবং ব্যবহারের ভিত্তিতে ৫-৮ এর মধ্যে একটি ফ্রিকোয়েন্সি স্কোর দিন।
+
+স্কোরিং গাইডলাইন:
+- ৮ = খুব জনপ্রিয় এবং প্রায়ই ব্যবহৃত (শুধুমাত্র maximum ৩-৪টি ফ্রেজকে ৮ স্কোর দিন, যেগুলো শুনলে মনে হবে এগুলো ট্রেন্ডিং হওয়ার জন্য পারফেক্ট এবং সম্পূর্ণ একটি টপিকের মতো)
+- ৭ = জনপ্রিয় এবং নিয়মিত ব্যবহৃত
+- ৬ = মাঝারি জনপ্রিয় এবং মাঝে মাঝে ব্যবহৃত
+- ৫ = কম জনপ্রিয় কিন্তু প্রাসঙ্গিক
+
+"{category}" ক্যাটেগরির শব্দসমূহ:
+{words_text}
+
+আউটপুট ফরম্যাট (শুধুমাত্র এই ফরম্যাটে উত্তর দিন):
+1. শব্দ১: ৭
+2. শব্দ২: ৮
+3. শব্দ৩: ৬
+...
+
+শুধুমাত্র উপরের ফরম্যাটে উত্তর দিন, অতিরিক্ত ব্যাখ্যা যোগ করবেন না।"""
+                    
+                    try:
+                        # Call LLM for frequency scoring
+                        client = Groq(api_key=os.getenv('GROQ_API_KEY_COMBINE'))
+                        completion = client.chat.completions.create(
+                            model="llama-3.3-70b-versatile",
+                            messages=[{"role": "user", "content": frequency_prompt}],
+                            temperature=0.3,
+                            max_tokens=6000
+                        )
                         
-                        # Look for category lines like "জাতীয়": [
-                        if '": [' in line or '":' in line:
-                            category_match = re.search(r'"([^"]+)":\s*\[?', line)
-                            if category_match:
-                                current_category = category_match.group(1)
-                                category_wise_final[current_category] = []
-                            continue
+                        llm_frequency_response = completion.choices[0].message.content.strip()
+                        print(f"🤖 LLM Frequency Response for {category}:\n{llm_frequency_response}")
                         
-                        # Look for word lines like "শব্দ১",
-                        if current_category and '"' in line:
-                            word_match = re.search(r'"([^"]+)"', line)
-                            if word_match and len(category_wise_final[current_category]) < 5:
-                                word = word_match.group(1)
-                                category_wise_final[current_category].append(word)
+                        # Parse LLM frequency response
+                        frequency_scores = {}
+                        lines = llm_frequency_response.split('\n')
+                        
+                        for line in lines:
+                            line = line.strip()
+                            if not line:
+                                continue
+                            
+                            # Match pattern like "1. শব্দ: ৭" or "1. শব্দ: 7"
+                            match = re.match(r'^\d+\.\s*(.+?):\s*([৫-৯5-9])', line)
+                            if match:
+                                word = match.group(1).strip()
+                                freq_str = match.group(2).strip()
+                                
+                                # Convert Bengali numbers to English
+                                bengali_to_english = {'৫': '5', '৬': '6', '৭': '7', '৮': '8', '৯': '9'}
+                                if freq_str in bengali_to_english:
+                                    freq_str = bengali_to_english[freq_str]
+                                
+                                try:
+                                    frequency = int(freq_str)
+                                    frequency_scores[word] = frequency
+                                    print(f"✅ Parsed frequency for '{word}': {frequency}")
+                                except ValueError:
+                                    print(f"⚠️ Could not parse frequency for '{word}': {freq_str}")
+                        
+                        print(f"� Successfully parsed {len(frequency_scores)} frequency scores for {category}")
+                        
+                    except Exception as e:
+                        print(f"⚠️ LLM frequency scoring failed for {category}: {e}")
+                        frequency_scores = {}
+                    
+                    # Create word info dictionaries with LLM-assigned frequencies
+                    category_wise_final_with_freq[category] = []
+                    
+                    for word_text in words:
+                        if isinstance(word_text, str) and word_text.strip():
+                            # Get LLM-assigned frequency or default to 6
+                            llm_frequency = frequency_scores.get(word_text, 6)
+                            
+                            # Create word info dictionary
+                            word_info = {
+                                'word': word_text,
+                                'frequency': llm_frequency,
+                                'category': category,
+                                'source': 'llm_frequency_scoring'
+                            }
+                            
+                            category_wise_final_with_freq[category].append(word_info)
+                            total_phrases_calculated += 1
+                            
+                            print(f"🔍 [{total_phrases_calculated}] '{word_text}' → LLM frequency: {llm_frequency}")
+                
+                # Replace the original category_wise_final with frequency-enhanced version
+                category_wise_final = category_wise_final_with_freq
+                print(f"✅ LLM-BASED FREQUENCY CALCULATION COMPLETE: {total_phrases_calculated} phrases processed")
                 
                 print(f"\n🎯 Final Integration Complete!")
                 print(f"📊 Categories created: {len(category_wise_final)}")
                 for category, words in category_wise_final.items():
-                    print(f"   {category}: {len(words)} words - {', '.join(words[:3])}...")
+                    # Extract word text for display since words are now dictionaries
+                    word_texts = []
+                    for word_info in words[:3]:
+                        if isinstance(word_info, dict) and 'word' in word_info:
+                            word_texts.append(word_info['word'])
+                        else:
+                            word_texts.append(str(word_info))
+                    print(f"   {category}: {len(words)} words - {', '.join(word_texts)}...")
                 
                 # Add category_wise_final to results for frontend consumption
                 results["category_wise_final"] = category_wise_final
@@ -2138,12 +2361,12 @@ JSON আউটপুট ফরম্যাট:
                 if newspaper_category_data:
                     fallback_categories = {}
                     for category, words in newspaper_category_data.items():
-                        fallback_categories[category] = words[:5]  # Take first 5 words
+                        fallback_categories[category] = words[:10]  # Take first 10 words
                     results["category_wise_final"] = fallback_categories
                 else:
                     results["category_wise_final"] = {
-                        "সাধারণ": unique_final_words[:5],
-                        "ট্রেন্ডিং": unique_final_words[5:10] if len(unique_final_words) > 5 else []
+                        "সাধারণ": unique_final_words[:10],
+                        "ট্রেন্ডিং": unique_final_words[10:20] if len(unique_final_words) > 10 else []
                     }
         else:
             print("⚠️ No category-wise data available for final integration")
@@ -2208,6 +2431,14 @@ def set_category_words(
         for word_info in selected_words:
             word = word_info.get('word', '').strip()
             category = word_info.get('category', 'অজানা').strip()
+            # Extract frequency from the nested originalText structure if available
+            frequency = 1  # Default frequency
+            if 'originalText' in word_info and isinstance(word_info['originalText'], dict):
+                frequency = word_info['originalText'].get('frequency', 1)
+            elif 'frequency' in word_info:
+                frequency = word_info.get('frequency', 1)
+            
+            print(f"🔍 Processing word: {word}, category: {category}, frequency: {frequency}")
             
             if word and category:
                 # Save to CategoryTrendingPhrase table
@@ -2216,22 +2447,23 @@ def set_category_words(
                     category=category,
                     phrase=word,
                     score=100.0,  # High score for selected words
-                    frequency=1,
+                    frequency=frequency,  # Use LLM-assigned frequency
                     phrase_type='selected',
                     source='user_selection'
                 )
                 db.add(category_phrase)
                 
-                # Save to TrendingPhrase table for trending analysis
-                trending_phrase = TrendingPhrase(
+                # Save to TrendingPhrase table for trending analysis using smart frequency handling
+                from app.routes.helpers import add_or_update_trending_phrase
+                add_or_update_trending_phrase(
+                    db=db,
                     date=today,
                     phrase=word,
                     score=100.0,
-                    frequency=1,
+                    frequency=frequency,  # Use LLM-assigned frequency
                     phrase_type='selected',
                     source='user_selection'
                 )
-                db.add(trending_phrase)
                 
                 saved_count += 1
                 all_words.append(word)
@@ -2276,3 +2508,52 @@ def set_category_words(
     except Exception as e:
         db.rollback()
         raise HTTPException(status_code=500, detail=f"Error saving category words: {str(e)}")
+
+@router.get("/phrase-frequency", summary="Get phrase frequency data over time")
+def get_phrase_frequency_data(
+    phrase: str = Query(..., description="The phrase to get frequency data for"),
+    start_date: Optional[str] = Query(None, description="Start date (YYYY-MM-DD)"),
+    end_date: Optional[str] = Query(None, description="End date (YYYY-MM-DD)"),
+    db: Session = Depends(get_db)
+):
+    """Get phrase frequency data over time"""
+    try:
+        # Parse dates
+        if start_date:
+            start_date = datetime.strptime(start_date, "%Y-%m-%d").date()
+        else:
+            start_date = date.today() - timedelta(days=90)  # Default to 90 days ago to show more data
+            
+        if end_date:
+            end_date = datetime.strptime(end_date, "%Y-%m-%d").date()
+        else:
+            end_date = date.today()
+        
+        # Get phrase frequency data
+        phrase_data = db.query(TrendingPhrase).filter(
+            TrendingPhrase.phrase == phrase,
+            TrendingPhrase.date >= start_date,
+            TrendingPhrase.date <= end_date
+        ).order_by(TrendingPhrase.date.asc()).all()
+        
+        # Format data for chart
+        chart_data = []
+        for item in phrase_data:
+            chart_data.append({
+                'date': item.date.strftime('%Y-%m-%d'),
+                'frequency': item.frequency,
+                'score': round(item.score, 2),
+                'phrase_type': item.phrase_type,
+                'source': item.source
+            })
+        
+        return {
+            "phrase": phrase,
+            "start_date": start_date.strftime('%Y-%m-%d'),
+            "end_date": end_date.strftime('%Y-%m-%d'),
+            "total_records": len(chart_data),
+            "data": chart_data
+        }
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error fetching phrase frequency data: {str(e)}")

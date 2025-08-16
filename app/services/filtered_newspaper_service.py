@@ -30,7 +30,8 @@ try:
     from app.routes.helpers import (
         scrape_prothom_alo, scrape_kaler_kantho, scrape_jugantor,
         scrape_samakal, scrape_janakantha, scrape_inqilab,
-        scrape_manobkantha, scrape_ajker_patrika, scrape_protidiner_sangbad
+        scrape_manobkantha, scrape_ajker_patrika, scrape_protidiner_sangbad,
+        scrape_sahitya_sanskriti, scrape_ethnic_minorities
     )
     from app.services.url_pattern_category_detector import URLPatternCategoryDetector
 except ImportError as e:
@@ -39,7 +40,8 @@ except ImportError as e:
         from routes.helpers import (
             scrape_prothom_alo, scrape_kaler_kantho, scrape_jugantor,
             scrape_samakal, scrape_janakantha, scrape_inqilab,
-            scrape_manobkantha, scrape_ajker_patrika, scrape_protidiner_sangbad
+            scrape_manobkantha, scrape_ajker_patrika, scrape_protidiner_sangbad,
+            scrape_sahitya_sanskriti, scrape_ethnic_minorities
         )
         from app.services.url_pattern_category_detector import URLPatternCategoryDetector
     except ImportError:
@@ -128,7 +130,15 @@ class FilteredNewspaperScraper:
                 'মতামত': 'মতামত',
                 'ধর্ম': 'ধর্ম',
                 'বিজ্ঞান': 'বিজ্ঞান',
-                'চাকরি': 'চাকরি'
+                'চাকরি': 'চাকরি',
+                'Literature/Culture': 'সাহিত্য-সংস্কৃতি',
+                'সাহিত্য': 'সাহিত্য-সংস্কৃতি',
+                'সংস্কৃতি': 'সাহিত্য-সংস্কৃতি',
+                'সাহিত্য-সংস্কৃতি': 'সাহিত্য-সংস্কৃতি',
+                'Ethnic Minorities': 'ক্ষুদ্র নৃগোষ্ঠী',
+                'ক্ষুদ্র নৃগোষ্ঠী': 'ক্ষুদ্র নৃগোষ্ঠী',
+                'আদিবাসী': 'ক্ষুদ্র নৃগোষ্ঠী',
+                'উপজাতি': 'ক্ষুদ্র নৃগোষ্ঠী'
             }
             
             # Check if detected category can be mapped to a target category
@@ -162,14 +172,24 @@ class FilteredNewspaperScraper:
             # Filter articles by target categories
             filtered_articles = []
             for article in articles:
-                category = self.is_target_category(article['url'])
-                if category:
-                    article['category'] = category
+                # Check if article already has a category set (for new category-specific scrapers)
+                if 'category' in article and article['category'] in self.target_categories:
+                    category = article['category']
                     filtered_articles.append(article)
                     
                     # Add to categorized list
                     self.categorized_articles[category].append(article)
                     self.statistics['category_counts'][category] += 1
+                else:
+                    # Use URL pattern detection for traditional scrapers
+                    category = self.is_target_category(article['url'])
+                    if category:
+                        article['category'] = category
+                        filtered_articles.append(article)
+                        
+                        # Add to categorized list
+                        self.categorized_articles[category].append(article)
+                        self.statistics['category_counts'][category] += 1
             
             # Update source statistics
             self.statistics['source_counts'][source_name] = len(filtered_articles)
@@ -203,7 +223,9 @@ class FilteredNewspaperScraper:
             'inqilab': scrape_inqilab,
             'manobkantha': scrape_manobkantha,
             'ajker_patrika': scrape_ajker_patrika,
-            'protidiner_sangbad': scrape_protidiner_sangbad
+            'protidiner_sangbad': scrape_protidiner_sangbad,
+            'sahitya_sanskriti': scrape_sahitya_sanskriti,
+            'ethnic_minorities': scrape_ethnic_minorities
         }
         
         # Scrape each newspaper
@@ -427,7 +449,8 @@ class FilteredNewspaperScraper:
         # Use the same categories as the main pipeline
         TARGET_CATEGORIES = [
             'জাতীয়', 'আন্তর্জাতিক', 'অর্থনীতি', 'রাজনীতি', 'লাইফস্টাইল', 'বিনোদন',
-            'খেলাধুলা', 'ধর্ম', 'চাকরি', 'শিক্ষা', 'স্বাস্থ্য', 'মতামত', 'বিজ্ঞান', 'প্রযুক্তি'
+            'খেলাধুলা', 'ধর্ম', 'চাকরি', 'শিক্ষা', 'স্বাস্থ্য', 'মতামত', 'বিজ্ঞান', 'প্রযুক্তি',
+            'সাহিত্য-সংস্কৃতি', 'ক্ষুদ্র নৃগোষ্ঠী'
         ]
         
         # Scrape and group articles
@@ -495,7 +518,8 @@ def main():
     # Your specified target categories
     TARGET_CATEGORIES = [
         'জাতীয়', 'আন্তর্জাতিক', 'অর্থনীতি', 'রাজনীতি', 'লাইফস্টাইল', 'বিনোদন', 
-        'খেলাধুলা', 'ধর্ম', 'চাকরি', 'শিক্ষা', 'স্বাস্থ্য', 'মতামত', 'বিজ্ঞান', 'প্রযুক্তি'
+        'খেলাধুলা', 'ধর্ম', 'চাকরি', 'শিক্ষা', 'স্বাস্থ্য', 'মতামত', 'বিজ্ঞান', 'প্রযুক্তি',
+        'সাহিত্য-সংস্কৃতি', 'ক্ষুদ্র নৃগোষ্ঠী'
     ]
     
     print("🎯 FILTERED NEWSPAPER SCRAPER")

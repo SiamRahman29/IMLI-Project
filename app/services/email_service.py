@@ -7,10 +7,10 @@ class EmailService:
         self.conf = ConnectionConfig(
             MAIL_USERNAME=os.getenv("MAIL_USERNAME", ""),
             MAIL_PASSWORD=os.getenv("MAIL_PASSWORD", ""),
-            MAIL_FROM=os.getenv("MAIL_FROM", "noreply@iml.com"),
+            MAIL_FROM=os.getenv("MAIL_FROM", "noreply@imli.com"),
             MAIL_PORT=os.getenv("MAIL_PORT", 587),
             MAIL_SERVER=os.getenv("MAIL_SERVER", "smtp.gmail.com"),
-            MAIL_FROM_NAME=os.getenv("MAIL_FROM_NAME", "IML Trending Analyzer"),
+            MAIL_FROM_NAME=os.getenv("MAIL_FROM_NAME", "IMLI Trending Analyzer"),
             MAIL_STARTTLS=True,
             MAIL_SSL_TLS=False,
             USE_CREDENTIALS=True,
@@ -47,13 +47,13 @@ class EmailService:
         <body>
             <div class="container">
                 <div class="header">
-                    <h1>Welcome to IML Trending Words Analyzer</h1>
+                    <h1>Welcome to IMLI Trending Words Analyzer</h1>
                 </div>
                 
                 <div class="content">
                     <p>Dear {name},</p>
 
-                    <p>You are invited to IML (Bengali Trending Words Analysis System).</p>
+                    <p>You are invited to IMLI (Bengali Trending Words Analysis System).</p>
 
                     <div class="credentials">
                         <h3>Login Information:</h3>
@@ -79,7 +79,7 @@ class EmailService:
         """
         
         message = MessageSchema(
-            subject="Welcome to IML Trending Words Analyzer",
+            subject="Welcome to IMLI Trending Words Analyzer",
             recipients=[email],
             body=html,
             subtype="html"
@@ -118,7 +118,7 @@ class EmailService:
                 <div class="content">
                     <p>Dear {name},</p>
 
-                    <p>You have requested to reset the password for your BARTA-IML account.</p>
+                    <p>You have requested to reset the password for your IMLI account.</p>
 
                     <div class="otp-box">
                         <p>Your OTP code:</p>
@@ -139,7 +139,7 @@ class EmailService:
                 
                 <div class="footer">
                     <p>This email was sent automatically. Please do not reply.</p>
-                    <p>IML Trending Words Analyzer Team</p>
+                    <p>IMLI Trending Words Analyzer Team</p>
                 </div>
             </div>
         </body>
@@ -147,7 +147,7 @@ class EmailService:
         """
         
         message = MessageSchema(
-            subject="🔐 Password Reset OTP - BARTA-IML",
+            subject="🔐 Password Reset OTP - IMLI",
             recipients=[email],
             body=html,
             subtype="html"

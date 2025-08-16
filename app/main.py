@@ -16,10 +16,21 @@ warnings.filterwarnings("ignore", message=".*using PRAW in an asynchronous envir
 load_dotenv()
 
 app = FastAPI(
-    title="BARTA-IML trending words analyzer",
+    title="IMLI trending words analyzer",
     description="An API that serves and stores trending Bengali words and phrases from news and social media with N-gram TF-IDF analysis.",
     version="2.0.0"
 )
+
+# Initialize database on startup
+@app.on_event("startup")
+async def startup_event():
+    """Initialize database tables and admin user on startup"""
+    try:
+        from app.auth.create_auth_tables import initialize_database
+        initialize_database()
+    except Exception as e:
+        print(f"Warning: Database initialization failed: {e}")
+        print("Make sure to run the database setup manually if needed.")
 
 app.add_middleware(
     CORSMiddleware,

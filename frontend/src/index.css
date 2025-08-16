@@ -2,6 +2,11 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Set background to white for body and html */
+body, html {
+  @apply bg-white;
+}
+
 /* Enhanced datetime input styling */
 input[type="date"] {
   position: relative;

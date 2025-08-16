@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { Mail, Lock, Eye, EyeOff, LogIn } from 'lucide-react';
@@ -8,21 +8,63 @@ const Login = () => {
   const [credentials, setCredentials] = useState({ email: '', password: '' });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [success, setSuccess] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const { login } = useAuth();
   const navigate = useNavigate();
   const { translate } = useLanguage();
 
+  // Clear error after 8 seconds
+  useEffect(() => {
+    if (error) {
+      const timer = setTimeout(() => {
+        setError('');
+      }, 8000); // 8 seconds
+
+      return () => clearTimeout(timer);
+    }
+  }, [error]);
+
+  // Clear success message after 3 seconds
+  useEffect(() => {
+    if (success) {
+      const timer = setTimeout(() => {
+        setSuccess('');
+      }, 3000); // Show success message for 3 seconds
+      return () => clearTimeout(timer);
+    }
+  }, [success]);
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     setLoading(true);
     setError('');
-
-    const result = await login(credentials);
-    if (result.success) {
-      navigate('/');
-    } else {
-      setError(result.error);
+    setSuccess('');
+    try {
+      const result = await login(credentials);
+      if (result.success) {
+        setSuccess('Login successful! Redirecting to the platform');
+        setTimeout(() => {
+          navigate('/');
+        }, 1500); // Show message briefly before redirect
+      } else {
+        // Defensive: always set loading false before setting error
+        setLoading(false);
+        let errorMessage = result.error || 'Login failed. Please try again.';
+        if (errorMessage.includes('Incorrect email or password')) {
+          errorMessage = 'Incorrect email or password. Please try again.';
+        } else if (errorMessage.includes('User account is deactivated')) {
+          errorMessage = 'User account is deactivated. Please contact admin.';
+        } else if (errorMessage.includes('Login failed')) {
+          errorMessage = 'Login failed. Please try again.';
+        }
+        setError(errorMessage);
+        return;
+      }
+    } catch (error) {
+      setLoading(false);
+      setError('An error occurred during login. Please try again.');
+      return;
     }
     setLoading(false);
   };
@@ -39,7 +81,7 @@ const Login = () => {
       <div className="max-w-md w-full space-y-8 p-8 bg-white rounded-xl shadow-2xl">
         <div className="text-center">
           <h2 className="mt-6 text-3xl font-bold text-gray-900">
-            {translate('Sign in to BARTA-IML')}
+            {translate('Sign in to IMLI')}
           </h2>
           <p className="mt-2 text-sm text-gray-600">
             {translate('Please sign in to your account')}
@@ -47,10 +89,34 @@ const Login = () => {
         </div>
 
         <form className="mt-8 space-y-6" onSubmit={handleSubmit}>
+          {success && (
+            <div className="bg-green-50 border border-green-200 rounded-md p-4 mb-2">
+              <div className="flex items-center">
+                <div className="flex-shrink-0">
+                  {/* Professional checkmark icon */}
+                  <svg className="h-6 w-6 text-green-500" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                  </svg>
+                </div>
+                <div className="ml-3">
+                  <h3 className="text-sm font-medium text-green-800">{success}</h3>
+                </div>
+              </div>
+            </div>
+          )}
+
           {error && (
             <div className="bg-red-50 border border-red-200 rounded-md p-4">
-              <div className="flex">
-                <div className="text-sm text-red-700">{error}</div>
+              <div className="flex items-center">
+                <div className="flex-shrink-0">
+                  <svg className="h-5 w-5 text-red-400" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
+                    <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
+                  </svg>
+                </div>
+                <div className="ml-3">
+                  <h3 className="text-sm font-medium text-red-800">Login Error</h3>
+                  <div className="mt-1 text-sm text-red-700">{error}</div>
+                </div>
               </div>
             </div>
           )}
@@ -86,7 +152,7 @@ const Login = () => {
                   to="/forgot-password"
                   className="text-sm text-blue-600 hover:text-blue-500 font-medium"
                 >
-                  Forgot password?
+                  Forgot Password?
                 </Link>
               </div>
               <div className="mt-1 relative">

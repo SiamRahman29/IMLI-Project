@@ -10,6 +10,7 @@ import ForgotPassword from './pages/ForgotPassword';
 import ResetPassword from './pages/ResetPassword';
 import UserManagement from './pages/UserManagement';
 import UserProfile from './pages/UserProfile';
+import Footer from './components/Footer';
 
 function App() {
   return (
@@ -24,8 +25,6 @@ function App() {
             <Route path="/login" element={<Login />} />
             <Route path="/forgot-password" element={<ForgotPassword />} />
             <Route path="/reset-password" element={<ResetPassword />} />
-            <Route path="/reset-password" element={<ResetPassword />} />
-            
             {/* Protected routes - All authenticated users */}
             <Route 
               path="/profile" 
@@ -35,7 +34,6 @@ function App() {
                 </ProtectedRoute>
               } 
             />
-            
             {/* Protected routes - Admin only */}
             <Route 
               path="/generate-words" 
@@ -55,6 +53,8 @@ function App() {
             />
           </Routes>
         </main>
+        {/* Show footer on all pages except login, forgot-password, reset-password */}
+        {!["/login", "/forgot-password", "/reset-password"].includes(window.location.pathname) && <Footer />}
       </Router>
     </AuthProvider>
   );
