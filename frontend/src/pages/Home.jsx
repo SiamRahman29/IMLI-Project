@@ -115,7 +115,7 @@ function Home() {
       <div className={`grid grid-cols-1 ${isAuthenticated && isAdmin ? 'md:grid-cols-2' : ''} gap-8 max-w-3xl mx-auto`}>
         <div className="bg-white shadow-md rounded-lg h-full flex flex-col items-center p-8 text-center">
           <TrendingUp className="w-14 h-14 text-blue-500 mb-3" />
-          <h3 className="text-xl font-semibold mb-2">ট্রেন্ডিং বিশ্লেষণ</h3>
+          <h3 className="text-xl font-semibold mb-2">ট্রেন্ড বিশ্লেষণ</h3>
           <p className="text-gray-600 mb-4">সংবাদ ও সোশ্যাল মিডিয়া থেকে বর্তমান ট্রেন্ডিং শব্দ ও বাক্যাংশ দেখুন</p>
           <Link to="/trending" className="inline-block bg-blue-600 hover:bg-blue-700 text-white font-semibold px-6 py-2 rounded-lg transition mt-2 shadow focus:outline-none focus:ring-2 focus:ring-blue-400 focus:ring-offset-2">বিশ্লেষণ দেখুন</Link>
         </div>

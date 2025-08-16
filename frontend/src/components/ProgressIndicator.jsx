@@ -256,7 +256,7 @@ const ProgressIndicator = ({ onAnalysisComplete, onClose, onStepUpdate }) => {
                 <Brain className="w-6 h-6" />
               </div>
               <div>
-                <h2 className="text-xl font-bold">ট্রেন্ডিং বিশ্লেষণ</h2>
+                <h2 className="text-xl font-bold">ট্রেন্ড বিশ্লেষণ</h2>
               </div>
             </div>
             <button
