@@ -75,13 +75,3 @@ This project is a full-stack system for extracting, analyzing, and visualizing t
 
 For any issues or contributions, please open an issue or pull request!
 
-## TODO:
-1. Turn word/phrase freq into graphs
-2. Named entity recognition improvement
-3. GraphAPI integration
-4. Increase scope send to LLM
-5. Change prompt to exclude named entities ✅
-6. Frontend fixes ✅
-7. Tailwind CSS implementation
-8. Prompt engineer to implement TFIDF
-9. Link sources
