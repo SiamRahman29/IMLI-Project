@@ -30,6 +30,7 @@ function TrendingAnalysis() {
   const [trendingData, setTrendingData] = useState(null);
   const [dailyData, setDailyData] = useState(null);
   const [weeklyData, setWeeklyData] = useState(null);
+  const [totalSummaryData, setTotalSummaryData] = useState(null);
   const [stats, setStats] = useState(null);
   const [sources, setSources] = useState({ sources: [], phrase_types: [] });
   const [loading, setLoading] = useState(true);
@@ -177,6 +178,8 @@ function TrendingAnalysis() {
     } else if (tabValue === 2) {
       fetchWeeklyData();
     } else if (tabValue === 3) {
+      fetchTotalSummaryData();
+    } else if (tabValue === 4) {
       fetchStats();
     }
   }, [filters, tabValue]);
@@ -186,6 +189,7 @@ function TrendingAnalysis() {
       fetchTrendingData(),
       fetchDailyData(),
       fetchWeeklyData(),
+      fetchTotalSummaryData(),
       fetchStats()
     ]);
   };
@@ -266,6 +270,29 @@ function TrendingAnalysis() {
     }
   };
 
+  const fetchTotalSummaryData = async () => {
+    try {
+      setLoading(true);
+      // Call trending phrases API with "all" to get all data
+      const response = await apiV2.getTrendingPhrases({
+        start_date: 'all',
+        end_date: 'all',
+        limit: 100, // Get more data for total summary
+        search: ''
+      });
+      setTotalSummaryData(response.data);
+    } catch (err) {
+      let msg = 'সর্বমোট সারসংক্ষেপ লোড করতে ব্যর্থ';
+      if (err.response && err.response.data && err.response.data.detail) {
+        msg += `: ${err.response.data.detail}`;
+      }
+      setError(msg);
+      console.error('Total summary error:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const fetchSources = async () => {
     try {
       const response = await apiV2.getSources();
@@ -302,6 +329,8 @@ function TrendingAnalysis() {
     } else if (tabValue === 2) {
       await fetchWeeklyData();
     } else if (tabValue === 3) {
+      await fetchTotalSummaryData();
+    } else if (tabValue === 4) {
       await fetchStats();
     }
   };
@@ -347,6 +376,13 @@ function TrendingAnalysis() {
         'তারিখ': phrase.date
       }));
       filename = `weekly-summary-${weeklyData.week_start}-to-${weeklyData.week_end}.csv`;
+    } else if (tabValue === 3 && totalSummaryData?.phrases) {
+      dataToExport = totalSummaryData.phrases.map(phrase => ({
+        'ফ্রেজ': phrase.phrase,
+        'ফ্রিকোয়েন্সি': phrase.frequency,
+        'তারিখ': phrase.date
+      }));
+      filename = `total-summary-all-time.csv`;
     }
     
     if (dataToExport.length === 0) {
@@ -687,13 +723,10 @@ function TrendingAnalysis() {
                   <span 
                     className="text-xl font-bold text-gray-900 group-hover:text-blue-900 transition-colors cursor-pointer hover:underline flex items-center gap-2"
                     onClick={() => openPhraseGraphModal(phrase.phrase)}
-                    title={`ফ্রিকোয়েন্সি গ্রাফ দেখুন | তারিখ: ${phrase.date}`}
+                    title={`ফ্রিকোয়েন্সি গ্রাফ দেখুন`}
                   >
                     {phrase.phrase}
                     <BarChart3 className="w-4 h-4 text-blue-500 opacity-60 group-hover:opacity-100 transition-opacity" />
-                    <span className="text-xs text-gray-500 font-medium opacity-0 group-hover:opacity-100 transition-opacity bg-gray-100 px-2 py-1 rounded">
-                      {phrase.date}
-                    </span>
                   </span>
                   {/* <span className={`inline-block px-3 py-1 rounded-full text-sm font-bold shadow-lg transition-all group-hover:scale-105 ${getScoreColor(phrase.score) === 'primary' ? 'bg-gradient-to-r from-blue-500 to-blue-600 text-white' : getScoreColor(phrase.score) === 'secondary' ? 'bg-gradient-to-r from-pink-500 to-pink-600 text-white' : 'bg-gradient-to-r from-gray-500 to-gray-600 text-white'}`}>{phrase.score.toFixed(2)}</span> */}
                 </div>
@@ -709,6 +742,9 @@ function TrendingAnalysis() {
                     {phrase.frequency >= 10 && (
                       <span className="ml-1 text-xs"></span>
                     )}
+                  </span>
+                  <span className="inline-block px-3 py-1 rounded-full text-sm font-semibold shadow-md bg-gradient-to-r from-purple-100 to-purple-200 text-purple-800 group-hover:scale-105 transition-all">
+                    তারিখ: {phrase.date}
                   </span>
                 </div>
                 {/* Admin delete button */}
@@ -915,6 +951,122 @@ function TrendingAnalysis() {
     );
   };
 
+  const renderTotalSummaryTab = () => {
+    if (loading && !totalSummaryData) {
+      return <LoadingSkeleton />;
+    }
+    
+    if (!totalSummaryData || !totalSummaryData.phrases || totalSummaryData.phrases.length === 0) {
+      return <div className="bg-gradient-to-r from-blue-50 to-blue-100 border border-blue-200 text-blue-800 px-6 py-4 rounded-xl text-center shadow-sm">
+        <div className="flex items-center justify-center gap-2">
+          <BarChart3 className="w-5 h-5" />
+          <span>কোনো সর্বমোট ডেটা পাওয়া যায়নি। প্রথমে বিশ্লেষণ চালান।</span>
+        </div>
+      </div>;
+    }
+
+    // Group phrases by date for daily breakdown
+    const dailyBreakdown = {};
+    totalSummaryData.phrases.forEach(phrase => {
+      const date = phrase.date;
+      if (!dailyBreakdown[date]) {
+        dailyBreakdown[date] = [];
+      }
+      dailyBreakdown[date].push(phrase);
+    });
+
+    // Sort dates in descending order
+    const sortedDates = Object.keys(dailyBreakdown).sort((a, b) => new Date(b) - new Date(a));
+    
+    return (
+      <div className="bg-white shadow rounded-lg p-6">
+        <div className="mb-6">
+          <h2 className="text-2xl font-bold mb-2">Total Summary - সব সময়ের ডেটা</h2>          
+          <div className="text-gray-600 mb-4">মোট ফ্রেজ: {totalSummaryData.pagination?.total || totalSummaryData.phrases.length}টি</div>
+          <button
+            onClick={() => {
+              // Export only phrase, frequency, date for total summary
+              const csvRows = [
+                ['phrase', 'frequency', 'date'],
+                ...totalSummaryData.phrases.map(p => [p.phrase, p.frequency, p.date])
+              ];
+              const csvContent = csvRows.map(e => e.join(",")).join("\n");
+              const blob = new Blob([csvContent], { type: 'text/csv' });
+              const url = URL.createObjectURL(blob);
+              const a = document.createElement('a');
+              a.href = url;
+              a.download = 'total_summary_all_time.csv';
+              a.click();
+              URL.revokeObjectURL(url);
+            }}
+            disabled={!totalSummaryData.phrases.length || loading}
+            className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold transition-all duration-300 shadow-md focus:outline-none focus:ring-2 transform hover:scale-105 ${
+              !totalSummaryData.phrases.length || loading
+                ? 'bg-gray-200 text-gray-500 cursor-not-allowed' 
+                : 'bg-gradient-to-r from-green-600 to-green-700 hover:from-green-700 hover:to-green-800 text-white focus:ring-green-400 hover:shadow-lg'
+            }`}
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+            </svg>
+            <span>Export CSV</span>
+          </button>
+        </div>
+        
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          {/* Top Total Phrases */}
+          <div className="bg-white shadow rounded-lg p-6">
+            <h3 className="font-semibold mb-4">শীর্ষ সর্বমোট ফ্রেজ</h3>
+            <div className="space-y-0">
+              {totalSummaryData.phrases.map((phrase, idx) => (
+                <div key={idx} className="phrase-separator py-4 px-4 flex flex-col gap-3 hover:bg-gradient-to-r hover:from-blue-50 hover:to-indigo-50 rounded-xl transition-all duration-300 group hover:shadow-lg hover:scale-[1.01] hover:z-10 relative">
+                  <div className="flex items-center gap-3">
+                    <span 
+                      className="text-lg font-bold text-gray-900 group-hover:text-blue-900 transition-colors cursor-pointer hover:underline flex items-center gap-2"
+                      onClick={() => openPhraseGraphModal(phrase.phrase)}
+                      title={`ফ্রিকোয়েন্সি গ্রাফ দেখুন`}
+                    >
+                      {phrase.phrase}
+                      <BarChart3 className="w-4 h-4 text-blue-500 opacity-60 group-hover:opacity-100 transition-opacity" />
+                    </span>
+                  </div>
+                  <div className="flex flex-wrap gap-2 mt-1">
+                    <span className={`inline-block px-3 py-1 rounded-full text-sm font-semibold shadow-md hover:shadow-lg transition-all group-hover:scale-105 ${getFrequencyColor(phrase.frequency)}`}>
+                      ফ্রিকোয়েন্সি: {phrase.frequency}
+                    </span>
+                    <span className="inline-block px-3 py-1 rounded-full text-sm font-semibold shadow-md bg-gradient-to-r from-purple-100 to-purple-200 text-purple-800 group-hover:scale-105 transition-all">
+                      তারিখ: {phrase.date}
+                    </span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+          
+          {/* Daily Breakdown */}
+          <div className="bg-white shadow rounded-lg p-6">
+            <h3 className="font-semibold mb-4">Daily Breakdown</h3>
+            <div className="space-y-3 max-h-96 overflow-y-auto">
+              {sortedDates.slice(0, 1000).map((date) => {
+                const phrases = dailyBreakdown[date];
+                return (
+                  <div key={date} className="border-l-4 border-blue-400 pl-3">
+                    <div className="font-medium">{date}</div>
+                    <div className="text-sm text-gray-500">{phrases.length}টি ফ্রেজ</div>
+                    <div className="text-xs text-gray-400 mt-1">
+                      {phrases.slice(0, 3).map(p => p.phrase).join(', ')}
+                      {phrases.length > 3 && '...'}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   const renderStatsTab = () => {
     if (loading && !stats) {
       return <LoadingSkeleton />;
@@ -970,7 +1122,6 @@ function TrendingAnalysis() {
           </div>
           {translate('ট্রেন্ডিং বিশ্লেষণ')}
         </h1>
-        {/* <p className="text-sm text-gray-600 font-medium">বাংলা সংবাদ ও সোশ্যাল মিডিয়া থেকে ট্রেন্ডিং শব্দ ও বাক্যাংশ</p> */}
       </div>
       {error && (
         <div className="bg-gradient-to-r from-red-50 to-red-100 border-2 border-red-300 text-red-800 px-6 py-4 rounded-2xl mb-6 shadow-lg">
@@ -1000,6 +1151,7 @@ function TrendingAnalysis() {
           { label: translate("ট্রেন্ডিং ক্রেজ"), icon: TrendingUp },
           { label: translate("দৈনিক সারসংক্ষেপ"), icon: Globe },
           { label: translate("সাপ্তাহিক সারসংক্ষেপ"), icon: Calendar },
+          { label: translate("Total Summary"), icon: BarChart3 },
           { label: translate("পরিসংখ্যান"), icon: Users }
         ].map(({ label, icon: Icon }, idx) => (
           <button
@@ -1024,7 +1176,8 @@ function TrendingAnalysis() {
           {tabValue === 0 && renderTrendingTab()}
           {tabValue === 1 && renderDailyTab()}
           {tabValue === 2 && renderWeeklyTab()}
-          {tabValue === 3 && renderStatsTab()}
+          {tabValue === 3 && renderTotalSummaryTab()}
+          {tabValue === 4 && renderStatsTab()}
         </>
       )}
       
