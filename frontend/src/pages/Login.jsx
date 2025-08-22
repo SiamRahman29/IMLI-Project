@@ -127,7 +127,7 @@ const Login = () => {
                 Email Address
               </label>
               <div className="mt-1 relative">
-                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none z-10">
                   <Mail className="h-5 w-5 text-blue-600" />
                 </div>
                 <input
@@ -137,7 +137,7 @@ const Login = () => {
                   required
                   value={credentials.email}
                   onChange={handleChange}
-                  className="appearance-none relative block w-full px-10 py-3 border border-gray-300 placeholder-gray-500 text-gray-900 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 focus:z-10 sm:text-sm"
+                  className="appearance-none relative block w-full pl-10 pr-3 py-3 border placeholder-gray-500 text-gray-900 rounded-lg "
                   placeholder="Enter your email address"
                 />
               </div>
@@ -156,7 +156,7 @@ const Login = () => {
                 </Link>
               </div>
               <div className="mt-1 relative">
-                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none z-10">
                   <Lock className="h-5 w-5 text-blue-600" />
                 </div>
                 <input
@@ -166,7 +166,7 @@ const Login = () => {
                   required
                   value={credentials.password}
                   onChange={handleChange}
-                  className="appearance-none relative block w-full px-10 py-3 border border-gray-300 placeholder-gray-500 text-gray-900 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 pr-10 sm:text-sm"
+                  className="appearance-none relative block w-full pl-10 pr-10 py-3 border border-gray-300 placeholder-gray-500 text-gray-900 rounded-lg "
                   placeholder="Enter your password"
                 />
                 <button
