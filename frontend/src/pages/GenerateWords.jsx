@@ -369,18 +369,33 @@ function GenerateWords() {
       setSubmitting(true);
       setError(null);
       
-      // If category words are selected, use them; otherwise use the manual input
-      if (finalWords.length > 0) {
-        // Use the existing setCategoryWords method
-        const response = await apiV2.setCategoryWords(finalWords);
-        
-        console.log('Category words saved successfully:', response.data);
-        setFinalSelectedWords(finalWords);
-      } else if (selectedWord.trim()) {
+      // Handle both category words and manual input - they can coexist
+      let allFinalWords = [...finalWords];
+      
+      // If manual word is also provided, add it to the list
+      if (selectedWord.trim()) {
         const sanitizedWord = cleanCandidate(selectedWord);
-        await api.setWordOfTheDay(sanitizedWord);
-        // Create single word info for manual selection
-        setFinalSelectedWords([{ word: sanitizedWord, category: 'ম্যানুয়াল নির্বাচন', originalText: selectedWord }]);
+        const manualWordInfo = { 
+          word: sanitizedWord, 
+          category: 'ম্যানুয়াল নির্বাচন', 
+          originalText: selectedWord 
+        };
+        
+        // Check if this manual word isn't already in category selections
+        const wordExists = allFinalWords.some(wordInfo => 
+          wordInfo.word === sanitizedWord
+        );
+        
+        if (!wordExists) {
+          allFinalWords.push(manualWordInfo);
+        }
+      }
+      
+      if (allFinalWords.length > 0) {
+        // Use the category words method to save all words (both analysis + manual)
+        const response = await apiV2.setCategoryWords(allFinalWords);
+        console.log('All words (category + manual) saved successfully:', response.data);
+        setFinalSelectedWords(allFinalWords);
       }
       
       setSuccess(true);
@@ -547,8 +562,8 @@ function GenerateWords() {
         return { ...prev, [category]: [...currentWords, word] };
       }
     });
-    // Clear manual input when category selection is made
-    setSelectedWord('');
+    // Allow both manual input and category selection to coexist
+    // setSelectedWord(''); // Removed - no longer clear manual input
   };
 
   // Generate final selected words list with category tracking - supports multiple words
@@ -777,7 +792,7 @@ function GenerateWords() {
         <div className="bg-white shadow-md rounded-lg p-8 flex flex-col justify-between items-center text-center">
           <h2 className="text-xl font-semibold mb-2">২. শব্দ নির্বাচন</h2>
           <p className="text-gray-600 mb-4">
-            ক্যাটেগরি অনুযায়ী শব্দ নির্বাচন করুন অথবা ম্যানুয়ালি একটি শব্দ টাইপ করুন
+            ক্যাটেগরি অনুযায়ী শব্দ নির্বাচন করুন এবং/অথবা ম্যানুয়ালি অতিরিক্ত শব্দ যোগ করুন। উভয়ই একসাথে সেভ হবে।
           </p>
           {getTotalSelectedWords() > 0 && (
             <div className="bg-green-100 border border-green-300 text-green-800 px-3 py-2 rounded mb-4 text-center w-full text-sm">
@@ -788,14 +803,12 @@ function GenerateWords() {
             <input
               type="text"
               className="w-full border border-gray-300 rounded px-4 py-2 mb-2 focus:outline-none focus:ring-2 focus:ring-pink-400"
-              placeholder="অথবা ম্যানুয়ালি একটি শব্দ টাইপ করুন..."
+              placeholder="অতিরিক্ত শব্দ ম্যানুয়ালি যোগ করুন..."
               value={selectedWord}
               onChange={e => {
                 setSelectedWord(e.target.value);
-                // Clear category selections if manual input is used
-                if (e.target.value.trim()) {
-                  setSelectedCategoryWords({});
-                }
+                // Allow both manual input and category selections to coexist
+                // No longer clear category selections when manual input is used
               }}
               disabled={submitting}
             />
@@ -813,11 +826,25 @@ function GenerateWords() {
               ) : (
                 <Check className="w-5 h-5" />
               )}
-              {submitting ? 'সেট করা হচ্ছে...' : 
-                getTotalSelectedWords() > 0 
-                  ? `নির্বাচিত শব্দ সেট করুন (${getTotalSelectedWords()}টি)`
-                  : 'আজকের শব্দ নির্ধারণ করুন'
-              }
+              {submitting ? 'সেট করা হচ্ছে...' : (() => {
+                const categoryWordsCount = getTotalSelectedWords();
+                const hasManualWord = selectedWord.trim();
+                const totalWords = categoryWordsCount + (hasManualWord ? 1 : 0);
+                
+                if (totalWords > 0) {
+                  let text = `শব্দ সেট করুন (${totalWords}টি)`;
+                  if (categoryWordsCount > 0 && hasManualWord) {
+                    text = `শব্দ সেট করুন (${categoryWordsCount} নির্বাচিত + ১ ম্যানুয়াল)`;
+                  } else if (categoryWordsCount > 0) {
+                    text = `নির্বাচিত শব্দ সেট করুন (${categoryWordsCount}টি)`;
+                  } else if (hasManualWord) {
+                    text = 'ম্যানুয়াল শব্দ সেট করুন';
+                  }
+                  return text;
+                } else {
+                  return 'আজকের শব্দ নির্ধারণ করুন';
+                }
+              })()}
             </button>
           </form>
         </div>
@@ -894,9 +921,6 @@ function GenerateWords() {
                                 : 'bg-white text-gray-700 border-gray-300 hover:bg-blue-50 hover:border-blue-400 hover:scale-102'
                             }`}
                             onClick={() => handleCategoryWordSelect(category, word)}
-                            onMouseEnter={() => handleWordHover(wordText, category, wordData)}
-                            onMouseLeave={handleWordLeave}
-                            title={`"${category}" ক্যাটেগরি থেকে "${cleanCandidate(wordText)}" ${isSelected ? 'অপসারণ' : 'নির্বাচন'} করুন`}
                           >
                             <div className="flex items-center gap-2">
                               <span className={`text-xs font-bold w-6 h-6 rounded-full flex items-center justify-center ${
@@ -906,22 +930,22 @@ function GenerateWords() {
                               </span>
                               <span className="font-medium flex-1">{cleanCandidate(wordText)}</span>
                               
-                              {/* Frequency Badge */}
-                              {wordData.frequency > 1 && (
+                              {/* Frequency Badge - Hidden for cleaner UI */}
+                              {/* {wordData.frequency > 1 && (
                                 <span 
                                   className="text-xs font-bold px-2 py-1 rounded-full text-white"
                                   style={{ backgroundColor: getFrequencyBadgeColor(wordData.frequency) }}
                                 >
                                   {wordData.frequency}
                                 </span>
-                              )}
+                              )} */}
                               
-                              {/* Source Badge */}
-                              {wordData.source === 'llm_selection' && (
+                              {/* Source Badge - Hidden for cleaner UI */}
+                              {/* {wordData.source === 'llm_selection' && (
                                 <span className="text-xs px-2 py-1 rounded-full bg-purple-600 text-white font-bold">
                                   LLM
                                 </span>
-                              )}
+                              )} */}
                             </div>
                           </button>
                         );
@@ -1010,9 +1034,6 @@ function GenerateWords() {
                             : 'bg-gray-100 text-gray-700 border-gray-300 hover:bg-blue-50 hover:border-blue-300'
                         }`}
                         onClick={() => setSelectedWord(cleanedCandidate)}
-                        onMouseEnter={() => handleWordHover(cleanedCandidate, 'ম্যানুয়াল নির্বাচন', { frequency: 1, source: 'fallback' })}
-                        onMouseLeave={handleWordLeave}
-                        title={`"${cleanedCandidate}" নির্বাচন করুন`}
                       >
                         {candidate}
                       </button>

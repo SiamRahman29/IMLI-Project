@@ -30,7 +30,7 @@ import sys
 import random
 
 from app.db.database import SessionLocal
-from app.models.word import Word, TrendingPhrase
+from app.models.word import Word, TrendingPhrase, CategoryTrendingPhrase
 from app.models.user import User
 from app.routes.helpers import get_trending_words
 from app.dto.dtos import TrendingWordsResponse, TrendingPhraseResponse, DailyTrendingResponse, TrendingPhrasesRequest
@@ -49,25 +49,44 @@ def get_db():
 
 @router.get("/", summary="Get today's word of the day")
 def get_word_of_the_day(db: Session = Depends(get_db)):
-    """Get the word of the day for today with all selected words"""
+    """Get the word of the day for today with all selected words from trending_phrases table"""
     today = date.today()
-    word_entry = db.query(Word).filter(Word.date == today).first()
     
-    if word_entry:
-        # Ensure selected_words is properly formatted for Pydantic
-        selected_words = word_entry.selected_words
-        if isinstance(selected_words, str):
-            import json
-            try:
-                selected_words = json.loads(selected_words)
-            except:
-                selected_words = []
-        elif selected_words is None:
-            selected_words = []
+    # Get all trending phrases for today (both user_selection and manual_user_selection)
+    today_phrases = db.query(TrendingPhrase).filter(
+        and_(
+            TrendingPhrase.date == today,
+            TrendingPhrase.source.in_(['user_selection', 'manual_user_selection'])
+        )
+    ).order_by(TrendingPhrase.phrase).all()
+    
+    if today_phrases:
+        # Format selected words with category and source information
+        selected_words = []
+        for phrase in today_phrases:
+            # Try to get category from category_trending_phrases table
+            category_info = db.query(CategoryTrendingPhrase).filter(
+                and_(
+                    CategoryTrendingPhrase.date == today,
+                    CategoryTrendingPhrase.phrase == phrase.phrase
+                )
+            ).first()
             
+            word_info = {
+                "word": phrase.phrase,
+                "category": category_info.category if category_info else "সাধারণ",
+                "source": phrase.source,
+                "frequency": phrase.frequency,
+                "date": str(phrase.date)
+            }
+            selected_words.append(word_info)
+        
+        # Create a combined word string for backward compatibility
+        words_string = ", ".join([w["word"] for w in selected_words])
+        
         return TrendingWordsResponse(
-            date=str(word_entry.date),
-            words=str(word_entry.word),  # Ensure it's a string
+            date=str(today),
+            words=words_string,
             selected_words=selected_words
         )
     else:
@@ -2408,27 +2427,54 @@ async def hybrid_generate_candidates(
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error in hybrid candidate generation: {str(e)}")
 
-@router.post("/set_word_of_the_day", summary="Set today's word of the day")
+@router.post("/set_word_of_the_day", summary="Set manually added word")
 def set_word_of_the_day(word: str, db: Session = Depends(get_db)):
-    """Set the word of the day for today"""
+    """Save manually added word only to trending_words tables (not to words table)"""
+    from app.models.word import CategoryTrendingPhrase, TrendingPhrase
+    from app.routes.helpers import add_or_update_trending_phrase
+    
     today = date.today()
     
-    # Check if word already exists for today
-    existing_word = db.query(Word).filter(Word.date == today).first()
+    # Save manually added word ONLY to trending_words tables (not to words table)
+    try:
+        # Save to CategoryTrendingPhrase table with 'ম্যানুয়াল নির্বাচন' category
+        category_phrase = CategoryTrendingPhrase(
+            date=today,
+            category='ম্যানুয়াল নির্বাচন',
+            phrase=word,
+            score=100.0,  # High score for manually selected words
+            frequency=1,  # Default frequency for manually added words
+            phrase_type='selected',
+            source='manual_user_selection'
+        )
+        db.add(category_phrase)
+        
+        # Save to TrendingPhrase table for trending analysis
+        add_or_update_trending_phrase(
+            db=db,
+            date=today,
+            phrase=word,
+            score=100.0,
+            frequency=1,  # Default frequency for manually added words
+            phrase_type='selected',
+            source='manual_user_selection'
+        )
+        
+        print(f"✅ Manually added word '{word}' saved to trending_words tables only")
+        
+        db.commit()
+        
+        return {
+            "message": f"Manually added word saved to trending tables successfully!",
+            "date": str(today),
+            "word": word
+        }
+        
+    except Exception as e:
+        db.rollback()
+        print(f"⚠️ Error saving manually added word to trending tables: {e}")
+        raise HTTPException(status_code=500, detail=f"Error saving manually added word: {str(e)}")
     
-    if existing_word:
-        existing_word.word = word
-    else:
-        new_word = Word(date=today, word=word)
-        db.add(new_word)
-    
-    db.commit()
-    
-    return {
-        "message": f"Word of the day set successfully!",
-        "date": str(today),
-        "word": word
-    }
 
 @router.post("/set_category_words", summary="Set today's words with category information")
 def set_category_words(
@@ -2446,9 +2492,18 @@ def set_category_words(
         raise HTTPException(status_code=400, detail="No words provided")
     
     try:
-        # Clear existing data for today
-        db.query(CategoryTrendingPhrase).filter(CategoryTrendingPhrase.date == today).delete()
-        db.query(TrendingPhrase).filter(TrendingPhrase.date == today).delete()
+        # Clear existing analysis-generated data for today, but preserve manually added words
+        # Clear CategoryTrendingPhrase records that are from analysis (not manual)
+        db.query(CategoryTrendingPhrase).filter(
+            CategoryTrendingPhrase.date == today,
+            CategoryTrendingPhrase.source != 'manual_user_selection'
+        ).delete()
+        
+        # Clear TrendingPhrase records that are from analysis (not manual)
+        db.query(TrendingPhrase).filter(
+            TrendingPhrase.date == today,
+            TrendingPhrase.source != 'manual_user_selection'
+        ).delete()
         
         # Save category-wise selected words
         saved_count = 0
@@ -2467,6 +2522,9 @@ def set_category_words(
             print(f"🔍 Processing word: {word}, category: {category}, frequency: {frequency}")
             
             if word and category:
+                # Determine source based on category - manual vs analysis-generated
+                source_type = 'manual_user_selection' if category == 'ম্যানুয়াল নির্বাচন' else 'user_selection'
+                
                 # Save to CategoryTrendingPhrase table
                 category_phrase = CategoryTrendingPhrase(
                     date=today,
@@ -2475,7 +2533,7 @@ def set_category_words(
                     score=100.0,  # High score for selected words
                     frequency=frequency,  # Use LLM-assigned frequency
                     phrase_type='selected',
-                    source='user_selection'
+                    source=source_type
                 )
                 db.add(category_phrase)
                 
@@ -2488,52 +2546,24 @@ def set_category_words(
                     score=100.0,
                     frequency=frequency,  # Use LLM-assigned frequency
                     phrase_type='selected',
-                    source='user_selection'
+                    source=source_type
                 )
                 
                 saved_count += 1
                 all_words.append(word)
         
-        # Save all selected words as today's words in words table
-        if selected_words:
-            main_word = selected_words[0].get('word', '')
-            
-            # Prepare selected words data for JSON storage
-            words_data = []
-            for word_info in selected_words:
-                words_data.append({
-                    'word': word_info.get('word', ''),
-                    'category': word_info.get('category', ''),
-                    'originalText': word_info.get('originalText', '')
-                })
-            
-            existing_word = db.query(Word).filter(Word.date == today).first()
-            
-            if existing_word:
-                existing_word.word = main_word
-                existing_word.selected_words = words_data
-            else:
-                new_word = Word(
-                    date=today, 
-                    word=main_word,
-                    selected_words=words_data
-                )
-                db.add(new_word)
-        
         db.commit()
         
         return {
-            "message": f"Successfully saved {saved_count} category words for today!",
+            "message": f"Successfully saved {saved_count} words to trending tables only!",
             "date": str(today),
             "saved_words": saved_count,
-            "words": selected_words,
-            "all_selected_words": all_words,
-            "main_word_of_day": selected_words[0].get('word', '') if selected_words else None
+            "all_selected_words": all_words
         }
         
     except Exception as e:
         db.rollback()
-        raise HTTPException(status_code=500, detail=f"Error saving category words: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error saving words to trending tables: {str(e)}")
 
 @router.get("/phrase-frequency", summary="Get phrase frequency data over time")
 def get_phrase_frequency_data(

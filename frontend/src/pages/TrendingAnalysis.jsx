@@ -19,6 +19,7 @@ function TrendingAnalysis() {
       'trigram': 'ত্রিগুণ শব্দ',
       // Sources
       'user_selection': 'ব্যবহারকারী নির্বাচন',
+      'manual_user_selection': 'ম্যানুয়াল নির্বাচন',
       'news': 'সংবাদ',
       'social_media': 'সামাজিক মাধ্যম',
       'newspaper': 'সংবাদপত্র',
@@ -222,7 +223,20 @@ function TrendingAnalysis() {
   const fetchDailyData = async () => {
     try {
       setLoading(true);
-      const response = await apiV2.getDailyTrending(filters.end_date);
+      // Use today's date if no valid end_date is provided
+      let targetDate = filters.end_date;
+      
+      // If end_date is 'all' or empty, use today's date
+      if (!targetDate || targetDate === 'all' || targetDate === '') {
+        targetDate = formatDate(new Date());
+      }
+      
+      // Validate date format before sending
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(targetDate)) {
+        targetDate = formatDate(new Date());
+      }
+      
+      const response = await apiV2.getDailyTrending(targetDate);
       setDailyData(response.data);
     } catch (err) {
       let msg = 'দৈনিক ডেটা লোড করতে ব্যর্থ';
